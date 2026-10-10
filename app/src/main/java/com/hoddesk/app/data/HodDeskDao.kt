@@ -59,6 +59,15 @@ interface HodDeskDao {
     @Query("DELETE FROM tasks WHERE sourceId = :sourceId") suspend fun deleteTasksForSource(sourceId: Long)
     @Query("DELETE FROM evidence WHERE taskId = :taskId") suspend fun deleteEvidenceForTask(taskId: Long)
     @Query("DELETE FROM events WHERE taskId = :taskId") suspend fun deleteEventsForTask(taskId: Long)
+    /** Expired sources with approved tasks remain as durable task evidence. */
+    @Query("SELECT id FROM sources WHERE capturedAt < :before AND id NOT IN (SELECT DISTINCT sourceId FROM tasks WHERE sourceId IS NOT NULL)") suspend fun expiredUnapprovedSourceIds(before: Long): List<Long>
+
+    @Transaction
+    suspend fun purgeExpiredUnapprovedSources(before: Long): Int {
+        val ids = expiredUnapprovedSourceIds(before)
+        ids.forEach { deleteSourceCascade(it) }
+        return ids.size
+    }
 
     /**
      * Promotes one reviewed action as a single durable state transition.

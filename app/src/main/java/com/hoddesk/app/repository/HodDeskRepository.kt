@@ -133,6 +133,11 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     suspend fun deleteTask(id: Long) { audit("task", id, "deleted"); dao.deleteTaskCascade(id) }
     suspend fun deleteEvent(id: Long) { audit("event", id, "deleted"); dao.deleteEvent(id) }
     suspend fun purgeAuditBefore(before: Long): Int = dao.deleteAuditBefore(before)
+    suspend fun purgeExpiredSources(before: Long): Int {
+        val count = dao.purgeExpiredUnapprovedSources(before)
+        if (count > 0) audit("app", 0, "retention_purge", "sources=$count")
+        return count
+    }
 }
 
 data class ActionPointDraft(

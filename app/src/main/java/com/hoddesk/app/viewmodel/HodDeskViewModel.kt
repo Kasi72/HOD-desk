@@ -37,6 +37,7 @@ class HodDeskViewModel(private val repository: HodDeskRepository) : ViewModel() 
     fun deleteTask(id: Long) = viewModelScope.launch { repository.deleteTask(id) }
     fun deleteEvent(id: Long) = viewModelScope.launch { repository.deleteEvent(id) }
     fun purgeAuditBefore(before: Long) = viewModelScope.launch { repository.purgeAuditBefore(before) }
+    fun purgeExpiredSources(before: Long) = viewModelScope.launch { repository.purgeExpiredSources(before) }
     fun schedulePlannedTask(taskId: Long, title: String, startsAt: Long, endsAt: Long) = viewModelScope.launch { repository.schedulePlannedTask(taskId, title, startsAt, endsAt) }
 }
 

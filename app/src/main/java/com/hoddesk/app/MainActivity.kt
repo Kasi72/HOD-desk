@@ -159,7 +159,8 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val settings = remember { DeskSettingsStore(context) }
     val database = remember { HodDeskDatabase.get(context) }
     val dao = remember { database.dao() }
-    val viewModel: HodDeskViewModel = viewModel(factory = HodDeskViewModelFactory(HodDeskRepository(dao)))
+    val repository = remember { HodDeskRepository(dao) }
+    val viewModel: HodDeskViewModel = viewModel(factory = HodDeskViewModelFactory(repository))
     val embeddingRuntime = remember { EmbeddingGemmaLiteRtRuntime(context) }
     val instructionModelStore = remember { InstructionModelStore(context, BuildConfig.INSTRUCTION_MODEL_URL, BuildConfig.INSTRUCTION_MODEL_SHA256.ifBlank { null }) }
     var installedInstructionModel by remember { mutableStateOf(instructionModelStore.installedPath()) }
@@ -170,6 +171,11 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val allSources by viewModel.sources.collectAsState()
     val allTasks by viewModel.tasks.collectAsState()
     val auditLog by viewModel.auditLog.collectAsState()
+    LaunchedEffect(Unit) {
+        // Enforce the configured retention policy after every process start.
+        // Sources backing approved tasks are deliberately retained by the DAO.
+        repository.purgeExpiredSources(privacyStore.retentionCutoff())
+    }
 
     // --- Undo-able deletes: hidden immediately, committed after the Undo window. ---
     var pendingDelete by remember { mutableStateOf<PendingDelete?>(null) }
