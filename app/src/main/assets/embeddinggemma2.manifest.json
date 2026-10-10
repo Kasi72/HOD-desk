@@ -1,0 +1,15 @@
+{
+  "model": "google/embeddinggemma-2",
+  "license": "apache-2.0",
+  "native_output_dimension": 768,
+  "supported_truncation_dimensions": [128, 256, 512, 768],
+  "max_tokens": 8192,
+  "dtype": "float32_or_bfloat16",
+  "pooling": "mean",
+  "projection": "512_to_768",
+  "text_query_prefix": "task: search result | query: ",
+  "document_prefix": "title: {title} | text: {content}",
+  "image_placeholder": "<|image|>",
+  "audio_placeholder": "<|audio|>",
+  "runtime_note": "Use the official pre-converted LiteRT-LM bundle embeddinggemma-2-740m.litertlm from litert-community. It includes the mobile graph and tokenizer contract; install it to app-private storage on first run instead of embedding a 485 MB model in the APK."
+}
