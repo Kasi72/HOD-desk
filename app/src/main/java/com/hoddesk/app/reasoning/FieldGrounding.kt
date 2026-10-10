@@ -14,7 +14,7 @@ object FieldGrounding {
             val tokens = tokens(value)
             val evidenceTokens = tokens(evidence)
             val meaningful = tokens.filter { it.length >= 2 }
-            if (meaningful.isEmpty() || meaningful.none { it in evidenceTokens }) {
+            if (meaningful.isEmpty() || meaningful.any { it !in evidenceTokens }) {
                 issues += "$label requires confirmation: '$value' is not present in the cited evidence"
                 return null
             }

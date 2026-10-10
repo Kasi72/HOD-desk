@@ -115,15 +115,11 @@ class ActionPointExtractor {
     }
 
     fun extract(text: String): List<ActionPointDraft> {
-        val allDates = date.findAll(text).map { it.value }.distinct().joinToString(", ").ifBlank { null }
-        val allTimes = time.findAll(text).map { it.value.trim() }.distinct().joinToString(", ").ifBlank { null }
-        val allLocations = location.findAll(text).map { it.groupValues[1].trim() }.distinct().take(10).joinToString(", ").ifBlank { null }
-        val allPeople = people(text).joinToString(", ").ifBlank { null }
         return candidateUnits(text).map { evidence ->
-            val dateText = date.findAll(evidence).map { it.value }.distinct().joinToString(", ").ifBlank { allDates }
-            val timeText = time.findAll(evidence).map { it.value.trim() }.distinct().joinToString(", ").ifBlank { allTimes }
-            val locationText = location.findAll(evidence).map { it.groupValues[1].trim() }.distinct().joinToString(", ").ifBlank { allLocations }
-            val peopleText = people(evidence).joinToString(", ").ifBlank { allPeople }
+            val dateText = date.findAll(evidence).map { it.value }.distinct().joinToString(", ").ifBlank { null }
+            val timeText = time.findAll(evidence).map { it.value.trim() }.distinct().joinToString(", ").ifBlank { null }
+            val locationText = location.findAll(evidence).map { it.groupValues[1].trim() }.distinct().joinToString(", ").ifBlank { null }
+            val peopleText = people(evidence).joinToString(", ").ifBlank { null }
             val category = when {
                 Regex("(?iu)\\b(teach|lecture|class|resident|rotation|academic|exam)\\b|கற்பி|வகுப்பு").containsMatchIn(evidence) -> "teaching_or_training"
                 Regex("(?iu)\\b(duty|roster|shift|on[- ]?call|ward round)\\b").containsMatchIn(evidence) -> "duty_or_roster"
