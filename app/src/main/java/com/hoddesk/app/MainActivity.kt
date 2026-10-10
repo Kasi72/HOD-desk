@@ -633,10 +633,14 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         openSource?.let { s ->
             SheetDialog({ openSource = null }) {
                 val look = sourceLook(s.sourceType)
-                Column(Modifier.fillMaxWidth().clip(Squircles.sheetTop).background(c.groupedBackground).navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // The source sheet owns the single vertical scroll container.
+                // Keeping the evidence card non-scrollable avoids nested
+                // scroll measurement crashes while ensuring the action row is
+                // reachable on short displays.
+                Column(Modifier.fillMaxWidth().clip(Squircles.sheetTop).background(c.groupedBackground).navigationBarsPadding().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(s.title, style = Hod.type.title3, color = c.label)
                     Text("${look.label} · ${dueLabel(s.capturedAt)}", style = Hod.type.footnote, color = c.secondaryLabel)
-                    Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(16.dp).verticalScroll(rememberScrollState())) {
+                    Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(16.dp)) {
                         EvidenceText(cleanEvidence(s.body).ifBlank { "No readable text." }, emptyList(), maxLines = 18)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
