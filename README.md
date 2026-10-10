@@ -31,17 +31,17 @@ Every imported source remains linked to its original evidence. The app does not 
 
 ## Main UI
 
-The app uses a five-tab mobile architecture:
+The app uses an iOS-style design language (grouped inset lists, squircle controls, a floating tab bar) with five tabs and a separate Capture button:
 
 | Tab | Purpose |
 |---|---|
-| **Today** | Daily workload, review queue, next tasks and schedule |
-| **Inbox** | Imported sources awaiting review |
-| **Tasks** | Approved work, blockers, clarification and completion |
-| **Calendar** | Date navigation, events, focus blocks and conflicts |
-| **Library** | Local semantic and hybrid search across approved source material |
+| **Today** | Morning brief: what must be done today, today's schedule including fixed clinical time, review and waiting counts |
+| **Review** | Evidence-first decision queue: each field is checked against the source, then Approve, Edit, Delegate or Reject |
+| **Tasks** | Mine / Delegated / Done, grouped by Overdue, Today, This Week, Later; full-screen task detail with history |
+| **Calendar** | Week strip and hour timeline; Plan My Day and Protect Time propose blocks, show clashes, and write only after confirmation |
+| **Library** | Hybrid Tamil/English search with "why matched" reasons and multi-select |
 
-The top-right Settings surface contains Privacy & Data, On-Device AI, Activity Log and How to Import guides.
+Settings opens from the avatar on Today. Deletes can be undone for 6 seconds. UI code lives in `app/src/main/java/com/hoddesk/app/ui/` (`theme/` tokens and `SquircleShape`, `components/`, `screens/`).
 
 ## Intelligence pipeline
 
@@ -141,13 +141,12 @@ The Settings experience includes:
 
 - **Privacy & Data:** consent, redaction, source locks and retention
 - **On-Device AI:** semantic search, Tamil speech, image reading, local reasoning model and technical details
-- **Activity Log:** encrypted audit history and reviewer export entry point
+- **Activity Log:** encrypted audit history with export to a user-chosen file
 - **How to Import:** WhatsApp, screenshots, camera, calls, documents and Gmail guidance
-- **Department Profile:** planned OPD, ward, ECT and teaching constraints
-- **Team and urgency:** planned roles, topics and reporting-order configuration
-- **Venues and travel:** planned travel time, holidays and calendar destination configuration
-- **Notifications:** planned morning brief, interruption and meeting-preparation controls
-- **Battery-aware processing:** planned charging and low-battery safeguards
+- **Department Profile:** fixed clinical time (OPD, ward rounds, ECT, teaching), team, venues and travel time, authority order
+- **Calendar:** destination calendar, working hours and the share of the day kept free
+- **Clinical Vault:** clinical and special-category items, opened with the device screen lock
+- **Planned:** notification scheduling (morning brief, interruptions, meeting prep) and battery-aware background processing
 
 ## Project structure
 

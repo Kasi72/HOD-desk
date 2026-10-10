@@ -46,16 +46,38 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     /** Promotes the exact user-approved action candidate, never the generic source title. */
     private suspend fun audit(type: String, id: Long, action: String, detail: String? = null) = dao.insertAudit(AuditEntryEntity(entityType = type, entityId = id, action = action, detail = detail))
 
-    suspend fun approveAction(sourceId: Long, action: String, project: String, dueAt: Long? = null): Long {
+    suspend fun approveAction(sourceId: Long, action: String, project: String, dueAt: Long? = null, assignee: String? = null): Long {
         require(action.isNotBlank()) { "Approved action cannot be blank" }
         val source = requireNotNull(dao.source(sourceId)) { "Source $sourceId does not exist" }
-        val taskId = dao.insertTask(TaskEntity(sourceId = source.id, title = action.trim(), project = project, dueAt = dueAt))
+        val taskId = dao.insertTask(TaskEntity(sourceId = source.id, title = action.trim(), project = project, dueAt = dueAt, assignee = assignee?.takeIf { it.isNotBlank() }))
         dao.setActionPointStatus(source.id, action.trim(), "approved")
         dao.updateSource(source.copy(reviewed = true))
         audit("source", source.id, "action_approved", action.trim())
         audit("task", taskId, "created_from_action", "source=$sourceId")
+        if (!assignee.isNullOrBlank()) audit("task", taskId, "delegated", assignee)
         return taskId
     }
+
+    /** Marks a source handled without creating a task ("Not mine" / "Not an action"). Nothing is deleted. */
+    suspend fun dismissSource(sourceId: Long, reason: String) {
+        val source = dao.source(sourceId) ?: return
+        dao.updateSource(source.copy(reviewed = true, triageBucket = if (reason == "not_mine") "NOT_MINE" else source.triageBucket))
+        audit("source", sourceId, "dismissed_$reason")
+    }
+
+    suspend fun setTaskDue(taskId: Long, dueAt: Long?) {
+        val task = dao.task(taskId) ?: return
+        dao.updateTask(task.copy(dueAt = dueAt)); audit("task", taskId, if (dueAt == null) "due_cleared" else "rescheduled", dueAt?.let { java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it)) })
+    }
+
+    suspend fun setAssignee(taskId: Long, assignee: String?) {
+        val task = dao.task(taskId) ?: return
+        dao.updateTask(task.copy(assignee = assignee?.takeIf { it.isNotBlank() })); audit("task", taskId, if (assignee.isNullOrBlank()) "taken_back" else "delegated", assignee)
+    }
+
+    fun observeAllAudit(limit: Int = 500): Flow<List<AuditEntryEntity>> = dao.observeAllAudit(limit)
+
+    suspend fun deleteAllWorkData() { dao.deleteAllWorkData(); audit("app", 0, "all_data_deleted") }
     suspend fun setActionPointStatus(sourceId: Long, action: String, status: String) { dao.setActionPointStatus(sourceId, action, status); audit("source", sourceId, "action_status_$status", action) }
 
     suspend fun proposeSchedule(title: String, startsAt: Long, endsAt: Long, taskId: Long? = null): ScheduleProposal {

@@ -41,6 +41,9 @@ interface HodDeskDao {
     @Insert suspend fun insertAudit(entry: AuditEntryEntity): Long
     @Query("SELECT * FROM audit_entries WHERE entityType = :entityType AND entityId = :entityId ORDER BY createdAt DESC") fun observeAudit(entityType: String, entityId: Long): Flow<List<AuditEntryEntity>>
     @Query("DELETE FROM audit_entries WHERE createdAt < :before") suspend fun deleteAuditBefore(before: Long): Int
+    @Query("SELECT * FROM audit_entries ORDER BY createdAt DESC LIMIT :limit") fun observeAllAudit(limit: Int): Flow<List<AuditEntryEntity>>
+    @Query("SELECT * FROM audit_entries ORDER BY createdAt ASC") suspend fun allAudit(): List<AuditEntryEntity>
+    @Query("SELECT * FROM events WHERE startsAt >= :start AND startsAt < :end ORDER BY startsAt") suspend fun eventsBetween(start: Long, end: Long): List<EventEntity>
     @Query("SELECT * FROM reasoning_runs WHERE sourceId = :sourceId ORDER BY createdAt DESC") fun observeReasoningRuns(sourceId: Long): Flow<List<ReasoningRunEntity>>
     @Query("DELETE FROM sources WHERE id = :id") suspend fun deleteSourceRow(id: Long)
     @Query("DELETE FROM tasks WHERE id = :id") suspend fun deleteTaskRow(id: Long)
@@ -67,6 +70,22 @@ interface HodDeskDao {
         deleteActionPointsForSource(sourceId)
         deleteReasoningRunsForSource(sourceId)
         deleteSourceRow(sourceId)
+    }
+
+    @Query("DELETE FROM sources") suspend fun deleteAllSources()
+    @Query("DELETE FROM tasks") suspend fun deleteAllTasks()
+    @Query("DELETE FROM events") suspend fun deleteAllEvents()
+    @Query("DELETE FROM evidence") suspend fun deleteAllEvidence()
+    @Query("DELETE FROM semantic_embeddings") suspend fun deleteAllEmbeddings()
+    @Query("DELETE FROM source_chunks") suspend fun deleteAllChunks()
+    @Query("DELETE FROM action_points") suspend fun deleteAllActionPoints()
+    @Query("DELETE FROM reasoning_runs") suspend fun deleteAllReasoningRuns()
+
+    /** User-confirmed "Delete All Data". The audit trail is append-only and is kept. */
+    @Transaction
+    suspend fun deleteAllWorkData() {
+        deleteAllEvidence(); deleteAllEvents(); deleteAllTasks(); deleteAllEmbeddings(); deleteAllChunks()
+        clearSourceRelations(); deleteAllActionPoints(); deleteAllReasoningRuns(); deleteAllSources()
     }
 
     @Transaction

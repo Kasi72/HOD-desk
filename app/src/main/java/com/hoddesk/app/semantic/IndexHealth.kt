@@ -19,7 +19,8 @@ data class IndexHealth(
 
 class IndexHealthChecker(private val dao: HodDeskDao) {
     suspend fun inspect(sources: List<SourceEntity>, modelVersion: String = SourceSemanticIndexer.MODEL_VERSION): IndexHealth {
-        val eligible = sources.filter { it.body.isNotBlank() && it.sensitivity != "T3_CLINICAL" && it.sensitivity != "T4_SPECIAL" }
+        // SensitivityClassifier stores tier codes ("T3", "T4"); clinical tiers are never indexed.
+        val eligible = sources.filter { it.body.isNotBlank() && it.sensitivity !in setOf("T3", "T4", "T3_CLINICAL", "T4_SPECIAL") }
         val embeddings = dao.allSemanticEmbeddings().associateBy { it.sourceId }
         return IndexHealthEvaluator.evaluate(eligible, embeddings, dao.allSourceChunks(modelVersion).size, modelVersion)
     }

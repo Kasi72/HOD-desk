@@ -18,7 +18,14 @@ class HodDeskViewModel(private val repository: HodDeskRepository) : ViewModel() 
     fun ingest(source: SourceEntity) = viewModelScope.launch { repository.ingest(source) }
     fun ingestWithActions(source: SourceEntity, actions: List<ActionPointDraft>) = viewModelScope.launch { repository.ingestWithActions(source, actions) }
     fun approve(sourceId: Long, project: String, dueAt: Long? = null) = viewModelScope.launch { repository.approveSource(sourceId, project, dueAt) }
-    fun approveAction(sourceId: Long, action: String, project: String, dueAt: Long? = null) = viewModelScope.launch { repository.approveAction(sourceId, action, project, dueAt) }
+    fun approveAction(sourceId: Long, action: String, project: String, dueAt: Long? = null, assignee: String? = null) = viewModelScope.launch { repository.approveAction(sourceId, action, project, dueAt, assignee) }
+    fun dismissSource(sourceId: Long, reason: String) = viewModelScope.launch { repository.dismissSource(sourceId, reason) }
+    fun setTaskDue(taskId: Long, dueAt: Long?) = viewModelScope.launch { repository.setTaskDue(taskId, dueAt) }
+    fun setAssignee(taskId: Long, assignee: String?) = viewModelScope.launch { repository.setAssignee(taskId, assignee) }
+    fun deleteAllWorkData() = viewModelScope.launch { repository.deleteAllWorkData() }
+    val auditLog =repository.observeAllAudit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    suspend fun proposeSchedule(title: String, startsAt: Long, endsAt: Long, taskId: Long? = null) = repository.proposeSchedule(title, startsAt, endsAt, taskId)
+    fun confirmSchedule(proposal: com.hoddesk.app.repository.ScheduleProposal) = viewModelScope.launch { repository.confirmSchedule(proposal) }
     fun setActionPointStatus(sourceId: Long, action: String, status: String) = viewModelScope.launch { repository.setActionPointStatus(sourceId, action, status) }
     fun complete(taskId: Long) = viewModelScope.launch { repository.completeTask(taskId) }
     fun setDone(taskId: Long, done: Boolean) = viewModelScope.launch { repository.setTaskDone(taskId, done) }
