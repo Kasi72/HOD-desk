@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -80,7 +81,7 @@ fun SettingsPage(title: String, backLabel: String, onBack: () -> Unit, content: 
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize().background(Hod.colors.groupedBackground).statusBarsPadding()) {
         NavBar(backLabel, onBack)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(start = 16.dp, end = 16.dp, bottom = 64.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
             Text(title, style = Hod.type.largeTitle, color = Hod.colors.label, modifier = Modifier.padding(start = 4.dp))
             content()
         }

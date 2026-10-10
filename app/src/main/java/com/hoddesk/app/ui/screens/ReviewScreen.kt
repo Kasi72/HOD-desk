@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -265,13 +267,16 @@ private fun SourceReview(
                 }
             }
             reasoningStatus?.let { Text(it, style = Hod.type.footnote, color = c.secondaryLabel, modifier = Modifier.padding(horizontal = 16.dp)) }
-            Spacer(Modifier.height(8.dp))
+            // Keep the last evidence row clear of the fixed action bar and the
+            // gesture/navigation area.  Without this spacer the final card is
+            // rendered underneath the buttons on compact phones.
+            Spacer(Modifier.height(28.dp))
         }
 
-        if (action == null) Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp)) {
+        if (action == null) Box(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(16.dp)) {
             HodButton("Done with This Item", { onDismissSource(source.id, "no_action") }, style = HodButtonStyle.Tinted, modifier = Modifier.fillMaxWidth())
         }
-        if (action != null) Column(Modifier.fillMaxWidth().background(c.groupedBackground).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (action != null) Column(Modifier.fillMaxWidth().background(c.groupedBackground).navigationBarsPadding().imePadding().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             val finalAction = if (editing && edited.isNotBlank()) edited.trim() else action
             HodButton(if (editing) "Approve Edited Action" else "Approve", onClick = { onApprove(source, finalAction, null); finish(true, action) }, modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -327,9 +332,20 @@ private fun fieldRows(point: ActionPointEntity?, evidence: String): List<FieldRo
 /** Bottom-anchored dialog host for action sheets. */
 @Composable
 fun SheetDialog(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().pressable(onClick = onDismiss), contentAlignment = Alignment.BottomCenter) {
-            Box(Modifier.fillMaxWidth().pressable(onClick = {})) { content() }
+            // A sheet must remain fully reachable on short screens and when
+            // the IME is visible. The old unconstrained wrapper let tall
+            // action sheets extend past the display, clipping their actions.
+            Box(
+                Modifier.fillMaxWidth()
+                    .heightIn(max = (configuration.screenHeightDp * 0.88f).dp)
+                    .verticalScroll(rememberScrollState())
+                    .navigationBarsPadding()
+                    .imePadding()
+                    .pressable(onClick = {}),
+            ) { content() }
         }
     }
 }

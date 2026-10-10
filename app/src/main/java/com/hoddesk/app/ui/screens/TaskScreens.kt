@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -233,9 +234,11 @@ fun TaskDetailScreen(
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            // Bottom breathing room prevents the history/source cards from
+            // disappearing beneath the fixed action bar on small displays.
+            Spacer(Modifier.height(28.dp))
         }
-        Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             HodButton("Reschedule", { showDate = true }, style = HodButtonStyle.Gray, modifier = Modifier.weight(1f))
             if (state == TaskState.Done) HodButton("Reopen", { onSetDone(false) }, style = HodButtonStyle.Tinted, modifier = Modifier.weight(1.6f))
             else HodButton("Mark Done", { onSetDone(true) }, modifier = Modifier.weight(1.6f))
