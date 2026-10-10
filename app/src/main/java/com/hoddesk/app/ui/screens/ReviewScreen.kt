@@ -341,7 +341,6 @@ fun SheetDialog(onDismiss: () -> Unit, content: @Composable () -> Unit) {
             Box(
                 Modifier.fillMaxWidth()
                     .heightIn(max = (configuration.screenHeightDp * 0.88f).dp)
-                    .verticalScroll(rememberScrollState())
                     .navigationBarsPadding()
                     .imePadding()
                     .pressable(onClick = {}),
