@@ -47,15 +47,7 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     private suspend fun audit(type: String, id: Long, action: String, detail: String? = null) = dao.insertAudit(AuditEntryEntity(entityType = type, entityId = id, action = action, detail = detail))
 
     suspend fun approveAction(sourceId: Long, action: String, project: String, dueAt: Long? = null, assignee: String? = null): Long {
-        require(action.isNotBlank()) { "Approved action cannot be blank" }
-        val source = requireNotNull(dao.source(sourceId)) { "Source $sourceId does not exist" }
-        val taskId = dao.insertTask(TaskEntity(sourceId = source.id, title = action.trim(), project = project, dueAt = dueAt, assignee = assignee?.takeIf { it.isNotBlank() }))
-        dao.setActionPointStatus(source.id, action.trim(), "approved")
-        dao.updateSource(source.copy(reviewed = true))
-        audit("source", source.id, "action_approved", action.trim())
-        audit("task", taskId, "created_from_action", "source=$sourceId")
-        if (!assignee.isNullOrBlank()) audit("task", taskId, "delegated", assignee)
-        return taskId
+        return dao.approveActionAtomic(sourceId, action, project, dueAt, assignee)
     }
 
     /** Marks a source handled without creating a task ("Not mine" / "Not an action"). Nothing is deleted. */
@@ -87,11 +79,14 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     }
 
     suspend fun confirmSchedule(proposal: ScheduleProposal): Long {
+        require(proposal.conflicts.isEmpty()) { "Conflicting events require explicit rescheduling before confirmation" }
         val eventId = dao.insertEvent(proposal.event.copy(confirmed = true))
         audit("event", eventId, "scheduled_confirmed", proposal.event.title)
         return eventId
     }
     suspend fun schedulePlannedTask(taskId: Long, title: String, startsAt: Long, endsAt: Long): Long {
+        require(endsAt > startsAt) { "Event must end after it starts" }
+        require(dao.overlappingEvents(startsAt, endsAt).isEmpty()) { "A local calendar conflict appeared before confirmation" }
         val eventId = dao.insertEvent(EventEntity(taskId = taskId, title = title, startsAt = startsAt, endsAt = endsAt, confirmed = true))
         audit("event", eventId, "scheduled_confirmed", title)
         return eventId

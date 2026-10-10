@@ -29,13 +29,6 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
         private const val MIN_MODEL_BYTES = 100_000_000L
         private const val EXPECTED_DIMENSION = 768
 
-        init {
-            // The retrieval AAR exposes these JNI libraries but does not load them
-            // on every Android/MediaPipe combination before ByteBuffer mapping.
-            // Load the LiteRT-LM dependency first, then the MediaPipe task bridge.
-            System.loadLibrary("litertlm_jni")
-            System.loadLibrary("mediapipe_tasks_jni")
-        }
     }
 
     private val modelFile get() = File(context.filesDir, MODEL_NAME)
@@ -43,6 +36,23 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
     private val inferenceMutex = Mutex()
     @Volatile private var embedder: UniversalEmbedder? = null
     @Volatile private var mappedModel: ByteBuffer? = null
+    @Volatile private var nativeLoadFailure: Throwable? = null
+
+    private fun ensureNativeLibraries() {
+        nativeLoadFailure?.let { throw IllegalStateException("On-device semantic search is unavailable on this device", it) }
+        if (embedder != null) return
+        synchronized(this) {
+            if (embedder != null) return
+            nativeLoadFailure?.let { throw IllegalStateException("On-device semantic search is unavailable on this device", it) }
+            runCatching {
+                // Keep native loading out of static class initialization. A
+                // missing optional runtime must degrade to keyword search, not
+                // crash the whole HOD Desk process during composition.
+                System.loadLibrary("litertlm_jni")
+                System.loadLibrary("mediapipe_tasks_jni")
+            }.onFailure { nativeLoadFailure = it }.getOrThrow()
+        }
+    }
 
     suspend fun ensureInstalled(onProgress: (Int) -> Unit = {}) = withContext(Dispatchers.IO) {
         if (modelFile.length() >= MIN_MODEL_BYTES) return@withContext
@@ -84,6 +94,7 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
     }
 
     private suspend fun engine(): UniversalEmbedder = engineMutex.withLock {
+        ensureNativeLibraries()
         embedder ?: withContext(Dispatchers.Default) {
             ensureInstalled()
             // UniversalEmbedder's LiteRT-LM backend requires a model path for

@@ -23,6 +23,7 @@ interface HodDeskDao {
     @Query("UPDATE tasks SET status = :status, completedAt = :completedAt WHERE id = :id") suspend fun setTaskStatus(id: Long, status: String, completedAt: Long?)
     @Query("SELECT * FROM sources WHERE id = :id LIMIT 1") suspend fun source(id: Long): SourceEntity?
     @Query("SELECT * FROM tasks WHERE id = :id LIMIT 1") suspend fun task(id: Long): TaskEntity?
+    @Query("SELECT * FROM tasks WHERE sourceId = :sourceId AND title = :title AND status != 'deleted' ORDER BY id LIMIT 1") suspend fun approvedTask(sourceId: Long, title: String): TaskEntity?
     @Query("SELECT * FROM evidence WHERE taskId = :taskId ORDER BY capturedAt DESC") fun observeEvidence(taskId: Long): Flow<List<EvidenceEntity>>
     @Query("SELECT * FROM semantic_embeddings WHERE sourceId = :sourceId LIMIT 1") suspend fun semanticEmbedding(sourceId: Long): SemanticEmbeddingEntity?
     @Query("SELECT * FROM semantic_embeddings") suspend fun allSemanticEmbeddings(): List<SemanticEmbeddingEntity>
@@ -58,6 +59,26 @@ interface HodDeskDao {
     @Query("DELETE FROM tasks WHERE sourceId = :sourceId") suspend fun deleteTasksForSource(sourceId: Long)
     @Query("DELETE FROM evidence WHERE taskId = :taskId") suspend fun deleteEvidenceForTask(taskId: Long)
     @Query("DELETE FROM events WHERE taskId = :taskId") suspend fun deleteEventsForTask(taskId: Long)
+
+    /**
+     * Promotes one reviewed action as a single durable state transition.
+     * The UI may deliver the same tap twice; returning the existing task makes
+     * the operation idempotent instead of creating duplicate official work.
+     */
+    @Transaction
+    suspend fun approveActionAtomic(sourceId: Long, action: String, project: String, dueAt: Long?, assignee: String?): Long {
+        val normalized = action.trim()
+        require(normalized.isNotBlank()) { "Approved action cannot be blank" }
+        val source = requireNotNull(source(sourceId)) { "Source $sourceId does not exist" }
+        approvedTask(sourceId, normalized)?.let { return it.id }
+        val taskId = insertTask(TaskEntity(sourceId = sourceId, title = normalized, project = project, dueAt = dueAt, assignee = assignee?.takeIf { it.isNotBlank() }))
+        setActionPointStatus(sourceId, normalized, "approved")
+        updateSource(source.copy(reviewed = true))
+        insertAudit(AuditEntryEntity(entityType = "source", entityId = sourceId, action = "action_approved", detail = normalized))
+        insertAudit(AuditEntryEntity(entityType = "task", entityId = taskId, action = "created_from_action", detail = "source=$sourceId"))
+        if (!assignee.isNullOrBlank()) insertAudit(AuditEntryEntity(entityType = "task", entityId = taskId, action = "delegated", detail = assignee))
+        return taskId
+    }
 
     @Transaction
     suspend fun deleteSourceCascade(sourceId: Long) {
