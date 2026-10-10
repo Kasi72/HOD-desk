@@ -17,6 +17,10 @@ android {
         versionName = "2.22.0"
         buildConfigField("String", "INSTRUCTION_MODEL_URL", "\"${providers.gradleProperty("hoddeskInstructionModelUrl").orElse("https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4.litertlm?download=true").get()}\"")
         buildConfigField("String", "INSTRUCTION_MODEL_SHA256", "\"${providers.gradleProperty("hoddeskInstructionModelSha256").orElse("2e67a6cd51dfe0f793431e6bd4ed8d029c88e10f52ca0469ad38445e3cd3c1f4").get()}\"")
+        // Set this in the deployment gradle properties for a fail-closed,
+        // byte-for-byte verified EmbeddingGemma bundle. An empty value keeps
+        // development builds usable but is reported as unverified.
+        buildConfigField("String", "EMBEDDING_MODEL_SHA256", "\"${providers.gradleProperty("hoddeskEmbeddingModelSha256").orElse("").get()}\"")
     }
 
     buildFeatures { buildConfig = true }

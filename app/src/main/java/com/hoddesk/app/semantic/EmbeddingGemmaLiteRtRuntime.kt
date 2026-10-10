@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.graphics.BitmapFactory
 import android.util.Log
+import com.hoddesk.app.BuildConfig
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.components.containers.AudioData
 import com.google.mediapipe.tasks.core.BaseOptions
@@ -15,6 +16,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileInputStream
+import java.security.MessageDigest
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.ByteBuffer
@@ -55,7 +58,10 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
     }
 
     suspend fun ensureInstalled(onProgress: (Int) -> Unit = {}) = withContext(Dispatchers.IO) {
-        if (modelFile.length() >= MIN_MODEL_BYTES) return@withContext
+        if (modelFile.length() >= MIN_MODEL_BYTES) {
+            verifyModelIntegrity(modelFile)
+            return@withContext
+        }
         val temp = File(context.cacheDir, "$MODEL_NAME.part")
         if (temp.exists()) temp.delete()
         val connection = (URL(MODEL_URL).openConnection() as HttpURLConnection).apply {
@@ -84,6 +90,7 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
                 }
             }
             check(temp.length() >= MIN_MODEL_BYTES) { "Downloaded LiteRT-LM bundle is incomplete (${temp.length()} bytes)" }
+            verifyModelIntegrity(temp)
             if (modelFile.exists()) modelFile.delete()
             check(temp.renameTo(modelFile)) { "Unable to install EmbeddingGemma model" }
             Log.i("HOD_SEMANTIC", "model_installed_bytes=${modelFile.length()}")
@@ -91,6 +98,31 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
             connection.disconnect()
             if (temp.exists()) temp.delete()
         }
+    }
+
+    private fun verifyModelIntegrity(file: File) {
+        val expected = BuildConfig.EMBEDDING_MODEL_SHA256.trim().lowercase()
+        if (expected.isBlank()) {
+            Log.w("HOD_SEMANTIC", "model_integrity_unverified; configure hoddeskEmbeddingModelSha256 for production")
+            return
+        }
+        require(expected.matches(Regex("[0-9a-f]{64}"))) {
+            "Invalid EmbeddingGemma SHA-256 configuration"
+        }
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(file).use { input ->
+            val buffer = ByteArray(1024 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                if (read > 0) digest.update(buffer, 0, read)
+            }
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        check(actual == expected) {
+            "EmbeddingGemma model SHA-256 mismatch; expected $expected, got $actual"
+        }
+        Log.i("HOD_SEMANTIC", "model_integrity_verified_sha256=$actual")
     }
 
     private suspend fun engine(): UniversalEmbedder = engineMutex.withLock {
