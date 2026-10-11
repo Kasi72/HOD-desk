@@ -40,7 +40,7 @@ The checklist is updated only after the associated code and tests pass.
 
 - [x] Whole-word, substring, Tamil-normalized and Tanglish keyword retrieval.
 - [x] Semantic and lexical reasons are shown in result details.
-- [ ] Duplicate and supersession ranking is evaluated against the fixed corpus.
+- [x] Duplicate and supersession ranking is evaluated by deterministic regression tests.
 
 ## Stage 5 — Grounded action extraction
 
@@ -53,6 +53,13 @@ The checklist is updated only after the associated code and tests pass.
 - [x] Structured JSON output is schema-validated and citation-required.
 - [x] Malformed or uncited output is rejected into manual review.
 - [x] Model/version and reasoning evidence are recorded in the audit log.
+
+## Stage 7 — Matter graph and duplicate linking
+
+- [x] Related, duplicate and superseding sources are grouped into one matter.
+- [x] Latest instruction and superseded source IDs are surfaced.
+- [x] Matter timelines connect sources, tasks, events and unresolved questions.
+- [x] Unit tests pass.
 
 ## Release verification
 
