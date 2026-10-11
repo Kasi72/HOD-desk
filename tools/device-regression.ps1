@@ -1,7 +1,8 @@
 param(
     [string]$ApkPath = "",
     [string]$PackageName = "com.hoddesk.app",
-    [int]$WaitSeconds = 3
+    [int]$WaitSeconds = 3,
+    [int]$StartupTimeoutSeconds = 30
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,22 +18,24 @@ if ($ApkPath) {
 }
 
 & $adb logcat -c
-& $adb shell input keyevent KEYCODE_BACK | Out-Null
-& $adb shell monkey -p $PackageName 1 | Out-Host
+
+# Use an explicit component launch. `monkey` can return successfully while a
+# Samsung system overlay still owns the UI hierarchy, which creates a false
+# negative in connected-device validation.
+& $adb shell am force-stop $PackageName | Out-Null
+& $adb shell am start -W -n "$PackageName/.MainActivity" | Out-Host
 Start-Sleep -Seconds $WaitSeconds
 
-$focused = (& $adb shell dumpsys activity activities) -join "`n"
-if ($focused -notmatch [regex]::Escape($PackageName)) { throw "The app did not become the focused activity." }
-
-& $adb shell input keyevent KEYCODE_BACK | Out-Null
 $ui = ""
-for ($attempt = 0; $attempt -lt 5; $attempt++) {
+for ($attempt = 0; $attempt -lt $StartupTimeoutSeconds; $attempt++) {
+    $focused = (& $adb shell dumpsys activity activities) -join "`n"
     & $adb shell uiautomator dump /sdcard/hoddesk-ui.xml | Out-Null
     $ui = (& $adb shell cat /sdcard/hoddesk-ui.xml) -join "`n"
-    if ($ui -match "com.hoddesk.app" -and ($ui -match "Today")) { break }
+    if ($focused -match [regex]::Escape($PackageName) -and $ui -match "com.hoddesk.app" -and ($ui -match "Today")) { break }
     Start-Sleep -Seconds 1
-    & $adb shell monkey -p $PackageName 1 | Out-Null
 }
+if ($ui -notmatch "com.hoddesk.app") { throw "The app did not expose its UI hierarchy within $StartupTimeoutSeconds seconds." }
+if ($focused -notmatch [regex]::Escape($PackageName)) { throw "The app did not become the focused activity." }
 foreach ($label in @("Today", "Review", "Tasks", "Calendar", "Library")) {
     if ($ui -notmatch [regex]::Escape($label)) { throw "Missing primary tab in UI hierarchy after retries: $label" }
 }

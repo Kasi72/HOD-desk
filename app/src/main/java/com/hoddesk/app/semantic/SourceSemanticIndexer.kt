@@ -75,15 +75,19 @@ class SourceSemanticIndexer(
         val validation = EmbeddingIntegrity.validate(vector)
         check(validation.valid) { "Embedding rejected for source ${source.id}: ${validation.reason}" }
         val embedding = SemanticEmbeddingEntity(source.id, MODEL_VERSION, vector.size, vector.toBytes(), directModality, source.sourceUri, sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = 0)
-        val textChunks = chunk(source.body, source.sourceType).mapIndexed { index, item ->
-            val chunkVector = embedder.embed(EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source, item.citation), item.text))
+        val textItems = chunk(source.body, source.sourceType)
+        val textVectors = embedder.embedBatch(textItems.map { item -> EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source, item.citation), item.text) })
+        val textChunks = textItems.mapIndexed { index, item ->
+            val chunkVector = textVectors[index]
             check(EmbeddingIntegrity.validate(chunkVector).valid) { "Chunk embedding rejected for source ${source.id}" }
             SourceChunkEntity(sourceId = source.id, ordinal = index, modality = source.sourceType, text = item.text, citation = "${source.title} · ${item.citation}", page = item.page, paragraphIndex = item.paragraphIndex, messageIndex = item.messageIndex, startMs = item.startMs, endMs = item.endMs, modelVersion = MODEL_VERSION, dimension = chunkVector.size, vector = chunkVector.toBytes(), sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = index)
         }
         // Action candidates get their own vectors.  A query such as “what do
         // I need to submit this week?” should retrieve the extracted action,
         // even when the surrounding document contains many unrelated facts.
-        val actionChunks = dao.actionPoints(source.id).mapIndexed { index, point ->
+        val actionPoints = dao.actionPoints(source.id)
+        val actionVectors = embedder.embedBatch(actionPoints.map { point -> EmbeddingPromptRegistry.action(point.action, point.evidence) })
+        val actionChunks = actionPoints.mapIndexed { index, point ->
             val actionText = listOfNotNull(
                 point.action,
                 point.dateText,
@@ -92,7 +96,7 @@ class SourceSemanticIndexer(
                 point.peopleText,
                 point.evidence,
             ).joinToString(" · ")
-            val actionVector = embedder.embed(EmbeddingPromptRegistry.action(point.action, point.evidence))
+            val actionVector = actionVectors[index]
             check(EmbeddingIntegrity.validate(actionVector).valid) { "Action embedding rejected for source ${source.id}" }
             SourceChunkEntity(sourceId = source.id, ordinal = 10_000 + index, modality = "action", text = actionText, citation = "${source.title} · action ${index + 1}", modelVersion = MODEL_VERSION, dimension = actionVector.size, vector = actionVector.toBytes(), sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = 10_000 + index)
         }

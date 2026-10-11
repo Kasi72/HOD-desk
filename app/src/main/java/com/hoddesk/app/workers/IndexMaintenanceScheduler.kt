@@ -1,18 +1,30 @@
 package com.hoddesk.app.workers
 
-import android.app.job.JobInfo
-import android.app.job.JobScheduler
-import android.content.ComponentName
 import android.content.Context
+import androidx.work.Constraints
+import androidx.work.BackoffPolicy
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 object IndexMaintenanceScheduler {
-    private const val JOB_ID = 24017
+    private const val WORK_NAME = "hoddesk-index-maintenance"
+    private const val STARTUP_WORK_NAME = "hoddesk-startup-integrity"
     fun schedule(context: Context) {
-        val scheduler = context.getSystemService(JobScheduler::class.java) ?: return
-        scheduler.schedule(JobInfo.Builder(JOB_ID, ComponentName(context, IndexMaintenanceJobService::class.java))
-            .setRequiresCharging(true)
-            .setPersisted(true)
-            .setPeriodic(24 * 60 * 60 * 1000L)
-            .build())
+        val constraints = Constraints.Builder().setRequiresCharging(true).setRequiredNetworkType(NetworkType.NOT_REQUIRED).build()
+        val startup = OneTimeWorkRequestBuilder<IndexMaintenanceWorker>()
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
+            .build()
+        WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(STARTUP_WORK_NAME, ExistingWorkPolicy.KEEP, startup)
+        val request = PeriodicWorkRequestBuilder<IndexMaintenanceWorker>(24, TimeUnit.HOURS)
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
+            .build()
+        WorkManager.getInstance(context.applicationContext).enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
     }
 }

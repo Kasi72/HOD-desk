@@ -30,6 +30,11 @@ object EmbeddingGemmaConfigLoader {
 
 interface EmbeddingGemmaService {
     suspend fun embed(text: String): FloatArray
+
+    /** Bounded batches prevent large documents from monopolising the queue or heap. */
+    suspend fun embedBatch(texts: List<String>, batchSize: Int = 8): List<FloatArray> = buildList {
+        texts.chunked(batchSize.coerceIn(1, 32)).forEach { batch -> batch.forEach { add(embed(it)) } }
+    }
 }
 
 /** Uses EmbeddingGemma to rank extracted candidates by official-work relevance. */

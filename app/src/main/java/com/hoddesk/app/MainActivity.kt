@@ -308,6 +308,16 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         embeddingLine = if (searchable.isEmpty()) "Search ready" else "Search ready · semantic search starts when you search"
         indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull()
     }
+    LaunchedEffect(Unit) {
+        // Never load the multimodal runtime while the foreground UI is
+        // starting. Verify the bundle/hash cheaply here; the eight-vector
+        // semantic self-test runs in the charging-constrained worker.
+        if (embeddingRuntime.isInstalled()) {
+            val result = embeddingRuntime.verifyInstalledModel()
+            PerformanceMetrics.record(dao, "startup_model_file_check", if (result.isSuccess) 1 else 0, result.exceptionOrNull()?.javaClass?.simpleName ?: "passed")
+            if (result.isFailure) Log.w("HOD_SEMANTIC", "startup_model_file_check_failed", result.exceptionOrNull())
+        }
+    }
 
     var libraryQuery by rememberSaveable { mutableStateOf("") }
     var libraryMatches by remember { mutableStateOf<List<HybridMatch>>(emptyList()) }

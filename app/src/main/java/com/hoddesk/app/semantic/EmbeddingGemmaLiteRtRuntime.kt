@@ -52,6 +52,13 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
 
     /** The UI and workers can surface which delegate was actually accepted. */
     fun delegateName(): String = activeDelegate
+    fun isInstalled(): Boolean = modelFile.length() >= MIN_MODEL_BYTES
+
+    /** Cheap foreground-safe check; it never initializes the native runtime. */
+    fun verifyInstalledModel(): Result<Unit> = runCatching {
+        require(modelFile.length() >= MIN_MODEL_BYTES) { "EmbeddingGemma model is not installed" }
+        verifyModelIntegrity(modelFile)
+    }
 
     private fun ensureNativeLibraries() {
         nativeLoadFailure?.let { throw IllegalStateException("On-device semantic search is unavailable on this device", it) }
