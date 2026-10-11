@@ -50,8 +50,13 @@ The checklist is updated only after the associated code and tests pass.
 
 ## Stage 6 — Local Gemma reasoning
 
-- [x] Structured JSON output is schema-validated and citation-required.
-- [x] Malformed or uncited output is rejected into manual review.
+- [ ] Full required schema is implemented (`source_quotes`, `source_ids`, `owner`, and `conflicts` are still missing from the runtime model).
+- [x] A local LiteRT-LM Gemma instruction model is available and invoked from Review when installed.
+- [x] Malformed or uncited output is rejected before the reasoning callback.
+- [x] Field-level grounding blanks unsupported date, time, location, and people values.
+- [ ] Only top retrieved chunks and modality evidence are sent to the model; the current Review bundle still includes the primary body and related-source text.
+- [ ] Deterministic date/time/location re-extraction, weekday consistency, and newer-source conflict validation are not yet complete.
+- [ ] Visible conflict state and conflict-aware approval gating are not yet complete.
 - [x] Model/version and reasoning evidence are recorded in the audit log.
 
 ## Stage 7 — Matter graph and duplicate linking
