@@ -51,6 +51,7 @@ The checklist is updated only after the associated code and tests pass.
 
 ## Stage 6 — Local Gemma reasoning
 
+- Implementation is present; final checkmarks await a successful post-change JVM test run.
 - [ ] Structured JSON output is schema-validated and citation-required.
 - [ ] Malformed or uncited output is rejected into manual review.
 - [ ] Model/version and reasoning evidence are recorded in the audit log.
