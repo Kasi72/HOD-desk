@@ -41,14 +41,20 @@ object ActionReasoningPrompt {
 /** Rejects malformed, uncited or overconfident model output before it reaches Room or Calendar. */
 object ActionReasoningValidator {
     fun parse(raw: String, evidence: String): ActionReasoningOutput {
-        val json = JSONObject(raw.trim())
+        val payload = raw.trim()
+        require(payload.startsWith("{") && payload.endsWith("}")) { "Reasoning output must be a JSON object" }
+        val json = JSONObject(payload)
         val action = json.optString("action").trim()
-        require(action.isNotBlank()) { "Reasoning output has no action" }
         val confidence = json.optDouble("confidence", -1.0).toFloat()
-        require(confidence in 0f..1f) { "Reasoning confidence is outside 0..1" }
+        require(confidence.isFinite() && confidence in 0f..1f) { "Reasoning confidence is outside 0..1" }
         val citations = json.optJSONArray("citations").toStrings()
-        require(citations.isNotEmpty()) { "Reasoning output has no citations" }
-        citations.forEach { citation -> require(citation.isNotBlank() && evidence.contains(citation, ignoreCase = true)) { "Citation is not present in source evidence" } }
+        // A zero-confidence empty result is the only valid no-action response.
+        if (action.isBlank()) {
+            require(confidence == 0f && citations.isEmpty()) { "Empty action must have zero confidence and no citations" }
+            return ActionReasoningOutput("", "official_work", null, null, null, emptyList(), 0f, emptyList(), emptyList())
+        }
+        require(citations.isNotEmpty() && citations.size <= 5) { "Reasoning output must contain 1 to 5 citations" }
+        citations.forEach { citation -> require(citation.isNotBlank() && containsCitation(evidence, citation)) { "Citation is not present in source evidence" } }
         val grounded = FieldGrounding.validate(
             evidence = evidence,
             date = json.optNullable("date"),
@@ -72,6 +78,17 @@ object ActionReasoningValidator {
 
     private fun JSONObject.optNullable(key: String): String? = optString(key, "").trim().ifBlank { null }
     private fun JSONArray?.toStrings(): List<String> = if (this == null) emptyList() else (0 until length()).mapNotNull { optString(it).trim().ifBlank { null } }
+
+    private fun containsCitation(evidence: String, citation: String): Boolean {
+        fun normalize(value: String) = value.lowercase()
+            .replace(Regex("\\u00a0|[\\t\\r\\n]+"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        val source = normalize(evidence)
+        val quote = normalize(citation)
+        require(quote.isNotBlank()) { "Citation cannot be blank" }
+        return source.contains(quote)
+    }
 }
 
 class OnDeviceActionReasoner(private val modelFilePath: String?) {
