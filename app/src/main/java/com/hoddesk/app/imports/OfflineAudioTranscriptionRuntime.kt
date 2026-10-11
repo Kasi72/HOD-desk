@@ -117,10 +117,16 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
             Log.i("HOD_AUDIO", "whisper_input_mime=$mime,bytes=${audio.length()},suffix=.wav")
             val model = Whisper.loadModel(context, whisperModelFile.absolutePath)
             try {
+                // The medium checkpoint is intentionally retained for Tamil
+                // accuracy, but four threads leaves the S26 Ultra largely
+                // idle.  Use the device's available cores (bounded to avoid
+                // starving Compose/Room or causing runaway thread creation).
+                val inferenceThreads = Runtime.getRuntime().availableProcessors().coerceIn(4, 8)
+                Log.i("HOD_AUDIO", "whisper_inference_threads=$inferenceThreads")
                 val result = Whisper.transcribe(
                     model,
                     audio.absolutePath,
-                    WhisperConfig(language = "ta", translate = false, threads = 4, maxSegmentLength = 0, printTimestamps = false)
+                    WhisperConfig(language = "ta", translate = false, threads = inferenceThreads, maxSegmentLength = 0, printTimestamps = false)
                 )
                 val text = result.text.trim()
                 Log.i("HOD_AUDIO", "language=ta,transcription_ms=${System.currentTimeMillis() - started},chars=${text.length}")
