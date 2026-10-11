@@ -66,7 +66,7 @@ class SourceSemanticIndexer(
         val textChunks = chunk(source.body).mapIndexed { index, item ->
             val chunkVector = embedder.embed(EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source, item.citation), item.text))
             check(EmbeddingIntegrity.validate(chunkVector).valid) { "Chunk embedding rejected for source ${source.id}" }
-            SourceChunkEntity(sourceId = source.id, ordinal = index, modality = source.sourceType, text = item.text, citation = "${source.title} · ${item.citation}", modelVersion = MODEL_VERSION, dimension = chunkVector.size, vector = chunkVector.toBytes())
+            SourceChunkEntity(sourceId = source.id, ordinal = index, modality = source.sourceType, text = item.text, citation = "${source.title} · ${item.citation}", page = item.page, startMs = item.startMs, endMs = item.endMs, modelVersion = MODEL_VERSION, dimension = chunkVector.size, vector = chunkVector.toBytes())
         }
         // Action candidates get their own vectors.  A query such as “what do
         // I need to submit this week?” should retrieve the extracted action,
@@ -151,22 +151,34 @@ class SourceSemanticIndexer(
         }
     }
 
-    private data class IndexedChunk(val text: String, val citation: String)
+    private data class IndexedChunk(val text: String, val citation: String, val page: Int? = null, val startMs: Long? = null, val endMs: Long? = null)
 
     private fun chunk(text: String, maxChars: Int = 1600): List<IndexedChunk> {
-        val clean = text.replace(Regex("\\s+"), " ").trim()
+        // Keep line boundaries: PDF page markers and audio timestamps are
+        // evidence anchors, so flattening all whitespace would lose them.
+        val clean = text.replace("\r\n", "\n").replace(Regex("[ \\t]+"), " ").trim()
         if (clean.isBlank()) return emptyList()
         val result = mutableListOf<IndexedChunk>()
         var start = 0
         while (start < clean.length) {
             var end = (start + maxChars).coerceAtMost(clean.length)
             if (end < clean.length) {
-                val boundary = clean.lastIndexOf(' ', end)
+                val boundary = maxOf(clean.lastIndexOf('\n', end), clean.lastIndexOf(' ', end))
                 if (boundary > start + maxChars / 2) end = boundary
             }
             val piece = clean.substring(start, end).trim()
             val page = Regex("\\[Page (\\d+)\\]", RegexOption.IGNORE_CASE).find(piece)?.groupValues?.getOrNull(1)
-            result += IndexedChunk(piece, page?.let { "page $it" } ?: "document section ${result.size + 1}")
+                ?.toIntOrNull()
+            val time = Regex("(?:\\[)?(\\d{1,2}):(\\d{2})(?:\\s*[-–]\\s*(\\d{1,2}):(\\d{2}))?(?:\\])?").find(piece)
+            fun millis(groupMinute: Int, groupSecond: Int): Long = (groupMinute * 60L + groupSecond) * 1000L
+            val startMs = time?.let { millis(it.groupValues[1].toInt(), it.groupValues[2].toInt()) }
+            val endMs = time?.groupValues?.getOrNull(3)?.takeIf { it.isNotBlank() }?.let { millis(it.toInt(), time.groupValues[4].toInt()) }
+            val citation = buildList {
+                page?.let { add("page $it") }
+                startMs?.let { add(if (endMs != null) "${it / 1000}s–${endMs / 1000}s" else "${it / 1000}s") }
+                if (isEmpty()) add("document section ${result.size + 1}")
+            }.joinToString(" · ")
+            result += IndexedChunk(piece, citation, page, startMs, endMs)
             start = end
         }
         return result
