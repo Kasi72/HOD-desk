@@ -22,12 +22,17 @@ object MatterTimelineBuilder {
         val relatedEvents = events.filter { it.taskId in taskIds }.sortedBy { it.startsAt }
         val questions = relatedTasks.mapNotNull { it.clarification?.takeIf(String::isNotBlank) } +
             relatedTasks.mapNotNull { it.blocker?.takeIf(String::isNotBlank)?.let { value -> "Blocked: $value" } }
+        val superseded = matter.supersededSourceIds
+        val orderedSources = matter.sources.sortedWith(
+            compareByDescending<SourceEntity> { it.id !in superseded }
+                .thenByDescending { it.capturedAt }
+        )
         return MatterTimeline(
             matterId = matter.id,
-            sources = matter.sources.sortedByDescending { it.capturedAt },
+            sources = orderedSources,
             tasks = relatedTasks,
             events = relatedEvents,
-            latestInstruction = matter.latest,
+            latestInstruction = orderedSources.firstOrNull() ?: matter.latest,
             unresolvedQuestions = questions.distinct(),
             nextAction = relatedTasks.firstOrNull { it.status == "open" || it.status == "needs_clarification" },
         )

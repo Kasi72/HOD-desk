@@ -15,7 +15,7 @@ import com.hoddesk.app.ui.components.RowDivider
 import com.hoddesk.app.ui.theme.Hod
 
 @Composable
-fun MatterPage(timeline: MatterTimeline, onBack: () -> Unit, onReviewChange: () -> Unit, onAcceptChange: (Long) -> Unit, onKeepExisting: (Long) -> Unit) {
+fun MatterPage(timeline: MatterTimeline, onBack: () -> Unit, onReviewChange: () -> Unit, onAcceptChange: (Long) -> Unit, onKeepExisting: (Long) -> Unit, onCreateNew: (Long) -> Unit = {}, onKeepSeparate: (Long) -> Unit = {}) {
     val c = Hod.colors
     SettingsPage("Matter file", "Library", onBack) {
         Text("Linked evidence, commitments and schedule for one matter.", style = Hod.type.subheadline, color = c.secondaryLabel)
@@ -46,11 +46,15 @@ fun MatterPage(timeline: MatterTimeline, onBack: () -> Unit, onReviewChange: () 
         }
         timeline.tasks.firstOrNull { it.clarification != null }?.let { task ->
             GroupedSection(header = "Proposed change") {
+                ListRow("Create new task", value = "Separate", titleColor = c.tint, onClick = { onCreateNew(task.id) })
+                RowDivider(58.dp)
+                ListRow("Update existing", value = "Review evidence", titleColor = c.greenText, onClick = { onAcceptChange(task.id) })
+                RowDivider(58.dp)
+                ListRow("Keep separate", titleColor = c.secondaryLabel, onClick = { onKeepSeparate(task.id) })
+                RowDivider(58.dp)
                 ListRow("Review evidence", value = "Open", titleColor = c.tint, onClick = onReviewChange)
                 RowDivider(58.dp)
-                ListRow("Accept change", titleColor = c.greenText, onClick = { onAcceptChange(task.id) })
-                RowDivider(58.dp)
-                ListRow("Keep existing", titleColor = c.secondaryLabel, onClick = { onKeepExisting(task.id) })
+                ListRow("Keep existing task", titleColor = c.secondaryLabel, onClick = { onKeepExisting(task.id) })
             }
         }
     }

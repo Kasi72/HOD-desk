@@ -19,4 +19,13 @@ class MatterTimelineTest {
         assertEquals("DME review", timeline.latestInstruction?.title)
         assertTrue(timeline.unresolvedQuestions.contains("Confirm venue"))
     }
+    @Test fun strongest_non_superseded_evidence_is_first() {
+        val old = SourceEntity(id = 1, title = "Old order", body = "Meeting at 2 PM", sourceType = "PDF", capturedAt = 1)
+        val current = SourceEntity(id = 2, title = "Revised order", body = "Meeting rescheduled to 3 PM", sourceType = "PDF", capturedAt = 2)
+        val relation = com.hoddesk.app.data.SourceRelationEntity(sourceId = 2, relatedSourceId = 1, relationType = "supersedes", score = .9f, rationale = "updated")
+        val matter = MatterGrouper.group(listOf(old, current), listOf(relation)).single()
+        val timeline = MatterTimelineBuilder.build(matter, emptyList(), emptyList())
+        assertEquals(2L, timeline.sources.first().id)
+        assertEquals(2L, timeline.latestInstruction?.id)
+    }
 }

@@ -24,4 +24,15 @@ class SourceSupersessionTest {
         val b = source(2, "Order copy", "Attend review", 2)
         assertEquals("duplicate", SourceSupersession.decide(a, b, .97f)?.relationType)
     }
+    @Test fun changed_meeting_time_is_a_superseding_instruction() {
+        val old = source(1, "DME review", "DME review at 2 PM in Erode Collectorate", 1)
+        val newer = source(2, "DME review update", "The meeting is rescheduled to a new time: 3 PM in Erode Collectorate", 2)
+        assertEquals("supersedes", SourceSupersession.decide(old, newer, .78f)?.relationType)
+    }
+
+    @Test fun cancellation_is_a_superseding_instruction() {
+        val old = source(1, "Academic council", "Attend the council meeting on 19 September", 1)
+        val newer = source(2, "Academic council notice", "The council meeting is cancelled", 2)
+        assertEquals("supersedes", SourceSupersession.decide(old, newer, .80f)?.relationType)
+    }
 }

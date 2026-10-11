@@ -59,6 +59,11 @@ The checklist is updated only after the associated code and tests pass.
 - [x] Related, duplicate and superseding sources are grouped into one matter.
 - [x] Latest instruction and superseded source IDs are surfaced.
 - [x] Matter timelines connect sources, tasks, events and unresolved questions.
+- [x] Exact source fingerprints prevent repeat imports from creating duplicate source/task work.
+- [x] Multi-signal linking uses semantic similarity plus reference numbers, dates and venue/location cues.
+- [x] Supersession detects explicit revisions, rescheduling, ownership/venue changes and cancellations.
+- [x] Matter review presents Create new, Update existing and Keep separate decisions with audit records.
+- [x] Strongest current evidence is ordered before superseded evidence in the matter timeline.
 - [x] Unit tests pass.
 
 ## Stage 8 — Personalised learning

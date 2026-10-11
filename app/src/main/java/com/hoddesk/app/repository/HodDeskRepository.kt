@@ -14,6 +14,7 @@ import com.hoddesk.app.data.LearningCorrectionEntity
 import com.hoddesk.app.data.CommitmentEntity
 import com.hoddesk.app.triage.TriageScorer
 import com.hoddesk.app.privacy.SensitivityClassifier
+import com.hoddesk.app.semantic.SourceFingerprint
 
 data class ScheduleProposal(val event: EventEntity, val conflicts: List<EventEntity>) {
     val requiresConfirmation: Boolean get() = conflicts.isNotEmpty()
@@ -28,12 +29,20 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     val tasks: Flow<List<TaskEntity>> = dao.observeTasks()
 
     suspend fun ingest(source: SourceEntity): Long {
+        findDuplicateSource(source)?.let { existing ->
+            audit("source", existing.id, "duplicate_import_ignored", SourceFingerprint.of(source))
+            return existing.id
+        }
         val decision = TriageScorer.score(source)
         val sensitivity = SensitivityClassifier.classify(source.title, source.body)
         return dao.insertSource(source.copy(triageBucket = decision.bucket.name, priorityScore = decision.score, priorityReasons = decision.reasons.joinToString(" · "), sensitivity = sensitivity.tier.code))
     }
 
     suspend fun ingestWithActions(source: SourceEntity, actions: List<ActionPointDraft>): Long {
+        findDuplicateSource(source)?.let { existing ->
+            audit("source", existing.id, "duplicate_import_ignored", SourceFingerprint.of(source))
+            return existing.id
+        }
         val decision = TriageScorer.score(source)
         val sensitivity = SensitivityClassifier.classify(source.title, source.body)
         val sourceId = dao.insertSource(source.copy(triageBucket = decision.bucket.name, priorityScore = decision.score, priorityReasons = decision.reasons.joinToString(" · "), sensitivity = sensitivity.tier.code))
@@ -41,6 +50,9 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         if (consolidated.isNotEmpty()) dao.insertActionPoints(consolidated.map { it.toEntity(sourceId) })
         return sourceId
     }
+
+    private suspend fun findDuplicateSource(source: SourceEntity): SourceEntity? =
+        dao.sourcesOnce().firstOrNull { it.id != source.id && SourceFingerprint.of(it) == SourceFingerprint.of(source) }
 
     suspend fun approveSource(sourceId: Long, project: String, dueAt: Long? = null): Long {
         val taskId = dao.approveSourceAtomic(sourceId, project, dueAt)
@@ -224,6 +236,11 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         require(decision == "accepted" || decision == "kept_existing")
         dao.updateTask(task.copy(clarification = null, status = if (task.status == "needs_clarification") "open" else task.status))
         audit("task", taskId, "change_$decision", task.title)
+    }
+
+    suspend fun recordMatterDecision(sourceId: Long, decision: String) {
+        require(decision in setOf("create_new", "update_existing", "keep_separate"))
+        audit("source", sourceId, "matter_$decision")
     }
 
     /**

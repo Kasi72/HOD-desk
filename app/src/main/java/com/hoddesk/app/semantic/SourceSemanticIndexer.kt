@@ -115,9 +115,14 @@ class SourceSemanticIndexer(
             for (rightIndex in leftIndex + 1 until ids.size) {
                 val left = ids[leftIndex]; val right = ids[rightIndex]
                 val score = cosine(vectors.getValue(left), vectors.getValue(right))
-                if (score < 0.82f || byId[left] == null || byId[right] == null) continue
+                if (byId[left] == null || byId[right] == null) continue
                 val leftSource = byId.getValue(left)
                 val rightSource = byId.getValue(right)
+                val signal = sharedMatterSignals(leftSource, rightSource)
+                // Keep semantic linking conservative, while allowing a
+                // matching order/reference number, date, or venue cue to
+                // survive OCR and Tamil/Tanglish wording differences.
+                if (score < 0.82f && signal < 0.15f) continue
                 val older = if (leftSource.capturedAt <= rightSource.capturedAt) leftSource else rightSource
                 val newer = if (older.id == leftSource.id) rightSource else leftSource
                 val decision = SourceSupersession.decide(older, newer, score) ?: continue
@@ -128,6 +133,22 @@ class SourceSemanticIndexer(
         }
         dao.clearSourceRelations()
         if (relations.isNotEmpty()) dao.insertSourceRelations(relations)
+    }
+
+    private fun sharedMatterSignals(a: SourceEntity, b: SourceEntity): Float {
+        val left = matterSignals(a.title + " " + a.body)
+        val right = matterSignals(b.title + " " + b.body)
+        if (left.isEmpty() || right.isEmpty()) return 0f
+        return left.intersect(right).size.toFloat() / minOf(left.size, right.size).toFloat()
+    }
+
+    private fun matterSignals(text: String): Set<String> {
+        val normalized = TamilTextNormalizer.expandTanglish(text).lowercase()
+        val numbers = Regex("\\b\\d{2,}\\b").findAll(normalized).map { "n:${it.value}" }
+        val dates = Regex("\\b\\d{1,2}[/-]\\d{1,2}(?:[/-]\\d{2,4})?\\b|\\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\\w*\\b").findAll(normalized).map { "d:${it.value}" }
+        val cueWords = Regex("(?:at|in|venue|location|collectorate|hospital|office|இல்|இடம்)\\s+([\\p{L}][\\p{L}.-]{2,})", RegexOption.IGNORE_CASE)
+            .findAll(normalized).map { "l:${it.groupValues[1]}" }
+        return (numbers + dates + cueWords).toSet()
     }
 
     suspend fun search(query: String, sources: List<SourceEntity>, limit: Int = 5): List<SourceSemanticHit> {

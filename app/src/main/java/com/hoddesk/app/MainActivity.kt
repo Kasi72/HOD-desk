@@ -725,6 +725,8 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                         onReviewChange = { tab = TAB_REVIEW; pop() },
                         onAcceptChange = { taskId -> scope.launch { repository.resolveChangeProposal(taskId, "accepted"); status = "Change accepted."; pop() } },
                         onKeepExisting = { taskId -> scope.launch { repository.resolveChangeProposal(taskId, "kept_existing"); status = "Existing task kept."; pop() } },
+                        onCreateNew = { taskId -> scope.launch { allTasks.firstOrNull { it.id == taskId }?.sourceId?.let { repository.recordMatterDecision(it, "create_new") }; status = "Create-new proposal recorded for review."; pop() } },
+                        onKeepSeparate = { taskId -> scope.launch { allTasks.firstOrNull { it.id == taskId }?.sourceId?.let { repository.recordMatterDecision(it, "keep_separate") }; status = "Keep-separate decision recorded."; pop() } },
                     )
                     else com.hoddesk.app.ui.components.EmptyState("Matter not available", "The related sources have not been indexed yet.")
                 }
