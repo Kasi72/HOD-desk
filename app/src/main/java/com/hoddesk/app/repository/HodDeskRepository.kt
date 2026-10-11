@@ -11,6 +11,7 @@ import com.hoddesk.app.reasoning.ActionReasoningOutput
 import org.json.JSONArray
 import com.hoddesk.app.data.AuditEntryEntity
 import com.hoddesk.app.data.LearningCorrectionEntity
+import com.hoddesk.app.data.CommitmentEntity
 import com.hoddesk.app.triage.TriageScorer
 import com.hoddesk.app.privacy.SensitivityClassifier
 
@@ -19,6 +20,10 @@ data class ScheduleProposal(val event: EventEntity, val conflicts: List<EventEnt
 }
 
 class HodDeskRepository(private val dao: HodDeskDao) {
+    companion object {
+        const val OWED_BY_ME = "OWED_BY_ME"
+        const val OWED_TO_ME = "OWED_TO_ME"
+    }
     val sources: Flow<List<SourceEntity>> = dao.observeSources()
     val tasks: Flow<List<TaskEntity>> = dao.observeTasks()
 
@@ -42,6 +47,7 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         dao.approvedTask(sourceId, source.title.trim())?.let { return it.id }
         val taskId = dao.insertTask(TaskEntity(sourceId = source.id, title = source.title, project = project, dueAt = dueAt))
         ensureLocalTaskEvent(taskId, source.title, dueAt)
+        syncCommitment(taskId)
         dao.updateSource(source.copy(reviewed = true))
         return taskId
     }
@@ -50,7 +56,9 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     private suspend fun audit(type: String, id: Long, action: String, detail: String? = null) = dao.insertAudit(AuditEntryEntity(entityType = type, entityId = id, action = action, detail = detail))
 
     suspend fun approveAction(sourceId: Long, action: String, project: String, dueAt: Long? = null, assignee: String? = null): Long {
-        return dao.approveActionAtomic(sourceId, action, project, dueAt, assignee)
+        val taskId = dao.approveActionAtomic(sourceId, action, project, dueAt, assignee)
+        syncCommitment(taskId)
+        return taskId
     }
 
     /** Marks a source handled without creating a task ("Not mine" / "Not an action"). Nothing is deleted. */
@@ -64,12 +72,15 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         val task = dao.task(taskId) ?: return
         dao.updateTask(task.copy(dueAt = dueAt))
         if (dueAt == null) dao.deleteEventsForTask(taskId) else ensureLocalTaskEvent(taskId, task.title, dueAt)
+        syncCommitment(taskId)
         audit("task", taskId, if (dueAt == null) "due_cleared" else "rescheduled", dueAt?.let { java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it)) })
     }
 
     suspend fun setAssignee(taskId: Long, assignee: String?) {
         val task = dao.task(taskId) ?: return
-        dao.updateTask(task.copy(assignee = assignee?.takeIf { it.isNotBlank() })); audit("task", taskId, if (assignee.isNullOrBlank()) "taken_back" else "delegated", assignee)
+        dao.updateTask(task.copy(assignee = assignee?.takeIf { it.isNotBlank() }))
+        syncCommitment(taskId)
+        audit("task", taskId, if (assignee.isNullOrBlank()) "taken_back" else "delegated", assignee)
     }
 
     fun observeAllAudit(limit: Int = 500): Flow<List<AuditEntryEntity>> = dao.observeAllAudit(limit)
@@ -148,12 +159,15 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     suspend fun completeTask(taskId: Long) {
         val task = requireNotNull(dao.task(taskId)) { "Task $taskId does not exist" }
         dao.updateTask(task.copy(status = "completed", completedAt = System.currentTimeMillis()))
+        dao.setCommitmentStatus(taskId, "completed")
         audit("task", taskId, "completed")
     }
 
     suspend fun setTaskDone(taskId: Long, done: Boolean) {
         requireNotNull(dao.task(taskId)) { "Task $taskId does not exist" }
-        dao.setTaskStatus(taskId, if (done) "completed" else "open", if (done) System.currentTimeMillis() else null); audit("task", taskId, if (done) "completed" else "reopened")
+        dao.setTaskStatus(taskId, if (done) "completed" else "open", if (done) System.currentTimeMillis() else null)
+        if (done) dao.setCommitmentStatus(taskId, "completed") else syncCommitment(taskId)
+        audit("task", taskId, if (done) "completed" else "reopened")
     }
 
     suspend fun addEvidence(taskId: Long, evidenceUri: String, type: String, note: String? = null): Long = dao.insertEvidence(EvidenceEntity(taskId = taskId, uri = evidenceUri, type = type, note = note))
@@ -202,6 +216,33 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         if (dao.eventsForTask(taskId).any { it.startsAt == dueAt && it.endsAt > dueAt }) return
         dao.deleteEventsForTask(taskId)
         dao.insertEvent(EventEntity(taskId = taskId, title = title, startsAt = dueAt, endsAt = dueAt + 60 * 60 * 1000L, confirmed = true))
+    }
+
+    /** Keeps the commitment ledger in lockstep with the task's current owner and due state. */
+    private suspend fun syncCommitment(taskId: Long) {
+        val task = dao.task(taskId) ?: return
+        val existing = dao.commitmentForTask(taskId)
+        val status = when (task.status) {
+            "completed" -> "completed"
+            "deleted", "archived" -> task.status
+            else -> "open"
+        }
+        dao.insertCommitment(
+            CommitmentEntity(
+                id = existing?.id ?: 0,
+                sourceId = task.sourceId,
+                taskId = task.id,
+                direction = if (task.assignee.isNullOrBlank()) OWED_BY_ME else OWED_TO_ME,
+                owner = if (task.assignee.isNullOrBlank()) "me" else task.assignee,
+                counterparty = if (task.assignee.isNullOrBlank()) null else "me",
+                summary = task.title,
+                dueAt = task.dueAt,
+                status = status,
+                evidence = "Task #" + task.id + " · " + task.project,
+                confidence = 1f,
+                createdAt = existing?.createdAt ?: task.createdAt,
+            )
+        )
     }
 
     suspend fun removePendingAudioPlaceholders(): Int = dao.deletePendingAudioPlaceholderTasks()

@@ -54,6 +54,15 @@ interface HodDeskDao {
     @Insert suspend fun insertLearningCorrection(correction: LearningCorrectionEntity): Long
     @Query("SELECT * FROM learning_corrections WHERE actionPointId = :actionPointId ORDER BY createdAt DESC") suspend fun learningCorrections(actionPointId: Long): List<LearningCorrectionEntity>
     @Query("SELECT COUNT(*) FROM learning_corrections") fun observeLearningCorrectionCount(): Flow<Int>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertCommitment(commitment: CommitmentEntity): Long
+    @Query("SELECT * FROM commitments WHERE taskId = :taskId LIMIT 1") suspend fun commitmentForTask(taskId: Long): CommitmentEntity?
+    @Query("SELECT * FROM commitments WHERE status = 'open' AND direction = 'OWED_BY_ME' ORDER BY dueAt") suspend fun pendingCommitments(): List<CommitmentEntity>
+    @Query("SELECT * FROM commitments WHERE status = 'open' AND direction = 'OWED_TO_ME' ORDER BY dueAt") suspend fun waitingCommitments(): List<CommitmentEntity>
+    @Query("SELECT * FROM commitments WHERE status = 'open' AND dueAt IS NOT NULL AND dueAt < :now ORDER BY dueAt") suspend fun overdueCommitments(now: Long): List<CommitmentEntity>
+    @Query("UPDATE commitments SET status = :status, updatedAt = :now WHERE taskId = :taskId") suspend fun setCommitmentStatus(taskId: Long, status: String, now: Long = System.currentTimeMillis())
+    @Query("DELETE FROM commitments WHERE taskId = :taskId") suspend fun deleteCommitmentForTask(taskId: Long)
+    @Query("DELETE FROM commitments WHERE sourceId = :sourceId") suspend fun deleteCommitmentsForSource(sourceId: Long)
+    @Query("DELETE FROM commitments") suspend fun deleteAllCommitments()
     @Query("SELECT * FROM events WHERE startsAt >= :start AND startsAt < :end ORDER BY startsAt") suspend fun eventsBetween(start: Long, end: Long): List<EventEntity>
     @Query("SELECT * FROM events WHERE confirmed = 0 ORDER BY id") suspend fun pendingCalendarEvents(): List<EventEntity>
     @Query("SELECT * FROM reasoning_runs WHERE sourceId = :sourceId ORDER BY createdAt DESC") fun observeReasoningRuns(sourceId: Long): Flow<List<ReasoningRunEntity>>
@@ -106,6 +115,7 @@ interface HodDeskDao {
         deleteEvidenceForSource(sourceId)
         deleteEventsForSource(sourceId)
         deleteTasksForSource(sourceId)
+        deleteCommitmentsForSource(sourceId)
         deleteSemanticEmbedding(sourceId)
         deleteSourceChunksForSource(sourceId)
         deleteSourceRelationsForSource(sourceId)
@@ -126,7 +136,7 @@ interface HodDeskDao {
     /** User-confirmed "Delete All Data". The audit trail is append-only and is kept. */
     @Transaction
     suspend fun deleteAllWorkData() {
-        deleteAllEvidence(); deleteAllEvents(); deleteAllTasks(); deleteAllEmbeddings(); deleteAllChunks()
+        deleteAllEvidence(); deleteAllEvents(); deleteAllTasks(); deleteAllCommitments(); deleteAllEmbeddings(); deleteAllChunks()
         clearSourceRelations(); deleteAllActionPoints(); deleteAllReasoningRuns(); deleteAllSources()
     }
 
@@ -135,6 +145,7 @@ interface HodDeskDao {
         deleteEvidenceForTask(taskId)
         deleteEventsForTask(taskId)
         deleteTaskRow(taskId)
+        deleteCommitmentForTask(taskId)
     }
 
     /** Removes tasks accidentally created from the audio-failure diagnostic text. */

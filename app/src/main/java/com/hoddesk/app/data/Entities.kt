@@ -150,3 +150,20 @@ data class LearningCorrectionEntity(
     val after: String?,
     val createdAt: Long = System.currentTimeMillis(),
 )
+
+@Entity(tableName = "commitments", indices = [Index("sourceId"), Index("taskId"), Index("direction"), Index("status"), Index("dueAt")])
+data class CommitmentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sourceId: Long? = null,
+    val taskId: Long? = null,
+    val direction: String,
+    val owner: String?,
+    val counterparty: String?,
+    val summary: String,
+    val dueAt: Long? = null,
+    val status: String = "open",
+    val evidence: String,
+    val confidence: Float = 1f,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+)
