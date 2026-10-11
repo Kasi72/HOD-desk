@@ -26,6 +26,15 @@ object FieldGrounding {
         return Result(groundedDate, groundedTime, groundedLocation, groundedPeople, issues, issues.isEmpty())
     }
 
+    /** Prevents a model from attaching a plausible-looking action to an unrelated quote. */
+    fun supportsAction(evidence: String, action: String): Boolean {
+        val expected = tokens(normalize(action)).filter { it.length >= 2 }
+        if (expected.isEmpty()) return false
+        val actual = tokens(normalize(evidence)).toSet()
+        val overlap = expected.count { it in actual }
+        return overlap >= if (expected.size <= 2) expected.size else 2
+    }
+
     private fun containsPhrase(evidence: String, value: String): Boolean {
         val normalizedEvidence = normalize(evidence)
         val normalizedValue = normalize(value)

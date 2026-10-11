@@ -52,8 +52,10 @@ object ActionReasoningValidator {
         }
         require(citations.isNotEmpty() && citations.size <= 5) { "Reasoning output must contain 1 to 5 citations" }
         citations.forEach { citation -> require(citation.isNotBlank() && containsCitation(evidence, citation)) { "Citation is not present in source evidence" } }
+        val citedEvidence = citations.joinToString(" ")
+        require(FieldGrounding.supportsAction(citedEvidence, action)) { "Action is not grounded in its cited evidence" }
         val grounded = FieldGrounding.validate(
-            evidence = evidence,
+            evidence = citedEvidence,
             date = jsonString(payload, "date"),
             time = jsonString(payload, "time"),
             location = jsonString(payload, "location"),

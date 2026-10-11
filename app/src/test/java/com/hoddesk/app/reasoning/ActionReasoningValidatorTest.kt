@@ -29,4 +29,14 @@ class ActionReasoningValidatorTest {
             ActionReasoningValidator.parse("""{"action":"","confidence":0.4,"citations":[]}""", "No action")
         }
     }
+
+    @Test
+    fun rejects_action_not_supported_by_its_citation() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ActionReasoningValidator.parse(
+                """{"action":"Approve budget","category":"official_work","confidence":0.9,"citations":["Attend meeting at 2 PM"],"ambiguities":[],"people":[],"date":null,"time":"2 PM","location":null}""",
+                "Attend meeting at 2 PM"
+            )
+        }
+    }
 }
