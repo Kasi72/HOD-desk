@@ -47,6 +47,7 @@ import com.hoddesk.app.ui.components.RowDivider
 import com.hoddesk.app.ui.components.pressable
 import com.hoddesk.app.ui.theme.Hod
 import com.hoddesk.app.ui.theme.Squircles
+import com.hoddesk.app.workflow.SecretaryIntelligence
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -117,6 +118,11 @@ fun TodayScreen(
             }
         }
         status?.let { item { Banner("Import", it, BannerTone.Info, onDismiss = onDismissStatus) } }
+
+        item {
+            val brief = SecretaryIntelligence.brief(sources, tasks, today)
+            Banner("Secretary brief", brief.headline + " · " + brief.detail, if (brief.urgent > 0 || brief.conflicts > 0) BannerTone.Attention else BannerTone.Info)
+        }
 
         item { SectionTitle("Must Act", if (mustAct.isEmpty()) null else "${mustAct.size} today") }
         if (mustAct.isEmpty()) item {
