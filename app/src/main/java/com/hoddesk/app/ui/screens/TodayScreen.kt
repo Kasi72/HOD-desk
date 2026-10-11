@@ -48,6 +48,7 @@ import com.hoddesk.app.ui.components.pressable
 import com.hoddesk.app.ui.theme.Hod
 import com.hoddesk.app.ui.theme.Squircles
 import com.hoddesk.app.workflow.SecretaryIntelligence
+import com.hoddesk.app.workflow.MeetingPreparation
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -122,6 +123,19 @@ fun TodayScreen(
         item {
             val brief = SecretaryIntelligence.brief(sources, tasks, today)
             Banner("Secretary brief", brief.headline + " · " + brief.detail, if (brief.urgent > 0 || brief.conflicts > 0) BannerTone.Attention else BannerTone.Info)
+        }
+
+        MeetingPreparation.next(todayEvents)?.let { nextEvent ->
+            item {
+                val pack = MeetingPreparation.pack(nextEvent, tasks, sources)
+                Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Meeting preparation", style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.tint)
+                    Text(nextEvent.title, style = Hod.type.headline, color = c.label)
+                    if (pack.agenda.isNotEmpty()) Text("Prepare: ${pack.agenda.joinToString(" · ")}", style = Hod.type.footnote, color = c.secondaryLabel, maxLines = 2)
+                    if (pack.risks.isNotEmpty()) Text(pack.risks.joinToString(" · "), style = Hod.type.footnote, color = c.orangeText, maxLines = 2)
+                    else if (pack.evidence.isNotEmpty()) Text("Evidence ready: ${pack.evidence.joinToString(" · ")}", style = Hod.type.footnote, color = c.secondaryLabel, maxLines = 2)
+                }
+            }
         }
 
         item { SectionTitle("Must Act", if (mustAct.isEmpty()) null else "${mustAct.size} today") }
