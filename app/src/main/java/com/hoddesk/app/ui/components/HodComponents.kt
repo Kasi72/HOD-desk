@@ -98,7 +98,11 @@ fun SectionFooter(text: String) {
 fun GroupedSection(header: String? = null, footer: String? = null, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(modifier.fillMaxWidth()) {
         header?.let { SectionHeader(it) }
-        Column(Modifier.fillMaxWidth().clip(Squircles.card).background(Hod.colors.surface), content = content)
+        Column(
+            Modifier.fillMaxWidth().clip(Squircles.card).background(Hod.colors.surface)
+                .border(0.5.dp, Hod.colors.separator.copy(alpha = 0.45f), Squircles.card),
+            content = content,
+        )
         footer?.let { SectionFooter(it) }
     }
 }
@@ -206,6 +210,7 @@ fun HodButton(
             .heightIn(min = height)
             .clip(shape)
             .background(bg)
+            .border(0.5.dp, if (style == HodButtonStyle.Gray) c.separator.copy(alpha = 0.7f) else Color.Transparent, shape)
             .alpha(if (enabled) 1f else 0.4f)
             .pressable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp),
@@ -220,14 +225,14 @@ fun HodButton(
 /** iOS segmented control with a raised squircle thumb. */
 @Composable
 fun SegmentedControl(options: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().height(34.dp).clip(Squircles.small).background(Hod.colors.segmentTrack).padding(2.dp)) {
+    Row(modifier.fillMaxWidth().height(40.dp).clip(Squircles.small).background(Hod.colors.segmentTrack).padding(3.dp)) {
         options.forEachIndexed { index, label ->
             val selected = index == selectedIndex
             Box(
                 Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .then(if (selected) Modifier.shadow(2.dp, Squircles.small).clip(Squircles.small).background(Hod.colors.surface) else Modifier)
+                    .then(if (selected) Modifier.shadow(2.dp, Squircles.small).clip(Squircles.small).background(Hod.colors.surface).border(0.5.dp, Hod.colors.separator.copy(alpha = 0.35f), Squircles.small) else Modifier)
                     .pressable(role = Role.Tab) { onSelect(index) }
                     .semantics { contentDescription = "$label${if (selected) ", selected" else ""}" },
                 contentAlignment = Alignment.Center,
@@ -273,7 +278,7 @@ fun NavBar(backLabel: String, onBack: () -> Unit, title: String? = null, subtitl
 @Composable
 fun SearchField(value: String, onValueChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier) {
     Row(
-        modifier.fillMaxWidth().height(38.dp).clip(Squircles.small).background(Hod.colors.fill).padding(horizontal = 10.dp),
+        modifier.fillMaxWidth().height(44.dp).clip(Squircles.small).background(Hod.colors.fill).border(0.5.dp, Hod.colors.separator.copy(alpha = 0.35f), Squircles.small).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -357,7 +362,7 @@ fun FloatingTabBar(items: List<TabItem>, selected: Int, onSelect: (Int) -> Unit,
     val c = Hod.colors
     Row(modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
-            Modifier.weight(1f).height(62.dp).shadow(14.dp, Squircles.card, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.12f))
+            Modifier.weight(1f).height(68.dp).shadow(14.dp, Squircles.card, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.12f))
                 .clip(Squircles.card).background(c.surface.copy(alpha = 0.96f)).border(0.5.dp, c.separator.copy(alpha = 0.6f), Squircles.card).padding(5.dp),
         ) {
             items.forEachIndexed { index, item ->
@@ -381,7 +386,7 @@ fun FloatingTabBar(items: List<TabItem>, selected: Int, onSelect: (Int) -> Unit,
             }
         }
         Box(
-            Modifier.size(62.dp).shadow(14.dp, Squircles.button, spotColor = c.tint.copy(alpha = 0.4f)).clip(Squircles.button).background(c.tint)
+            Modifier.size(68.dp).shadow(14.dp, Squircles.button, spotColor = c.tint.copy(alpha = 0.4f)).clip(Squircles.button).background(c.tint)
                 .pressable(onClick = onCapture).semantics { contentDescription = "Capture" },
             contentAlignment = Alignment.Center,
         ) { Icon(captureIcon, null, tint = c.onTint, modifier = Modifier.size(28.dp)) }
