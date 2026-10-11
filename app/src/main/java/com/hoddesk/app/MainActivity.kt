@@ -83,6 +83,7 @@ import com.hoddesk.app.semantic.HybridMatch
 import com.hoddesk.app.semantic.HybridRetriever
 import com.hoddesk.app.semantic.IndexHealth
 import com.hoddesk.app.semantic.IndexHealthChecker
+import com.hoddesk.app.semantic.IndexSnapshotManager
 import com.hoddesk.app.semantic.SourceSemanticIndexer
 import com.hoddesk.app.semantic.MatterGrouper
 import com.hoddesk.app.semantic.MatterTimelineBuilder
@@ -623,6 +624,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                 "ai" -> {
                     LaunchedEffect(Unit) { indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull() }
                     val h = indexHealth
+                    val latestSnapshot = IndexSnapshotManager.snapshots(context).firstOrNull()
                     AiPage(
                         status = AiStatus(
                             healthy = aiHealthy,
@@ -648,6 +650,17 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                         onBack = ::pop,
                         onSelfCheck = { scope.launch { aiBusy = "Checking…"; indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull(); aiBusy = indexHealth?.let { if (it.healthy) "Self-check passed." else "Self-check found ${it.staleSourceIds.size} stale and ${it.invalidSourceIds.size} invalid item(s). Rebuild the index." } ?: "Self-check could not run." } },
                         onRebuild = { scope.launch { aiBusy = "Rebuilding search index…"; runCatching { semanticIndexer.indexAll(searchable) }.onSuccess { embeddingReady = true; aiBusy = "Search index rebuilt." }.onFailure { aiBusy = "Rebuild failed: ${it.message}" }; indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull() } },
+                        snapshotSummary = latestSnapshot?.let { "${it.modelVersion} · ${it.sourceCount} sources" },
+                        onCreateSnapshot = { scope.launch {
+                            val embeddings = dao.allSemanticEmbeddings()
+                            val chunks = dao.allSourceChunks(SourceSemanticIndexer.MODEL_VERSION)
+                            val snapshot = IndexSnapshotManager.create(SourceSemanticIndexer.MODEL_VERSION, EmbeddingPromptRegistry.VERSION, embeddings.map { it.sourceId }, chunks.size)
+                            IndexSnapshotManager.save(context, dao, snapshot)
+                            status = "Search index snapshot saved."; settingsVersion++
+                        } },
+                        onRestoreSnapshot = latestSnapshot?.let { snapshot -> { scope.launch {
+                            if (IndexSnapshotManager.restore(context, dao, snapshot)) { status = "Search index restored from snapshot."; settingsVersion++ } else status = "Snapshot restore rejected; current index is unchanged."
+                        } } },
                         onInstallReasoning = {
                             scope.launch {
                                 reasoningProgress = 0

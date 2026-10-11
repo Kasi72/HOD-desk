@@ -248,7 +248,7 @@ data class AiStatus(
 )
 
 @Composable
-fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebuild: () -> Unit, onInstallReasoning: () -> Unit) {
+fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebuild: () -> Unit, onInstallReasoning: () -> Unit, snapshotSummary: String? = null, onCreateSnapshot: (() -> Unit)? = null, onRestoreSnapshot: (() -> Unit)? = null) {
     val c = Hod.colors
     var showTech by remember { mutableStateOf(false) }
     SettingsPage("On-Device AI", "Settings", onBack) {
@@ -276,6 +276,14 @@ fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebu
             RowDivider()
             ListRow("Rebuild Search Index", titleColor = c.tint, onClick = onRebuild)
             RowDivider()
+            if (onCreateSnapshot != null) {
+                ListRow("Save index snapshot", subtitle = snapshotSummary ?: "No snapshot saved", titleColor = c.tint, onClick = onCreateSnapshot)
+                RowDivider()
+            }
+            if (onRestoreSnapshot != null && snapshotSummary != null) {
+                ListRow("Restore previous snapshot", subtitle = "Rollback vectors atomically", titleColor = c.orangeText, onClick = onRestoreSnapshot)
+                RowDivider()
+            }
             ListRow("Rebuild safety", subtitle = "Self-check exposes stale or invalid vectors before you rely on search.", icon = Icons.Rounded.History, iconColor = c.blue, value = "Inspectable", valueColor = c.greenText)
             RowDivider(58.dp)
             ListRow("Clinical boundary", subtitle = "Clinical items stay outside search, reasoning and calendar output.", icon = Icons.Rounded.Shield, iconColor = c.green, value = "${status.clinicalCount} protected", valueColor = c.greenText)
