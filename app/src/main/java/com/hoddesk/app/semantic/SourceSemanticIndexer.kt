@@ -9,6 +9,7 @@ import com.hoddesk.app.data.SourceEntity
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.sqrt
+import com.hoddesk.app.learning.SecretaryLearning
 
 data class SourceSemanticHit(val source: SourceEntity, val score: Float, val confidence: Float)
 
@@ -121,7 +122,11 @@ class SourceSemanticIndexer(
             SourceSemanticHit(source, score, score.coerceIn(0f, 1f))
         }
         val semantic = best.filter { it.confidence >= minConfidence }
-        return HybridRetriever.rank(query, sources, semantic, limit).map { match ->
+        val profile = SecretaryLearning.profile(dao.allLearningCorrections())
+        return HybridRetriever.rank(query, sources, semantic, limit)
+            .map { SecretaryLearning.rerank(it, profile) }
+            .sortedByDescending { it.score }
+            .take(limit).map { match ->
             SourceSemanticHit(match.source, match.score, match.score.coerceIn(0f, 1f))
         }
     }

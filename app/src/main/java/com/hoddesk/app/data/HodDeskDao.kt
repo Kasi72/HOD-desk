@@ -53,6 +53,7 @@ interface HodDeskDao {
     @Query("SELECT * FROM audit_entries ORDER BY createdAt ASC") suspend fun allAudit(): List<AuditEntryEntity>
     @Insert suspend fun insertLearningCorrection(correction: LearningCorrectionEntity): Long
     @Query("SELECT * FROM learning_corrections WHERE actionPointId = :actionPointId ORDER BY createdAt DESC") suspend fun learningCorrections(actionPointId: Long): List<LearningCorrectionEntity>
+    @Query("SELECT * FROM learning_corrections ORDER BY createdAt DESC") suspend fun allLearningCorrections(): List<LearningCorrectionEntity>
     @Query("SELECT COUNT(*) FROM learning_corrections") fun observeLearningCorrectionCount(): Flow<Int>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertCommitment(commitment: CommitmentEntity): Long
     @Query("SELECT * FROM commitments WHERE taskId = :taskId LIMIT 1") suspend fun commitmentForTask(taskId: Long): CommitmentEntity?
