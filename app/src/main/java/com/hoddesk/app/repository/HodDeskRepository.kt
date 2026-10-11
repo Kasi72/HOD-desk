@@ -78,26 +78,27 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     suspend fun setActionPointStatus(sourceId: Long, action: String, status: String) { dao.setActionPointStatus(sourceId, action, status); audit("source", sourceId, "action_status_$status", action) }
     suspend fun updateActionPoint(point: ActionPointEntity) {
         val previous = dao.actionPoint(point.id)
-        dao.updateActionPoint(point.copy(
+        val normalized = point.copy(
             action = point.action.trim(),
             dateText = point.dateText?.trim()?.takeIf { it.isNotBlank() },
             timeText = point.timeText?.trim()?.takeIf { it.isNotBlank() },
             locationText = point.locationText?.trim()?.takeIf { it.isNotBlank() },
             peopleText = point.peopleText?.trim()?.takeIf { it.isNotBlank() },
-        ))
+        )
+        dao.updateActionPoint(normalized)
         if (previous != null) {
             val fields = listOf(
-                "action" to (previous.action to point.action),
-                "date" to (previous.dateText to point.dateText),
-                "time" to (previous.timeText to point.timeText),
-                "location" to (previous.locationText to point.locationText),
-                "people" to (previous.peopleText to point.peopleText),
+                "action" to (previous.action to normalized.action),
+                "date" to (previous.dateText to normalized.dateText),
+                "time" to (previous.timeText to normalized.timeText),
+                "location" to (previous.locationText to normalized.locationText),
+                "people" to (previous.peopleText to normalized.peopleText),
             )
-            fields.filter { (value) -> value.first != value.second }.forEach { (field, value) ->
+            fields.filter { it.second.first != it.second.second }.forEach { (field, value) ->
                 dao.insertLearningCorrection(LearningCorrectionEntity(actionPointId = point.id, field = field, before = value.first, after = value.second))
             }
         }
-        audit("action_point", point.id, "edited", point.action.trim())
+        audit("action_point", point.id, "edited", normalized.action)
     }
 
     suspend fun proposeSchedule(title: String, startsAt: Long, endsAt: Long, taskId: Long? = null): ScheduleProposal {

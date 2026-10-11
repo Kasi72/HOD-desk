@@ -172,6 +172,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val allSources by viewModel.sources.collectAsState()
     val allTasks by viewModel.tasks.collectAsState()
     val auditLog by viewModel.auditLog.collectAsState()
+    val learningCorrectionCount by remember { dao.observeLearningCorrectionCount() }.collectAsState(0)
     LaunchedEffect(Unit) {
         // Enforce the configured retention policy after every process start.
         // Sources backing approved tasks are deliberately retained by the DAO.
@@ -624,6 +625,8 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                                 "App" to "${BuildConfig.VERSION_NAME}${if (BuildConfig.DEBUG) " (debug)" else ""}",
                             ),
                             busy = aiBusy,
+                            correctionCount = learningCorrectionCount,
+                            clinicalCount = allSources.count { it.isClinical() },
                         ),
                         onBack = ::pop,
                         onSelfCheck = { scope.launch { aiBusy = "Checking…"; indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull(); aiBusy = indexHealth?.let { if (it.healthy) "Self-check passed." else "Self-check found ${it.staleSourceIds.size} stale and ${it.invalidSourceIds.size} invalid item(s). Rebuild the index." } ?: "Self-check could not run." } },

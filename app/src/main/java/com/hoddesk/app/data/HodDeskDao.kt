@@ -53,6 +53,7 @@ interface HodDeskDao {
     @Query("SELECT * FROM audit_entries ORDER BY createdAt ASC") suspend fun allAudit(): List<AuditEntryEntity>
     @Insert suspend fun insertLearningCorrection(correction: LearningCorrectionEntity): Long
     @Query("SELECT * FROM learning_corrections WHERE actionPointId = :actionPointId ORDER BY createdAt DESC") suspend fun learningCorrections(actionPointId: Long): List<LearningCorrectionEntity>
+    @Query("SELECT COUNT(*) FROM learning_corrections") fun observeLearningCorrectionCount(): Flow<Int>
     @Query("SELECT * FROM events WHERE startsAt >= :start AND startsAt < :end ORDER BY startsAt") suspend fun eventsBetween(start: Long, end: Long): List<EventEntity>
     @Query("SELECT * FROM events WHERE confirmed = 0 ORDER BY id") suspend fun pendingCalendarEvents(): List<EventEntity>
     @Query("SELECT * FROM reasoning_runs WHERE sourceId = :sourceId ORDER BY createdAt DESC") fun observeReasoningRuns(sourceId: Long): Flow<List<ReasoningRunEntity>>

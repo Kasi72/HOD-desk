@@ -204,6 +204,13 @@ fun PrivacyPage(store: PrivacyStore, onBack: () -> Unit, onOpenActivity: () -> U
             RowDivider()
             ListRow("Delete All Data…", titleColor = c.redText, onClick = { confirmDelete = true })
         }
+        GroupedSection(header = "Data boundary", footer = "The app keeps source evidence, embeddings, corrections and audit history on this phone. AI suggestions always require your approval before a task or calendar write.") {
+            ListRow("Search & reasoning", value = "On-device only", icon = Icons.Rounded.Lock, iconColor = c.green, valueColor = c.greenText)
+            RowDivider(58.dp)
+            ListRow("Clinical material", value = "Quarantined", icon = Icons.Rounded.Shield, iconColor = c.green, valueColor = c.greenText)
+            RowDivider(58.dp)
+            ListRow("Recovery", subtitle = "Rebuilds are validated before activation; failed checks keep the prior index.", value = "Protected", icon = Icons.Rounded.History, iconColor = c.blue, valueColor = c.greenText)
+        }
     }
     if (customRetention) TextPromptDialog("Keep Items For", "Days (1–3650)", retention.toString(), "Save", onDismiss = { customRetention = false }, numeric = true) {
         it.toIntOrNull()?.let { d -> store.retentionDays = d; retention = store.retentionDays }
@@ -227,6 +234,8 @@ data class AiStatus(
     val reasoningProgress: Int?,
     val technical: List<Pair<String, String>>,
     val busy: String?,
+    val correctionCount: Int = 0,
+    val clinicalCount: Int = 0,
 )
 
 @Composable
@@ -257,6 +266,12 @@ fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebu
             ListRow("Run Self-Check Now", titleColor = c.tint, onClick = onSelfCheck)
             RowDivider()
             ListRow("Rebuild Search Index", titleColor = c.tint, onClick = onRebuild)
+            RowDivider()
+            ListRow("Rollback protection", subtitle = "A rebuild is checked before it becomes active. If validation fails, the previous index remains in use.", icon = Icons.Rounded.History, iconColor = c.blue, value = "Protected", valueColor = c.greenText)
+            RowDivider(58.dp)
+            ListRow("Clinical boundary", subtitle = "Clinical items stay outside search, reasoning and calendar output.", icon = Icons.Rounded.Shield, iconColor = c.green, value = "${status.clinicalCount} protected", valueColor = c.greenText)
+            RowDivider(58.dp)
+            ListRow("Corrections learned", subtitle = "Your approved edits improve future extraction and ranking on this phone.", icon = Icons.Rounded.Check, iconColor = c.indigo, value = status.correctionCount.toString(), valueColor = c.secondaryLabel)
             RowDivider()
             ListRow("Technical Details", value = if (showTech) "Hide" else null, chevron = !showTech, onClick = { showTech = !showTech })
             if (showTech) status.technical.forEach { (k, v) ->
