@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
@@ -87,7 +88,7 @@ fun CaptureSheet(
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().pressable(onClick = onDismiss), contentAlignment = Alignment.BottomCenter) {
             Column(
-                Modifier.fillMaxWidth().clip(Squircles.sheetTop).background(c.groupedBackground).pressable(onClick = {})
+                Modifier.fillMaxWidth().fillMaxHeight(0.9f).clip(Squircles.sheetTop).background(c.groupedBackground).pressable(onClick = {})
                     .navigationBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {

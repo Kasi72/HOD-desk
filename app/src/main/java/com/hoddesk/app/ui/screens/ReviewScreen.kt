@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -340,7 +341,11 @@ fun SheetDialog(onDismiss: () -> Unit, content: @Composable () -> Unit) {
             // action sheets extend past the display, clipping their actions.
             Box(
                 Modifier.fillMaxWidth()
-                    .heightIn(max = (configuration.screenHeightDp * 0.88f).dp)
+                    // Force a bounded viewport. heightIn alone lets an
+                    // intrinsic child measure past the dialog window on
+                    // gesture-navigation devices.
+                    .fillMaxHeight(0.9f)
+                    .heightIn(max = (configuration.screenHeightDp * 0.9f).dp)
                     .navigationBarsPadding()
                     .imePadding()
                     .pressable(onClick = {}),
