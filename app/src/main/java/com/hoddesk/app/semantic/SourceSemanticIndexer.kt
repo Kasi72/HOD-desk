@@ -18,7 +18,7 @@ class SourceSemanticIndexer(
     private val embedder: EmbeddingGemmaService,
     private val minConfidence: Float = .62f
 ) {
-    companion object { const val MODEL_VERSION = "embeddinggemma-2-740m-litertlm-v4-prompts-integrity" }
+    companion object { const val MODEL_VERSION = "embeddinggemma-2-740m-litertlm-v5-actions-tamil" }
 
     suspend fun index(source: SourceEntity) {
         if (source.id <= 0L || source.body.isBlank()) return
@@ -50,6 +50,22 @@ class SourceSemanticIndexer(
             check(EmbeddingIntegrity.validate(chunkVector).valid) { "Chunk embedding rejected for source ${source.id}" }
             SourceChunkEntity(sourceId = source.id, ordinal = index, modality = source.sourceType, text = item.text, citation = "${source.title} · ${item.citation}", modelVersion = MODEL_VERSION, dimension = chunkVector.size, vector = chunkVector.toBytes())
         }
+        // Action candidates get their own vectors.  A query such as “what do
+        // I need to submit this week?” should retrieve the extracted action,
+        // even when the surrounding document contains many unrelated facts.
+        val actionChunks = dao.actionPoints(source.id).mapIndexed { index, point ->
+            val actionText = listOfNotNull(
+                point.action,
+                point.dateText,
+                point.timeText,
+                point.locationText,
+                point.peopleText,
+                point.evidence,
+            ).joinToString(" · ")
+            val actionVector = embedder.embed(EmbeddingPromptRegistry.action(point.action, point.evidence))
+            check(EmbeddingIntegrity.validate(actionVector).valid) { "Action embedding rejected for source ${source.id}" }
+            SourceChunkEntity(sourceId = source.id, ordinal = 10_000 + index, modality = "action", text = actionText, citation = "${source.title} · action ${index + 1}", modelVersion = MODEL_VERSION, dimension = actionVector.size, vector = actionVector.toBytes())
+        }
         // Keep the original modality searchable in the same shared vector space.
         // This enables queries such as “find the screenshot about the DME meeting”.
         val modalityChunk = if (directModality == "image" || directModality == "audio") {
@@ -58,6 +74,7 @@ class SourceSemanticIndexer(
         val chunks = buildList {
             modalityChunk?.let(::add)
             addAll(textChunks)
+            addAll(actionChunks)
         }
         if (chunks.isNotEmpty()) dao.insertSourceChunks(chunks)
     }

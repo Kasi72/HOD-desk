@@ -42,6 +42,7 @@ interface HodDeskDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertActionPoints(points: List<ActionPointEntity>)
     @Update suspend fun updateActionPoint(point: ActionPointEntity)
     @Query("SELECT * FROM action_points WHERE sourceId = :sourceId ORDER BY confidence DESC") fun observeActionPoints(sourceId: Long): Flow<List<ActionPointEntity>>
+    @Query("SELECT * FROM action_points WHERE sourceId = :sourceId ORDER BY confidence DESC") suspend fun actionPoints(sourceId: Long): List<ActionPointEntity>
     @Query("UPDATE action_points SET status = :status WHERE sourceId = :sourceId AND action = :action") suspend fun setActionPointStatus(sourceId: Long, action: String, status: String)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertReasoningRun(run: ReasoningRunEntity): Long
     @Insert suspend fun insertAudit(entry: AuditEntryEntity): Long

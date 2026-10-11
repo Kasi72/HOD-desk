@@ -24,8 +24,8 @@ object HybridRetriever {
     }
 
     private fun lexicalScore(query: String, source: SourceEntity): Float {
-        val text = "${source.title} ${source.body}".lowercase()
-        val q = query.lowercase().trim()
+        val text = TamilTextNormalizer.expandTanglish("${source.title} ${source.body}")
+        val q = TamilTextNormalizer.expandTanglish(query)
         if (q.isBlank()) return 0f
         var score = 0f
         if (text.contains(q)) score += .65f
@@ -37,7 +37,8 @@ object HybridRetriever {
     }
 
     private fun exactTokens(query: String, text: String): List<String> = qTokens(query).filter { token ->
-        token.length >= 2 && (text.contains(token) || text.contains(token.removeSuffix("த்தில்").removeSuffix("களில்")))
+        token.length >= 2 && (text.contains(token) || text.contains(TamilTextNormalizer.tamilStem(token)) ||
+            text.split(Regex("[^\\p{L}\\p{N}]+" )).any { TamilTextNormalizer.tamilStem(it) == TamilTextNormalizer.tamilStem(token) })
     }
 
     private fun qTokens(value: String): List<String> = Regex("[\\p{L}\\p{N}]+").findAll(value.lowercase()).map { it.value }.toList()

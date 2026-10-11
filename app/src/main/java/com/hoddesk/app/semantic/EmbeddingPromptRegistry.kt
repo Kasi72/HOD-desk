@@ -6,6 +6,7 @@ import com.hoddesk.app.data.SourceEntity
 object EmbeddingPromptRegistry {
     const val VERSION = 3
     fun document(header: String, body: String) = "title: ${header.take(240)} | text: ${body.take(12000)}"
+    fun action(action: String, evidence: String) = "task: official action retrieval | action: ${action.take(120)} | evidence: ${evidence.take(2400)}"
     fun search(query: String) = "task: search result | query: $query"
     fun question(query: String) = "task: question answering | query: $query"
     fun fact(query: String) = "task: fact checking | query: $query"
