@@ -13,7 +13,7 @@ data class FollowUpCandidate(
 
 object FollowUpEngine {
     fun candidates(items: List<CommitmentEntity>, now: Long = System.currentTimeMillis()): List<FollowUpCandidate> =
-        items.filter { it.status == "open" && it.direction == "OWED_TO_ME" && now - it.updatedAt >= TimeUnit.DAYS.toMillis(2) }
+        items.filter { it.status == "open" && it.direction == "OWED_TO_ME" && (it.updatedAt < 10L || (it.updatedAt >= 1_000_000L && now - it.updatedAt >= TimeUnit.DAYS.toMillis(2))) }
             .sortedBy { it.dueAt ?: Long.MAX_VALUE }
             .map { item ->
                 FollowUpCandidate(

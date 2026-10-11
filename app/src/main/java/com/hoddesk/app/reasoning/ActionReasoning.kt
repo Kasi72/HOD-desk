@@ -1,7 +1,5 @@
 package com.hoddesk.app.reasoning
 
-import org.json.JSONArray
-import org.json.JSONObject
 import android.util.Log
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
@@ -43,11 +41,10 @@ object ActionReasoningValidator {
     fun parse(raw: String, evidence: String): ActionReasoningOutput {
         val payload = raw.trim()
         require(payload.startsWith("{") && payload.endsWith("}")) { "Reasoning output must be a JSON object" }
-        val json = JSONObject(payload)
-        val action = json.optString("action").trim()
-        val confidence = json.optDouble("confidence", -1.0).toFloat()
+        val action = jsonString(payload, "action").orEmpty().trim()
+        val confidence = jsonNumber(payload, "confidence")?.toFloat() ?: -1f
         require(confidence.isFinite() && confidence in 0f..1f) { "Reasoning confidence is outside 0..1" }
-        val citations = json.optJSONArray("citations").toStrings()
+        val citations = jsonArray(payload, "citations")
         // A zero-confidence empty result is the only valid no-action response.
         if (action.isBlank()) {
             require(confidence == 0f && citations.isEmpty()) { "Empty action must have zero confidence and no citations" }
@@ -57,15 +54,15 @@ object ActionReasoningValidator {
         citations.forEach { citation -> require(citation.isNotBlank() && containsCitation(evidence, citation)) { "Citation is not present in source evidence" } }
         val grounded = FieldGrounding.validate(
             evidence = evidence,
-            date = json.optNullable("date"),
-            time = json.optNullable("time"),
-            location = json.optNullable("location"),
-            people = json.optJSONArray("people").toStrings(),
-            ambiguities = json.optJSONArray("ambiguities").toStrings()
+            date = jsonString(payload, "date"),
+            time = jsonString(payload, "time"),
+            location = jsonString(payload, "location"),
+            people = jsonArray(payload, "people"),
+            ambiguities = jsonArray(payload, "ambiguities")
         )
         return ActionReasoningOutput(
             action = action,
-            category = json.optString("category", "official_work"),
+            category = jsonString(payload, "category")?.ifBlank { "official_work" } ?: "official_work",
             date = grounded.date,
             time = grounded.time,
             location = grounded.location,
@@ -76,8 +73,9 @@ object ActionReasoningValidator {
         )
     }
 
-    private fun JSONObject.optNullable(key: String): String? = optString(key, "").trim().ifBlank { null }
-    private fun JSONArray?.toStrings(): List<String> = if (this == null) emptyList() else (0 until length()).mapNotNull { optString(it).trim().ifBlank { null } }
+    private fun jsonString(json: String, key: String): String? = Regex("\\\"${Regex.escape(key)}\\\"\\s*:\\s*(?:\\\"((?:\\\\.|[^\\\"])*)\\\"|null)").find(json)?.groupValues?.getOrNull(1)?.replace("\\\\\\\"", "\\\"")?.trim()?.ifBlank { null }
+    private fun jsonNumber(json: String, key: String): Double? = Regex("\\\"${Regex.escape(key)}\\\"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)").find(json)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+    private fun jsonArray(json: String, key: String): List<String> = Regex("\\\"${Regex.escape(key)}\\\"\\s*:\\s*\\[([^]]*)]").find(json)?.groupValues?.getOrNull(1)?.let { body -> Regex("\\\"((?:\\\\.|[^\\\"])*)\\\"").findAll(body).map { it.groupValues[1].replace("\\\\\\\"", "\\\"").trim() }.filter { it.isNotBlank() }.toList() } ?: emptyList()
 
     private fun containsCitation(evidence: String, citation: String): Boolean {
         fun normalize(value: String) = value.lowercase()

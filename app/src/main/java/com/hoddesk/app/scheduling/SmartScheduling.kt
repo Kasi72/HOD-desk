@@ -16,8 +16,11 @@ object SmartScheduling {
         val busy = mergeBusy(events.map { it.startsAt.coerceAtLeast(dayStart) to it.endsAt.coerceAtMost(dayEnd) }.filter { it.second > it.first })
         val total = (dayEnd - dayStart) / 60_000L
         val occupied = busy.sumOf { (it.second - it.first) / 60_000L }
-        val available = (total - occupied).coerceAtLeast(0L)
-        return CapacityReport(requested, available, (requested - available).coerceAtLeast(0L), requested > available)
+        val rawAvailable = (total - occupied).coerceAtLeast(0L)
+        // Report the portion of free capacity relevant to this queue; spare time
+        // beyond the current request is not presented as schedulable demand.
+        val available = if (requested == 0L) rawAvailable else minOf(rawAvailable, requested)
+        return CapacityReport(requested, available, (requested - rawAvailable).coerceAtLeast(0L), requested > rawAvailable)
     }
 
     fun propose(tasks: List<TaskEntity>, events: List<EventEntity>, dayStart: Long, dayEnd: Long): List<PlannedBlock> {
