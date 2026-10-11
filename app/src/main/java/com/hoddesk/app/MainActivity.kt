@@ -176,6 +176,9 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         // Enforce the configured retention policy after every process start.
         // Sources backing approved tasks are deliberately retained by the DAO.
         repository.purgeExpiredSources(privacyStore.retentionCutoff())
+        // Older builds could turn the fallback diagnostic into a real task.
+        // Remove only those synthetic, still-open tasks during migration.
+        repository.removePendingAudioPlaceholders()
     }
 
     // --- Undo-able deletes: hidden immediately, committed after the Undo window. ---
@@ -265,10 +268,17 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
             return
         }
         val redactedInput = privacyStore.redact(item.body)
-        val body = if (redactedInput.contains("--- HOD Desk review cues")) redactedInput else ActionPointExtractor().annotate(redactedInput)
-        val needsReview = body.contains("pending OCR", ignoreCase = true) || body.contains("no readable text", ignoreCase = true) || body.contains("No definite action", ignoreCase = true)
+        val pendingAudio = item.type.equals("Audio pending transcription", ignoreCase = true) || redactedInput.startsWith("Audio is queued", ignoreCase = true)
+        val body = when {
+            pendingAudio -> redactedInput
+            redactedInput.contains("--- HOD Desk review cues") -> redactedInput
+            else -> ActionPointExtractor().annotate(redactedInput)
+        }
+        val needsReview = pendingAudio || body.contains("pending OCR", ignoreCase = true) || body.contains("no readable text", ignoreCase = true) || body.contains("No definite action", ignoreCase = true)
         val source = SourceEntity(title = item.title, body = body, sourceType = item.type, sourceUri = uri?.toString(), processingStatus = if (needsReview) "needs_review" else "ready")
-        viewModel.ingestWithActions(source, ActionPointExtractor().extract(redactedInput))
+        // A failure message is evidence of a processing error, never an action.
+        val actions = if (pendingAudio) emptyList() else ActionPointExtractor().extract(redactedInput)
+        viewModel.ingestWithActions(source, actions)
     }
     fun saveImportedBatch(items: List<ImportedSource>, uri: Uri) = items.forEach { saveImported(it, uri) }
     fun transcribe(uri: Uri, title: String, type: String) {

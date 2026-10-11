@@ -127,4 +127,8 @@ interface HodDeskDao {
         deleteEventsForTask(taskId)
         deleteTaskRow(taskId)
     }
+
+    /** Removes tasks accidentally created from the audio-failure diagnostic text. */
+    @Query("DELETE FROM tasks WHERE status = 'open' AND title LIKE 'Audio is queued for the approved offline transcription runtime%'")
+    suspend fun deletePendingAudioPlaceholderTasks(): Int
 }

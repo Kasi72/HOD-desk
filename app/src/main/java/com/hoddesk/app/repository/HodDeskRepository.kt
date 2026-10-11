@@ -162,6 +162,8 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         if (count > 0) audit("app", 0, "retention_purge", "sources=$count")
         return count
     }
+
+    suspend fun removePendingAudioPlaceholders(): Int = dao.deletePendingAudioPlaceholderTasks()
 }
 
 data class ActionPointDraft(
