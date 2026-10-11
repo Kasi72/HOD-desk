@@ -32,13 +32,14 @@ The checklist is updated only after the associated code and tests pass.
 ## Stage 3 — Document chunk intelligence
 
 - [ ] Page/paragraph/timestamp chunk metadata is complete for every importer.
+- [x] Page markers and audio timestamp ranges are retained when present in imported text.
 - [ ] Long WhatsApp conversations retain reply context windows.
 - [ ] Exact evidence passages are displayed for every retrieved action.
 
 ## Stage 4 — Hybrid retrieval
 
-- [ ] Whole-word, substring, Tamil-normalized and Tanglish keyword retrieval.
-- [ ] Semantic and lexical reasons are shown in result details.
+- [x] Whole-word, substring, Tamil-normalized and Tanglish keyword retrieval.
+- [x] Semantic and lexical reasons are shown in result details.
 - [ ] Duplicate and supersession ranking is evaluated against the fixed corpus.
 
 ## Stage 5 — Grounded action extraction
