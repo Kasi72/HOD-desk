@@ -21,7 +21,7 @@ This is the single progress ledger. A box is checked only after the implementati
 
 - [x] Matter change proposal actions: accept, keep existing and review evidence.
 - [ ] Voice Secretary cited answers and confirmation cards for mutations.
-- [ ] Replanning accept-one, accept-all and reject controls.
+- [x] Replanning accept-one, accept-all and reject controls.
 - [ ] Configurable morning/evening brief scheduling and quiet hours.
 - [ ] Evaluation baseline/current persistence and report display.
 - [ ] Snapshot activation/version switching UI and rollback audit states.

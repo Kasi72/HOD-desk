@@ -72,6 +72,7 @@ fun CalendarScreen(
     onOpenEvent: (EventEntity) -> Unit,
     onConfirmProposals: () -> Unit,
     onDiscardProposals: () -> Unit,
+    onConfirmProposal: (ProposedBlock) -> Unit = {},
 ) {
     val c = Hod.colors
     val today = LocalDate.now()
@@ -112,7 +113,7 @@ fun CalendarScreen(
         LaunchedEffect(selectedDay) { scroll.scrollTo(0) }
         Box(Modifier.weight(1f)) {
             Timeline(selectedDay, events, fixedBlocks, proposals, onOpenEvent, Modifier.verticalScroll(scroll))
-            if (proposals.isNotEmpty()) ProposalPanel(proposals, onConfirmProposals, onDiscardProposals, Modifier.align(Alignment.BottomCenter))
+            if (proposals.isNotEmpty()) ProposalPanel(proposals, onConfirmProposals, onDiscardProposals, onConfirmProposal, Modifier.align(Alignment.BottomCenter))
         }
     }
 }
@@ -189,7 +190,7 @@ private fun Timeline(day: LocalDate, events: List<EventEntity>, fixedBlocks: Lis
 }
 
 @Composable
-private fun ProposalPanel(proposals: List<ProposedBlock>, onConfirm: () -> Unit, onDiscard: () -> Unit, modifier: Modifier) {
+private fun ProposalPanel(proposals: List<ProposedBlock>, onConfirm: () -> Unit, onDiscard: () -> Unit, onConfirmOne: (ProposedBlock) -> Unit, modifier: Modifier) {
     val c = Hod.colors
     val clashes = proposals.filter { it.clashesWith.isNotEmpty() }
     Column(
@@ -206,6 +207,9 @@ private fun ProposalPanel(proposals: List<ProposedBlock>, onConfirm: () -> Unit,
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             HodButton("Discard", onDiscard, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.weight(1f))
             HodButton("Add ${proposals.size - clashes.size}", onConfirm, enabled = proposals.size > clashes.size, height = 46.dp, modifier = Modifier.weight(1.4f))
+        }
+        proposals.filter { it.clashesWith.isEmpty() }.forEach { proposal ->
+            HodButton("Add only: ${proposal.title}", { onConfirmOne(proposal) }, style = HodButtonStyle.Gray, height = 40.dp, modifier = Modifier.fillMaxWidth())
         }
     }
 }

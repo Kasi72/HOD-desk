@@ -461,9 +461,10 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         tab = TAB_CALENDAR
         if (proposals.isEmpty()) status = "Nothing to plan: no open tasks fit the free time today (fixed clinical time and ${settings.slackPercent}% free time are protected)."
     }
-    fun writeProposals() {
+    fun writeProposals(selected: List<ProposedBlock>? = null) {
         val calendarId = settings.calendarId
-        val toWrite = proposals.filter { it.clashesWith.isEmpty() }
+        val chosen = selected ?: proposals
+        val toWrite = chosen.filter { it.clashesWith.isEmpty() }
         if (calendarId == null || !hasCalendarPermission()) {
             status = "Choose which calendar to write to first."
             settingsStack.clear(); settingsStack += "home"; settingsStack += "calendar"
@@ -492,7 +493,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     }
                 }
             }
-            proposals = emptyList()
+            proposals = proposals.filterNot { it in chosen }
             status = buildString {
                 append("$written block(s) added to ${settings.calendarName ?: "your calendar"}.")
                 if (denied.isNotEmpty()) append(" Skipped: ").append(denied.joinToString("; "))
@@ -566,7 +567,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     selectedDay = selectedDay, events = calendarEvents.filter { it.id !in hiddenEvents }, fixedBlocks = selectedDayBlocks,
                     proposals = proposals, onSelectDay = { selectedDayEpoch = it.toEpochDay(); proposals = emptyList() },
                     onPlanDay = ::planDay, onProtectTime = { protectTimePicker = true }, onOpenEvent = { openEvent = it },
-                    onConfirmProposals = ::writeProposals, onDiscardProposals = { proposals = emptyList() },
+                    onConfirmProposals = { writeProposals() }, onConfirmProposal = { writeProposals(listOf(it)) }, onDiscardProposals = { proposals = emptyList() },
                 )
                 else -> LibraryScreen(
                     sources = sources, query = libraryQuery, matches = libraryMatches.filter { it.source.id !in hiddenSources },
