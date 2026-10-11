@@ -196,6 +196,7 @@ class HodDeskRepository(private val dao: HodDeskDao) {
             citationsJson = JSONArray(output.citations).toString(),
             confidence = output.confidence
         ))
+        audit("source", sourceId, "gemma_reasoning_recorded", "model=$modelVersion;citations=${output.citations.size};confidence=${output.confidence}")
     }
     suspend fun deleteSource(id: Long) { audit("source", id, "deleted"); dao.deleteSourceCascade(id) }
     suspend fun deleteTask(id: Long) { audit("task", id, "deleted"); dao.deleteTaskCascade(id) }
