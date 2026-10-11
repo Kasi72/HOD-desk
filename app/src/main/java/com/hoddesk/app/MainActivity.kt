@@ -94,6 +94,7 @@ import com.hoddesk.app.ui.components.HodButtonStyle
 import com.hoddesk.app.ui.components.SheetAction
 import com.hoddesk.app.ui.components.TabItem
 import com.hoddesk.app.ui.components.pressable
+import com.hoddesk.app.ui.components.SegmentedControl
 import com.hoddesk.app.ui.screens.ActivityPage
 import com.hoddesk.app.ui.screens.AiPage
 import com.hoddesk.app.ui.screens.AiStatus
@@ -199,6 +200,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     var tasksSegment by rememberSaveable { mutableIntStateOf(0) }
     val settingsStack = remember { mutableStateListOf<String>() }
     var openSource by remember { mutableStateOf<SourceEntity?>(null) }
+    var sourceSheetTab by remember { mutableIntStateOf(0) }
     var showCapture by remember { mutableStateOf(false) }
     var showNote by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
@@ -522,7 +524,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                 else -> LibraryScreen(
                     sources = sources, query = libraryQuery, matches = libraryMatches.filter { it.source.id !in hiddenSources },
                     statusLine = if (embeddingReady) "Tamil + English, on this phone" else "keyword search",
-                    onQueryChange = { libraryQuery = it }, onOpen = { openSource = it },
+                    onQueryChange = { libraryQuery = it }, onOpen = { sourceSheetTab = 0; openSource = it },
                     onDeleteSelected = { ids -> requestDelete(PendingDelete("source", ids, "${ids.size} item(s)")) },
                 )
             }
@@ -555,7 +557,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     onBlocker = { viewModel.setBlocker(task.id, it) },
                     onClarify = { viewModel.clarify(task.id, it) },
                     onDelete = { openTaskId = null; requestDelete(PendingDelete("task", listOf(task.id), "“${task.title}”")) },
-                    onOpenSource = { openSource = it },
+                    onOpenSource = { sourceSheetTab = 0; openSource = it },
                 )
             }
         }
@@ -660,13 +662,22 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                 Column(Modifier.fillMaxWidth().clip(Squircles.sheetTop).background(c.groupedBackground).navigationBarsPadding().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(s.title, style = Hod.type.title3, color = c.label)
                     Text("${look.label} · ${dueLabel(s.capturedAt)}", style = Hod.type.footnote, color = c.secondaryLabel)
-                    Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(16.dp)) {
-                        EvidenceText(cleanEvidence(s.body).ifBlank { "No readable text." }, emptyList(), maxLines = 18)
+                    SegmentedControl(listOf("Actions", "Evidence", "Original"), sourceSheetTab, { sourceSheetTab = it }, Modifier.fillMaxWidth())
+                    when (sourceSheetTab) {
+                        0 -> {
+                            if (!s.isClinical()) HodButton("Review and extract actions", { openSource = null; openTaskId = null; reviewStartId = s.id; tab = TAB_REVIEW }, height = 46.dp, modifier = Modifier.fillMaxWidth())
+                            if (!s.isClinical()) HodButton("Edit and save in Review", { openSource = null; openTaskId = null; reviewStartId = s.id; tab = TAB_REVIEW }, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.fillMaxWidth())
+                            HodButton("Send to Inbox", { viewModel.returnToInbox(s.id); openSource = null; tab = TAB_REVIEW }, style = HodButtonStyle.Tinted, height = 46.dp, modifier = Modifier.fillMaxWidth())
+                            HodButton("Delete", { openSource = null; requestDelete(PendingDelete("source", listOf(s.id), "“${s.title}”")) }, style = HodButtonStyle.DestructiveTinted, height = 46.dp, modifier = Modifier.fillMaxWidth())
+                        }
+                        1 -> Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(16.dp)) {
+                            EvidenceText(cleanEvidence(s.body).ifBlank { "No readable text." }, emptyList(), maxLines = 40)
+                        }
+                        else -> {
+                            s.sourceUri?.let { uri -> HodButton("Open Original", { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { status = "No app can open this file." } }, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.fillMaxWidth()) }
+                                ?: Text("The original file is no longer available on this phone.", style = Hod.type.subheadline, color = c.secondaryLabel)
+                        }
                     }
-                    s.sourceUri?.let { uri -> HodButton("Open Original", { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { status = "No app can open this file." } }, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.fillMaxWidth()) }
-                    if (!s.isClinical()) HodButton("Review and extract actions", { openSource = null; openTaskId = null; reviewStartId = s.id; tab = TAB_REVIEW }, height = 46.dp, modifier = Modifier.fillMaxWidth())
-                    HodButton("Send to Inbox", { viewModel.returnToInbox(s.id); openSource = null; tab = TAB_REVIEW }, style = HodButtonStyle.Tinted, height = 46.dp, modifier = Modifier.fillMaxWidth())
-                    HodButton("Delete", { openSource = null; requestDelete(PendingDelete("source", listOf(s.id), "“${s.title}”")) }, style = HodButtonStyle.DestructiveTinted, height = 46.dp, modifier = Modifier.fillMaxWidth())
                 }
             }
         }
