@@ -17,16 +17,24 @@ if ($ApkPath) {
 }
 
 & $adb logcat -c
+& $adb shell input keyevent KEYCODE_BACK | Out-Null
 & $adb shell monkey -p $PackageName 1 | Out-Host
 Start-Sleep -Seconds $WaitSeconds
 
 $focused = (& $adb shell dumpsys activity activities) -join "`n"
 if ($focused -notmatch [regex]::Escape($PackageName)) { throw "The app did not become the focused activity." }
 
-& $adb shell uiautomator dump /sdcard/hoddesk-ui.xml | Out-Null
-$ui = (& $adb shell cat /sdcard/hoddesk-ui.xml) -join "`n"
+& $adb shell input keyevent KEYCODE_BACK | Out-Null
+$ui = ""
+for ($attempt = 0; $attempt -lt 5; $attempt++) {
+    & $adb shell uiautomator dump /sdcard/hoddesk-ui.xml | Out-Null
+    $ui = (& $adb shell cat /sdcard/hoddesk-ui.xml) -join "`n"
+    if ($ui -match "com.hoddesk.app" -and ($ui -match "Today")) { break }
+    Start-Sleep -Seconds 1
+    & $adb shell monkey -p $PackageName 1 | Out-Null
+}
 foreach ($label in @("Today", "Review", "Tasks", "Calendar", "Library")) {
-    if ($ui -notmatch [regex]::Escape($label)) { throw "Missing primary tab in UI hierarchy: $label" }
+    if ($ui -notmatch [regex]::Escape($label)) { throw "Missing primary tab in UI hierarchy after retries: $label" }
 }
 
 $crashes = (& $adb logcat -d -b crash) -join "`n"
