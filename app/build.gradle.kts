@@ -62,6 +62,7 @@ dependencies {
     implementation("net.zetetic:android-database-sqlcipher:4.5.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.rmtheis:tess-two:9.1.0")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     // UniversalEmbedder wraps the official LiteRT-LM EmbeddingEngine and
     // provides the tokenizer/tensor contract for EmbeddingGemma 2.

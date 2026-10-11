@@ -391,6 +391,9 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         if (result.values.all { it }) loadCalendars() else status = "Calendar permission is needed to add events."
     }
     val scheduler = remember { CalendarProviderScheduler.fromResolver(context.contentResolver) { p -> context.checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED } }
+    LaunchedEffect(scheduler) {
+        repository.reconcilePendingCalendarEvents { event -> scheduler.findMatchingEventId(event.title, event.startsAt, event.endsAt) }
+    }
     fun clashesFor(start: Long, end: Long, events: List<EventEntity>): List<String> {
         val day = java.time.Instant.ofEpochMilli(start).atZone(zone)
         val s = day.toLocalTime().let { it.hour * 60 + it.minute }
@@ -423,23 +426,34 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
             settingsStack.clear(); settingsStack += "home"; settingsStack += "calendar"
             return
         }
-        var written = 0
-        val denied = mutableListOf<String>()
-        toWrite.forEach { p ->
-            val proposal = ScheduleProposal(EventEntity(taskId = p.taskId, title = p.title, startsAt = p.start, endsAt = p.end), emptyList())
-            when (val r = scheduler.writeConfirmed(proposal, calendarId, confirmed = true)) {
-                is CalendarWriteResult.Written -> {
-                    written++
-                    if (p.taskId != null) viewModel.schedulePlannedTask(p.taskId, p.title, p.start, p.end) else viewModel.confirmSchedule(proposal)
+        scope.launch {
+            var written = 0
+            val denied = mutableListOf<String>()
+            toWrite.forEach { p ->
+                val proposal = ScheduleProposal(EventEntity(taskId = p.taskId, title = p.title, startsAt = p.start, endsAt = p.end), emptyList())
+                // Persist first. If the process dies after the provider insert,
+                // the pending row is available for reconciliation on next start.
+                val localId = repository.beginCalendarWrite(proposal.event)
+                when (val r = scheduler.writeConfirmed(proposal, calendarId, confirmed = true)) {
+                    is CalendarWriteResult.Written -> {
+                        repository.finishCalendarWrite(localId, r.calendarEventId)
+                        written++
+                    }
+                    is CalendarWriteResult.Denied -> {
+                        repository.cancelCalendarWrite(localId)
+                        denied += "${p.title}: ${r.reason}"
+                    }
+                    is CalendarWriteResult.NeedsConfirmation -> {
+                        repository.cancelCalendarWrite(localId)
+                        denied += p.title
+                    }
                 }
-                is CalendarWriteResult.Denied -> denied += "${p.title}: ${r.reason}"
-                is CalendarWriteResult.NeedsConfirmation -> denied += p.title
             }
-        }
-        proposals = emptyList()
-        status = buildString {
-            append("$written block(s) added to ${settings.calendarName ?: "your calendar"}.")
-            if (denied.isNotEmpty()) append(" Skipped: ").append(denied.joinToString("; "))
+            proposals = emptyList()
+            status = buildString {
+                append("$written block(s) added to ${settings.calendarName ?: "your calendar"}.")
+                if (denied.isNotEmpty()) append(" Skipped: ").append(denied.joinToString("; "))
+            }
         }
     }
 

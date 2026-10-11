@@ -10,7 +10,11 @@ object SensitivityClassifier {
         val text = "$title $body".lowercase()
         val special = listOf("suicide", "self-harm", "minor", "child abuse", "mhca", "mental health care act", "legal notice").filter(text::contains)
         if (special.isNotEmpty()) return SensitivityDecision(SensitivityTier.T4_SPECIAL, special.map { "special: $it" })
-        val clinical = listOf("patient", "diagnosis", "relapse", "admitted", "discharge", "ward", "bed no", "ect", "psychosis", "depression", "bipolar", "uhid", "mrd no", "op no", "நோயாளி", "வார்டு").filter(text::contains)
+        val clinical = listOf(
+            "patient", "diagnosis", "relapse", "admitted", "discharge", "ward", "bed no", "ect", "psychosis", "depression", "bipolar", "uhid", "mrd no", "op no",
+            "நோயாளி", "வார்டு", "மருத்துவ", "சிகிச்சை", "மருந்து", "மனநலம்", "மருத்துவர்", "அனுமதி", "வெளியேற்றம்", "நோயறிதல்"
+        ).filter(text::contains).toMutableList()
+        if (Regex("(?i)\\b(?:uhid|mrd|ip|op|patient)\\s*[-:/#]?\\s*\\d{3,}\\b").containsMatchIn(text)) clinical += "clinical identifier"
         if (clinical.isNotEmpty()) return SensitivityDecision(SensitivityTier.T3_CLINICAL, clinical.take(3).map { "clinical: $it" })
         val personnel = listOf("leave", "disciplinary", "service book", "salary", "confidential staff").filter(text::contains)
         if (personnel.isNotEmpty()) return SensitivityDecision(SensitivityTier.T2_PERSONNEL, personnel.map { "personnel: $it" })

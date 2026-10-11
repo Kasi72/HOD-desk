@@ -84,6 +84,24 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         audit("event", eventId, "scheduled_confirmed", proposal.event.title)
         return eventId
     }
+
+    /** Creates a durable local pending record before an external calendar write. */
+    suspend fun beginCalendarWrite(event: EventEntity): Long = dao.insertEvent(event.copy(confirmed = false, calendarEventId = null))
+
+    suspend fun finishCalendarWrite(localEventId: Long, providerEventId: Long) {
+        val event = requireNotNull(dao.event(localEventId)) { "Pending calendar event $localEventId does not exist" }
+        dao.updateEvent(event.copy(confirmed = true, calendarEventId = providerEventId))
+        audit("event", localEventId, "scheduled_confirmed", event.title)
+    }
+
+    suspend fun cancelCalendarWrite(localEventId: Long) { dao.deleteEvent(localEventId) }
+
+    suspend fun reconcilePendingCalendarEvents(findProviderId: suspend (EventEntity) -> Long?) {
+        dao.pendingCalendarEvents().forEach { pending ->
+            val providerId = findProviderId(pending) ?: return@forEach
+            finishCalendarWrite(pending.id, providerId)
+        }
+    }
     suspend fun schedulePlannedTask(taskId: Long, title: String, startsAt: Long, endsAt: Long): Long {
         require(endsAt > startsAt) { "Event must end after it starts" }
         require(dao.overlappingEvents(startsAt, endsAt).isEmpty()) { "A local calendar conflict appeared before confirmation" }

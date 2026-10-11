@@ -138,6 +138,7 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
             codec.configure(inputFormat, null, null, 0); codec.start()
             outputFile.outputStream().use { out ->
                 out.write(ByteArray(44))
+                val resampler = PcmResampler(sourceRate, sourceChannels)
                 var inputEnded = false; var outputEnded = false
                 while (!outputEnded) {
                     if (!inputEnded) {
@@ -156,7 +157,7 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
                                 val buffer = codec.getOutputBuffer(index)!!
                                 buffer.position(info.offset); buffer.limit(info.offset + info.size)
                                 val bytes = ByteArray(info.size); buffer.get(bytes)
-                                val pcm = resamplePcm(bytes, bytes.size, sourceRate, sourceChannels)
+                                val pcm = resampler.process(bytes, bytes.size)
                                 out.write(pcm); pcmBytes += pcm.size
                             }
                             codec.releaseOutputBuffer(index, false)
@@ -303,7 +304,8 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
             val bits = (header[34].toInt() and 0xff) or ((header[35].toInt() and 0xff) shl 8)
             require(channels in 1..2 && bits == 16 && sampleRate > 0) { "WAV must be 16-bit PCM with one or two channels" }
             val buffer = ByteArray(8192)
-            while (true) { val read = input.read(buffer); if (read <= 0) break; val pcm = resamplePcm(buffer, read - (read % (2 * channels)), sampleRate, channels); recognizer.acceptWaveForm(pcm, pcm.size) }
+            val resampler = PcmResampler(sampleRate, channels)
+            while (true) { val read = input.read(buffer); if (read <= 0) break; val pcm = resampler.process(buffer, read); recognizer.acceptWaveForm(pcm, pcm.size) }
         }
     }
 
@@ -324,6 +326,7 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
             codec.start()
             var inputEnded = false
             var outputEnded = false
+            val resampler = PcmResampler(sourceRate, channels)
             while (!outputEnded) {
                 if (!inputEnded) {
                     val inputIndex = codec.dequeueInputBuffer(10_000)
@@ -342,7 +345,7 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
                             val output = codec.getOutputBuffer(outputIndex)!!
                             output.position(info.offset); output.limit(info.offset + info.size)
                             val bytes = ByteArray(info.size); output.get(bytes)
-                            val pcm = resamplePcm(bytes, bytes.size, sourceRate, channels)
+                            val pcm = resampler.process(bytes, bytes.size)
                             recognizer.acceptWaveForm(pcm, pcm.size)
                         }
                         codec.releaseOutputBuffer(outputIndex, false)
@@ -369,5 +372,37 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
             output[target * 2] = sample.toByte(); output[target * 2 + 1] = (sample shr 8).toByte()
         }
         return output
+    }
+
+    /** Stateful nearest-neighbour resampler. Decoder output buffers are arbitrary
+     * chunks; keeping phase and carry prevents clicks, drift and lost Tamil syllables
+     * at every MediaCodec boundary. */
+    private class PcmResampler(private val sourceRate: Int, private val channels: Int) {
+        private val pending = ArrayList<Short>()
+        private var phase = 0.0
+        private val step = if (sourceRate > 0) sourceRate.toDouble() / 16_000.0 else 1.0
+
+        fun process(input: ByteArray, length: Int): ByteArray {
+            val complete = (length.coerceAtMost(input.size) / (2 * channels)) * (2 * channels)
+            var offset = 0
+            while (offset < complete) {
+                var mixed = 0
+                for (channel in 0 until channels) {
+                    val i = offset + channel * 2
+                    mixed += ((input[i].toInt() and 0xff) or (input[i + 1].toInt() shl 8)).toShort().toInt()
+                }
+                pending += (mixed / channels).coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                offset += 2 * channels
+            }
+            val result = java.io.ByteArrayOutputStream()
+            while (pending.isNotEmpty() && phase < pending.size) {
+                val sample = pending[phase.toInt()]
+                result.write(sample.toInt() and 0xff); result.write((sample.toInt() shr 8) and 0xff)
+                phase += step
+            }
+            val drop = phase.toInt().coerceAtMost(pending.size)
+            if (drop > 0) { pending.subList(0, drop).clear(); phase -= drop }
+            return result.toByteArray()
+        }
     }
 }

@@ -17,12 +17,14 @@ interface HodDeskDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSource(source: SourceEntity): Long
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertTask(task: TaskEntity): Long
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertEvent(event: EventEntity): Long
+    @Update suspend fun updateEvent(event: EventEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertEvidence(evidence: EvidenceEntity): Long
     @Update suspend fun updateSource(source: SourceEntity)
     @Update suspend fun updateTask(task: TaskEntity)
     @Query("UPDATE tasks SET status = :status, completedAt = :completedAt WHERE id = :id") suspend fun setTaskStatus(id: Long, status: String, completedAt: Long?)
     @Query("SELECT * FROM sources WHERE id = :id LIMIT 1") suspend fun source(id: Long): SourceEntity?
     @Query("SELECT * FROM tasks WHERE id = :id LIMIT 1") suspend fun task(id: Long): TaskEntity?
+    @Query("SELECT * FROM events WHERE id = :id LIMIT 1") suspend fun event(id: Long): EventEntity?
     @Query("SELECT * FROM tasks WHERE sourceId = :sourceId AND title = :title AND status != 'deleted' ORDER BY id LIMIT 1") suspend fun approvedTask(sourceId: Long, title: String): TaskEntity?
     @Query("SELECT * FROM evidence WHERE taskId = :taskId ORDER BY capturedAt DESC") fun observeEvidence(taskId: Long): Flow<List<EvidenceEntity>>
     @Query("SELECT * FROM semantic_embeddings WHERE sourceId = :sourceId LIMIT 1") suspend fun semanticEmbedding(sourceId: Long): SemanticEmbeddingEntity?
@@ -45,6 +47,7 @@ interface HodDeskDao {
     @Query("SELECT * FROM audit_entries ORDER BY createdAt DESC LIMIT :limit") fun observeAllAudit(limit: Int): Flow<List<AuditEntryEntity>>
     @Query("SELECT * FROM audit_entries ORDER BY createdAt ASC") suspend fun allAudit(): List<AuditEntryEntity>
     @Query("SELECT * FROM events WHERE startsAt >= :start AND startsAt < :end ORDER BY startsAt") suspend fun eventsBetween(start: Long, end: Long): List<EventEntity>
+    @Query("SELECT * FROM events WHERE confirmed = 0 ORDER BY id") suspend fun pendingCalendarEvents(): List<EventEntity>
     @Query("SELECT * FROM reasoning_runs WHERE sourceId = :sourceId ORDER BY createdAt DESC") fun observeReasoningRuns(sourceId: Long): Flow<List<ReasoningRunEntity>>
     @Query("DELETE FROM sources WHERE id = :id") suspend fun deleteSourceRow(id: Long)
     @Query("DELETE FROM tasks WHERE id = :id") suspend fun deleteTaskRow(id: Long)

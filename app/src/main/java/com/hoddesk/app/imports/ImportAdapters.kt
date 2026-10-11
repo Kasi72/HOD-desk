@@ -15,6 +15,10 @@ import android.graphics.ColorMatrixColorFilter
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.zip.ZipInputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.util.concurrent.Executors
+import com.googlecode.tesseract.android.TessBaseAPI
 
 data class ImportedSource(val title: String, val body: String, val type: String, val uri: Uri? = null)
 
@@ -82,11 +86,27 @@ class ScreenshotImportAdapter {
             requireNotNull(bitmap) { "Screenshot could not be decoded" }
             InputImage.fromBitmap(preprocess(bitmap), 0)
         }.getOrElse { InputImage.fromFilePath(context, uri) }
-        return TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS).process(image).continueWith { task ->
+        return TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS).process(image).continueWith(Executors.newSingleThreadExecutor()) { task ->
             val text = normalizeOcr(task.result?.text.orEmpty())
-            val title = text.lineSequence().map { it.trim() }.firstOrNull { it.length >= 8 }?.take(72) ?: "Screenshot capture"
-            ImportedSource(title, text.ifBlank { "OCR found no readable text" }, "Screenshot", uri)
+            val tamil = if (text.any { it in '\u0B80'..'\u0BFF' }) "" else runCatching { recognizeTamil(context, uri) }.getOrDefault("")
+            val merged = listOf(text, tamil).filter { it.isNotBlank() }.distinct().joinToString("\n")
+            val title = merged.lineSequence().map { it.trim() }.firstOrNull { it.length >= 8 }?.take(72) ?: "Screenshot capture"
+            ImportedSource(title, merged.ifBlank { "OCR found no readable text; Tamil OCR also found no readable text" }, "Screenshot", uri)
         }
+    }
+
+    private fun recognizeTamil(context: Context, uri: Uri): String {
+        val base = File(context.filesDir, "tessdata")
+        if (!base.exists()) base.mkdirs()
+        val trained = File(base, "tam.traineddata")
+        if (!trained.exists()) context.assets.open("tessdata/tam.traineddata").use { input -> FileOutputStream(trained).use { input.copyTo(it) } }
+        val bitmap = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } ?: return ""
+        val api = TessBaseAPI()
+        return try {
+            if (!api.init(context.filesDir.absolutePath, "tam")) return ""
+            api.setImage(bitmap)
+            api.getUTF8Text().orEmpty()
+        } finally { api.end(); bitmap.recycle() }
     }
 
     private fun preprocess(source: Bitmap): Bitmap {

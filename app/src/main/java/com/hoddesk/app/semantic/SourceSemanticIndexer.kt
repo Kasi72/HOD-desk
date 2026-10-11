@@ -22,6 +22,9 @@ class SourceSemanticIndexer(
 
     suspend fun index(source: SourceEntity) {
         if (source.id <= 0L || source.body.isBlank()) return
+        // Clinical and special-category sources stay in the encrypted vault;
+        // they must never enter semantic retrieval, relations or model calls.
+        if (source.sensitivity == "T3" || source.sensitivity == "T4") return
         val existing = dao.semanticEmbedding(source.id)
         if (existing?.modelVersion == MODEL_VERSION && existing.dimension == 768) return
         val directModality: String

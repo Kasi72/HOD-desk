@@ -43,6 +43,22 @@ class CalendarProviderScheduler(private val resolver: ContentResolver, private v
         return titles
     }
 
+    /** Finds a provider event left behind if the app died after insert. */
+    fun findMatchingEventId(title: String, startsAt: Long, endsAt: Long): Long? {
+        if (!permissionChecker(Manifest.permission.READ_CALENDAR)) return null
+        val rangeUri = CalendarContract.Instances.CONTENT_URI.buildUpon().appendPath(startsAt.toString()).appendPath(endsAt.toString()).build()
+        resolver.query(rangeUri, arrayOf(CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.TITLE, CalendarContract.Instances.BEGIN, CalendarContract.Instances.END), null, null, null)?.use { cursor ->
+            val id = cursor.getColumnIndex(CalendarContract.Instances.EVENT_ID)
+            val titleColumn = cursor.getColumnIndex(CalendarContract.Instances.TITLE)
+            val begin = cursor.getColumnIndex(CalendarContract.Instances.BEGIN)
+            val end = cursor.getColumnIndex(CalendarContract.Instances.END)
+            while (cursor.moveToNext()) {
+                if (id >= 0 && titleColumn >= 0 && begin >= 0 && end >= 0 && cursor.getString(titleColumn) == title && cursor.getLong(begin) == startsAt && cursor.getLong(end) == endsAt) return cursor.getLong(id)
+            }
+        }
+        return null
+    }
+
     companion object {
         fun fromResolver(resolver: ContentResolver, checker: (String) -> Boolean): CalendarProviderScheduler = CalendarProviderScheduler(resolver, checker)
     }
