@@ -48,6 +48,10 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
     @Volatile private var embedder: UniversalEmbedder? = null
     @Volatile private var mappedModel: ByteBuffer? = null
     @Volatile private var nativeLoadFailure: Throwable? = null
+    @Volatile private var activeDelegate: String = "uninitialized"
+
+    /** The UI and workers can surface which delegate was actually accepted. */
+    fun delegateName(): String = activeDelegate
 
     private fun ensureNativeLibraries() {
         nativeLoadFailure?.let { throw IllegalStateException("On-device semantic search is unavailable on this device", it) }
@@ -147,19 +151,27 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
             // .litertlm bundles; a mapped ByteBuffer is not accepted by all
             // MediaPipe task versions even though it is valid for .tflite files.
             val baseOptions = BaseOptions.builder().setModelAssetPath(modelFile.absolutePath).build()
-            val options = UniversalEmbedderOptions.builder()
-                .setBaseOptions(baseOptions)
-                .setTextDelegate(Delegate.CPU)
-                .setVisionDelegate(Delegate.CPU)
-                .setAudioDelegate(Delegate.CPU)
-                .setL2Normalize(true)
-                .setMaxInputLength(8192)
-                .setCacheDir(context.cacheDir.absolutePath)
-                .build()
             val started = System.currentTimeMillis()
-            UniversalEmbedder.createFromOptions(context, options).also {
-                Log.i("HOD_SEMANTIC", "engine_initialized_ms=${System.currentTimeMillis() - started}")
+            val common = { delegate: Delegate ->
+                UniversalEmbedderOptions.builder()
+                    .setBaseOptions(baseOptions)
+                    .setTextDelegate(delegate)
+                    .setVisionDelegate(delegate)
+                    .setAudioDelegate(delegate)
+                    .setL2Normalize(true)
+                    .setMaxInputLength(8192)
+                    .setCacheDir(context.cacheDir.absolutePath)
+                    .build()
             }
+            runCatching { UniversalEmbedder.createFromOptions(context, common(Delegate.GPU)) }
+                .map { activeDelegate = "GPU"; it }
+                .recoverCatching { failure ->
+                    Log.w("HOD_SEMANTIC", "gpu_delegate_unavailable_fallback_cpu", failure)
+                    activeDelegate = "CPU"
+                    UniversalEmbedder.createFromOptions(context, common(Delegate.CPU))
+                }.getOrThrow().also {
+                    Log.i("HOD_SEMANTIC", "engine_initialized_ms=${System.currentTimeMillis() - started},delegate=$activeDelegate")
+                }
         }.also { created -> embedder = created }
     }
 

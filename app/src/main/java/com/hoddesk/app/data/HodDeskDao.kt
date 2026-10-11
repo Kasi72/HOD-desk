@@ -84,6 +84,9 @@ interface HodDeskDao {
     @Query("UPDATE action_points SET status = :status WHERE sourceId = :sourceId AND action = :action") suspend fun setActionPointStatus(sourceId: Long, action: String, status: String)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertReasoningRun(run: ReasoningRunEntity): Long
     @Insert suspend fun insertAudit(entry: AuditEntryEntity): Long
+    @Insert suspend fun insertPerformanceMetric(metric: PerformanceMetricEntity): Long
+    @Query("SELECT * FROM performance_metrics ORDER BY createdAt DESC LIMIT :limit") suspend fun recentPerformanceMetrics(limit: Int = 500): List<PerformanceMetricEntity>
+    @Query("DELETE FROM performance_metrics WHERE createdAt < :before") suspend fun deletePerformanceMetricsBefore(before: Long): Int
     @Query("SELECT * FROM audit_entries WHERE entityType = :entityType AND entityId = :entityId ORDER BY createdAt DESC") fun observeAudit(entityType: String, entityId: Long): Flow<List<AuditEntryEntity>>
     @Query("DELETE FROM audit_entries WHERE createdAt < :before") suspend fun deleteAuditBefore(before: Long): Int
     @Query("SELECT * FROM audit_entries ORDER BY createdAt DESC LIMIT :limit") fun observeAllAudit(limit: Int): Flow<List<AuditEntryEntity>>

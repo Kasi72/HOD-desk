@@ -89,6 +89,7 @@ import com.hoddesk.app.semantic.IndexHealthChecker
 import com.hoddesk.app.semantic.IndexSelfCheck
 import com.hoddesk.app.semantic.IndexSnapshotManager
 import com.hoddesk.app.semantic.SourceSemanticIndexer
+import com.hoddesk.app.observability.PerformanceMetrics
 import com.hoddesk.app.semantic.MatterGrouper
 import com.hoddesk.app.semantic.MatterTimelineBuilder
 import com.hoddesk.app.settings.DeskSettingsStore
@@ -368,12 +369,13 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         val item = ProcessingItem(title, "Transcribing Tamil and English on this phone…", null)
         processing += item
         scope.launch {
+            val started = System.currentTimeMillis()
             runCatching { audioRuntime.transcribeWav(uri) }
-                .onSuccess { text -> onTranscript?.invoke(text); saveImported(ImportedSource(title, text.ifBlank { "No speech detected" }, type, uri), uri); status = "$title added for review" }
+                .onSuccess { text -> onTranscript?.invoke(text); saveImported(ImportedSource(title, text.ifBlank { "No speech detected" }, type, uri), uri); status = "$title added for review"; PerformanceMetrics.record(dao, "audio_transcription_latency_ms", System.currentTimeMillis() - started, "type=$type") }
                 .onFailure { error ->
                     Log.e("HOD_AUDIO", "transcription_failed", error)
                     saveImported(AudioTranscriptImportAdapter(context.contentResolver).importAudio(uri), uri)
-                    status = "Recording saved; transcription unavailable: ${error.message ?: error.javaClass.simpleName}"
+                    status = "Recording saved; transcription unavailable: ${error.message ?: error.javaClass.simpleName}"; PerformanceMetrics.record(dao, "audio_transcription_failure", 1, error.javaClass.simpleName)
                 }
             processing.remove(item)
         }

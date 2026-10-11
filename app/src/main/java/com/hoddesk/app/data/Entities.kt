@@ -191,6 +191,16 @@ data class AuditEntryEntity(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+/** Local operational telemetry; no source text or clinical identifiers are stored. */
+@Entity(tableName = "performance_metrics", indices = [Index("kind"), Index("createdAt")])
+data class PerformanceMetricEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val kind: String,
+    val value: Long,
+    val detail: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
 @Entity(tableName = "learning_corrections", indices = [Index("actionPointId"), Index("createdAt")])
 data class LearningCorrectionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
