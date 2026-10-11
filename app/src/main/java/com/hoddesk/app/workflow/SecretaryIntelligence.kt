@@ -2,7 +2,6 @@ package com.hoddesk.app.workflow
 
 import com.hoddesk.app.data.SourceEntity
 import com.hoddesk.app.data.TaskEntity
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -13,11 +12,14 @@ object SecretaryIntelligence {
     data class Command(val kind: Kind, val query: String)
     enum class Kind { SEARCH, PLAN, FOLLOW_UP, SHOW_WAITING, SHOW_MEETINGS, UNKNOWN }
 
+    private fun active(task: TaskEntity): Boolean =
+        task.status != "completed" && task.status != "deleted" && task.status != "archived"
+
     fun brief(sources: List<SourceEntity>, tasks: List<TaskEntity>, today: LocalDate = LocalDate.now()): Brief {
         val end = today.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val urgent = tasks.count { it.status != "completed" && it.dueAt != null && it.dueAt < end } +
+        val urgent = tasks.count { active(it) && it.dueAt != null && it.dueAt < end } +
             sources.count { !it.reviewed && it.triageBucket == "ACT" }
-        val waiting = tasks.count { it.status != "completed" && !it.assignee.isNullOrBlank() }
+        val waiting = tasks.count { active(it) && !it.assignee.isNullOrBlank() }
         val conflicts = conflicts(tasks).size
         val headline = when {
             conflicts > 0 -> "${conflicts} schedule conflict${if (conflicts == 1) "" else "s"} needs review"
@@ -34,7 +36,7 @@ object SecretaryIntelligence {
         return Brief(headline, detail, urgent, waiting, conflicts)
     }
 
-    fun conflicts(tasks: List<TaskEntity>): List<Conflict> = tasks.filter { it.status != "completed" && it.dueAt != null }
+    fun conflicts(tasks: List<TaskEntity>): List<Conflict> = tasks.filter { active(it) && it.dueAt != null }
         .sortedBy { it.dueAt }.zipWithNext().mapNotNull { (a, b) ->
             if (a.dueAt == null || b.dueAt == null) null
             else if (kotlin.math.abs(a.dueAt - b.dueAt) < 60 * 60 * 1000L) Conflict(a, b, "Due times are within one hour") else null
@@ -54,6 +56,6 @@ object SecretaryIntelligence {
     }
 
     fun followUpCandidates(tasks: List<TaskEntity>, now: Long = System.currentTimeMillis()): List<TaskEntity> =
-        tasks.filter { it.status != "completed" && !it.assignee.isNullOrBlank() && now - it.createdAt >= 2 * 24 * 60 * 60 * 1000L }
+        tasks.filter { active(it) && !it.assignee.isNullOrBlank() && now - it.createdAt >= 2 * 24 * 60 * 60 * 1000L }
             .sortedBy { it.dueAt ?: Long.MAX_VALUE }
 }

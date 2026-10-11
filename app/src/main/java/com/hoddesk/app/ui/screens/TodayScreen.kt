@@ -87,7 +87,7 @@ fun TodayScreen(
     val today = LocalDate.now()
     val mustAct = buildMustAct(sources, tasks, today)
     val toReview = sources.count { !it.reviewed && !it.isClinical() }
-    val waiting = tasks.count { it.status != "completed" && !it.assignee.isNullOrBlank() }
+    val waiting = tasks.count { it.status != "completed" && it.status != "deleted" && it.status != "archived" && !it.assignee.isNullOrBlank() }
     LazyColumn(Modifier.statusBarsPadding(), contentPadding = PageContentPadding, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 8.dp), verticalAlignment = Alignment.Bottom) {
