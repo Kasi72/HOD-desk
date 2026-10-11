@@ -28,4 +28,20 @@ class HybridRetrieverTest {
         assertTrue(ranked.first().keywordScore > 0f)
         assertTrue(ranked.first().reasons.any { it.contains("keyword") || it == "fuzzy text" })
     }
+
+    @Test fun query_planner_extracts_official_work_entities() {
+        val plan = QueryPlanner.plan("Find GO No. 214/2026 DME meeting at Erode Collectorate on 19th September 2026 at 2 PM")
+        assertTrue(plan.referenceNumbers.any { "214/2026" in it })
+        assertTrue(plan.dates.any { "19th september 2026" in it })
+        assertTrue(plan.times.any { "2 pm" == it })
+        assertTrue(plan.departments.contains("dme"))
+    }
+
+    @Test fun clinical_sources_are_never_returned_by_retriever() {
+        val clinical = SourceEntity(id = 1, title = "Patient GO 214", body = "Attend review", sourceType = "PDF", sensitivity = "T3")
+        val ordinary = SourceEntity(id = 2, title = "GO 214", body = "Attend DME review", sourceType = "PDF")
+        val ranked = HybridRetriever.rank("GO 214", listOf(clinical, ordinary), emptyList())
+        assertTrue(ranked.none { it.source.id == clinical.id })
+        assertEquals(ordinary.id, ranked.first().source.id)
+    }
 }

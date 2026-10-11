@@ -12,7 +12,13 @@ import kotlin.math.sqrt
 import com.hoddesk.app.learning.SecretaryLearning
 import android.util.Log
 
-data class SourceSemanticHit(val source: SourceEntity, val score: Float, val confidence: Float)
+data class SourceSemanticHit(
+    val source: SourceEntity,
+    val score: Float,
+    val confidence: Float,
+    val citation: String? = null,
+    val modality: String? = null
+)
 
 /** Persists EmbeddingGemma vectors in the encrypted Room database and searches them locally. */
 class SourceSemanticIndexer(
@@ -160,7 +166,7 @@ class SourceSemanticIndexer(
             val source = byId[sourceId] ?: return@mapNotNull null
             val bestChunk = sourceChunks.maxByOrNull { cosine(queryVector, it.vector.toFloatArray()) } ?: return@mapNotNull null
             val score = cosine(queryVector, bestChunk.vector.toFloatArray())
-            SourceSemanticHit(source, score, score.coerceIn(0f, 1f))
+            SourceSemanticHit(source, score, score.coerceIn(0f, 1f), bestChunk.citation, bestChunk.modality)
         }
         val semantic = best.filter { it.confidence >= minConfidence }
         val profile = SecretaryLearning.profile(dao.allLearningCorrections())
@@ -168,7 +174,7 @@ class SourceSemanticIndexer(
             .map { SecretaryLearning.rerank(it, profile) }
             .sortedByDescending { it.score }
             .take(limit).map { match ->
-            SourceSemanticHit(match.source, match.score, match.score.coerceIn(0f, 1f))
+                SourceSemanticHit(match.source, match.score, match.score.coerceIn(0f, 1f), match.evidenceCitation, match.evidenceModality)
         }
     }
 

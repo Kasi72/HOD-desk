@@ -38,9 +38,14 @@ The checklist is updated only after the associated code and tests pass.
 
 ## Stage 4 — Hybrid retrieval
 
-- [x] Whole-word, substring, Tamil-normalized and Tanglish keyword retrieval.
-- [x] Semantic and lexical reasons are shown in result details.
-- [x] Duplicate and supersession ranking is evaluated by deterministic regression tests.
+- [x] Query planning detects references, dates, times, places, officials, departments, Tamil and Tanglish cues before ranking.
+- [x] Whole-word, substring, character-ngram, Tamil-normalized and Tanglish retrieval are combined.
+- [x] EmbeddingGemma semantic search covers source, chunk, action, image and audio vectors.
+- [x] Semantic, lexical and exact evidence scores use configurable fusion weights.
+- [x] Exact references, dates, times, named officials, places and department terms receive deterministic boosts.
+- [x] Clinical T3/T4 sources are rejected at the retriever boundary; optional source-type filters are supported.
+- [x] Every match carries reasons and, when available, the strongest chunk citation and modality.
+- [x] Exact-reference ranking, Tamil suffix/OCR recovery and clinical exclusion are covered by deterministic regression tests.
 
 ## Stage 5 — Grounded action extraction
 
