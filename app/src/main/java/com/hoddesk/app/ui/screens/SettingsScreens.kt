@@ -156,6 +156,8 @@ fun SettingsHome(summary: SettingsSummary, onBack: () -> Unit, onOpen: (String) 
             RowDivider(58.dp)
             ListRow("Secretary", icon = Icons.Rounded.Mic, iconColor = c.indigo, value = "Ask locally", chevron = true, onClick = { onOpen("secretary") })
             RowDivider(58.dp)
+            ListRow("Control Centre", icon = Icons.Rounded.PriorityHigh, iconColor = c.orange, value = "All signals", chevron = true, onClick = { onOpen("control") })
+            RowDivider(58.dp)
             ListRow("How to Import", icon = Icons.Rounded.HelpOutline, iconColor = c.green, value = "WhatsApp, Gmail…", chevron = true, onClick = { onOpen("howto") })
         }
         Text(summary.versionLine + "\nNothing leaves this phone.", style = Hod.type.footnote, color = c.tertiaryLabel, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())

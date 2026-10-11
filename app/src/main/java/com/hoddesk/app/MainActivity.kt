@@ -109,6 +109,7 @@ import com.hoddesk.app.ui.screens.LibraryScreen
 import com.hoddesk.app.ui.screens.MatterPage
 import com.hoddesk.app.ui.screens.FollowUpPage
 import com.hoddesk.app.ui.screens.SecretaryPage
+import com.hoddesk.app.ui.screens.SecretaryControlCentre
 import com.hoddesk.app.followup.FollowUpEngine
 import com.hoddesk.app.ui.screens.NoteDialog
 import com.hoddesk.app.ui.screens.PrivacyPage
@@ -677,6 +678,14 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                         else -> if (intent.requiresConfirmation) "Proposal ready; review and confirm before applying." else "Secretary request received."
                     }
                 })
+                "control" -> SecretaryControlCentre(
+                    state = secretaryState,
+                    aiHealthy = aiHealthy,
+                    onBack = ::pop,
+                    onOpenReview = { tab = TAB_REVIEW; pop() },
+                    onOpenCalendar = { tab = TAB_CALENDAR; pop() },
+                    onOpenWaiting = { tasksSegment = 1; tab = TAB_TASKS; pop() },
+                )
                 "howto" -> HowToPage(onBack = ::pop)
                 "vault" -> VaultPage(allSources.filter { it.isClinical() }, onBack = ::pop)
                 "department" -> DepartmentPage(settings, onBack = ::pop, onChanged = { settingsVersion++ })
