@@ -59,7 +59,7 @@ sealed interface MustAct {
 
 fun buildMustAct(sources: List<SourceEntity>, tasks: List<TaskEntity>, today: LocalDate = LocalDate.now()): List<MustAct> {
     val endOfToday = today.plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-    val dueTasks = tasks.filter { it.status != "completed" && it.dueAt != null && it.dueAt < endOfToday }
+    val dueTasks = tasks.filter { it.status != "completed" && it.status != "deleted" && it.status != "archived" && it.dueAt != null && it.dueAt < endOfToday }
         .sortedBy { it.dueAt }.map { MustAct.Task(it) }
     val reviews = sources.filter { !it.reviewed && it.triageBucket == "ACT" && !it.isClinical() }
         .sortedByDescending { it.priorityScore }.map { MustAct.Review(it, it.title) }

@@ -17,8 +17,11 @@ object SecretaryIntelligence {
 
     fun brief(sources: List<SourceEntity>, tasks: List<TaskEntity>, today: LocalDate = LocalDate.now()): Brief {
         val end = today.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        // Keep the brief aligned with Today/Review: only actionable, non-clinical
+        // sources count. Clinical and explicitly dismissed items must never inflate
+        // the user's attention count.
         val urgent = tasks.count { active(it) && it.dueAt != null && it.dueAt < end } +
-            sources.count { !it.reviewed && it.triageBucket == "ACT" }
+            sources.count { !it.reviewed && it.triageBucket == "ACT" && it.sensitivity != "T3" && it.sensitivity != "T4" }
         val waiting = tasks.count { active(it) && !it.assignee.isNullOrBlank() }
         val conflicts = conflicts(tasks).size
         val headline = when {
