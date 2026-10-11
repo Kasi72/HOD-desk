@@ -21,4 +21,12 @@ class SecretaryLearningTest {
         val corrections = (1..3).map { LearningCorrectionEntity(actionPointId = it.toLong(), field = "people", before = "patient", after = "Patient 3") }
         assertEquals(0, SecretaryLearning.profile(corrections).sampleCount)
     }
+
+    @Test fun decisionsAreInspectableButDoNotBecomeSearchPhrases() {
+        val corrections = (1..3).map { LearningCorrectionEntity(actionPointId = it.toLong(), field = "decision", before = null, after = "rejected") }
+        val profile = SecretaryLearning.profile(corrections)
+        assertEquals(3, profile.sampleCount)
+        assertTrue(profile.phraseWeights.isEmpty())
+        assertTrue(SecretaryLearning.exportLines(corrections).all { it.contains("decision") })
+    }
 }

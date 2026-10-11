@@ -248,7 +248,7 @@ data class AiStatus(
 )
 
 @Composable
-fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebuild: () -> Unit, onInstallReasoning: () -> Unit, snapshotSummary: String? = null, onCreateSnapshot: (() -> Unit)? = null, onRestoreSnapshot: (() -> Unit)? = null, onResetLearning: (() -> Unit)? = null) {
+fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebuild: () -> Unit, onInstallReasoning: () -> Unit, snapshotSummary: String? = null, onCreateSnapshot: (() -> Unit)? = null, onRestoreSnapshot: (() -> Unit)? = null, onResetLearning: (() -> Unit)? = null, onExportLearning: (() -> Unit)? = null) {
     val c = Hod.colors
     var showTech by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
@@ -293,6 +293,10 @@ fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebu
             RowDivider()
             if (onResetLearning != null) {
                 ListRow("Reset learned preferences", subtitle = "Remove local ranking corrections", titleColor = c.orangeText, onClick = { confirmReset = true })
+                RowDivider()
+            }
+            if (onExportLearning != null) {
+                ListRow("Export learning profile", subtitle = "Reviewable redacted corrections; nothing is sent automatically.", titleColor = c.tint, onClick = onExportLearning)
                 RowDivider()
             }
             ListRow("Technical Details", value = if (showTech) "Hide" else null, chevron = !showTech, onClick = { showTech = !showTech })

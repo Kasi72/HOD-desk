@@ -70,6 +70,7 @@ import com.hoddesk.app.imports.OfficialDocumentImportAdapter
 import com.hoddesk.app.imports.OfflineAudioTranscriptionRuntime
 import com.hoddesk.app.imports.ScreenshotImportAdapter
 import com.hoddesk.app.imports.WhatsAppExportAdapter
+import com.hoddesk.app.learning.SecretaryLearning
 import com.hoddesk.app.privacy.ConsentScope
 import com.hoddesk.app.privacy.PrivacyStore
 import com.hoddesk.app.reasoning.InstructionModelStore
@@ -551,6 +552,20 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val secretaryState = remember(sources, tasks, todayEvents, commitments) {
         SecretaryStateBuilder.build(sources, tasks, todayEvents, commitments)
     }
+    val learningExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val corrections = dao.allLearningCorrections()
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
+                    writer.appendLine("Psychiatry HOD Desk — redacted learning profile")
+                    writer.appendLine("This export contains local corrections only; no automatic sharing occurs.")
+                    SecretaryLearning.exportLines(corrections).forEach(writer::appendLine)
+                }
+            }.onSuccess { status = "Learning profile exported (${corrections.size} corrections)." }
+                .onFailure { status = "Learning export failed: ${it.message}" }
+        }
+    }
     var reasoningProgress by remember { mutableStateOf<Int?>(null) }
 
     val c = Hod.colors
@@ -687,6 +702,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                             if (IndexSnapshotManager.restore(context, dao, snapshot)) { status = "Search index restored from snapshot."; settingsVersion++ } else status = "Snapshot restore rejected; current index is unchanged."
                         } } },
                         onResetLearning = { scope.launch { repository.resetLearningProfile(); status = "Learned preferences reset." } },
+                        onExportLearning = { learningExportLauncher.launch("hod-desk-learning-${LocalDate.now()}.txt") },
                         onInstallReasoning = {
                             scope.launch {
                                 reasoningProgress = 0

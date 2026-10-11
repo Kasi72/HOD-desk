@@ -17,7 +17,9 @@ object SecretaryLearning {
             (!correction.before.isNullOrBlank() || !correction.after.isNullOrBlank()) &&
                 listOfNotNull(correction.before, correction.after).none { sensitive.containsMatchIn(it) }
         }
-        val grouped = usable.mapNotNull { correction -> correction.after?.trim()?.lowercase()?.takeIf(String::isNotBlank)?.let { it to correction } }.groupBy { it.first }
+        val grouped = usable.filter { it.field in setOf("action", "date", "time", "location", "people") }
+            .mapNotNull { correction -> correction.after?.trim()?.lowercase()?.takeIf(String::isNotBlank)?.let { it to correction } }
+            .groupBy { it.first }
         val phrases = grouped.filterValues { it.size >= 2 }.mapValues { (_, values) ->
             val weighted = values.sumOf { (_, correction) ->
                 val ageDays = ((now - correction.createdAt).coerceAtLeast(0L) / 86_400_000L).toDouble()
@@ -27,6 +29,11 @@ object SecretaryLearning {
         }
         return LearningProfile(phrases, usable.groupingBy { it.field }.eachCount(), usable.size)
     }
+
+    /** A reviewable, redacted representation for the user's explicit export. */
+    fun exportLines(corrections: List<LearningCorrectionEntity>): List<String> = corrections
+        .filter { listOfNotNull(it.before, it.after).none { value -> sensitive.containsMatchIn(value) } }
+        .map { "${it.createdAt}\t${it.field}\t${it.before.orEmpty()}\t${it.after.orEmpty()}" }
 
     fun rerank(candidate: HybridMatch, profile: LearningProfile): HybridMatch {
         if (profile.sampleCount < 2) return candidate

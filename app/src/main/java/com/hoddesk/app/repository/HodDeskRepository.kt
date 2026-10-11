@@ -53,6 +53,10 @@ class HodDeskRepository(private val dao: HodDeskDao) {
 
     suspend fun approveAction(sourceId: Long, action: String, project: String, dueAt: Long? = null, assignee: String? = null): Long {
         val taskId = dao.approveActionAtomic(sourceId, action, project, dueAt, assignee)
+        val point = dao.actionPointBySourceAndAction(sourceId, action)
+        if (point != null && !assignee.isNullOrBlank()) {
+            dao.insertLearningCorrection(LearningCorrectionEntity(actionPointId = point.id, field = "delegation", before = null, after = assignee))
+        }
         syncCommitment(taskId)
         return taskId
     }
@@ -82,7 +86,14 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     fun observeAllAudit(limit: Int = 500): Flow<List<AuditEntryEntity>> = dao.observeAllAudit(limit)
 
     suspend fun deleteAllWorkData() { dao.deleteAllWorkData(); audit("app", 0, "all_data_deleted") }
-    suspend fun setActionPointStatus(sourceId: Long, action: String, status: String) { dao.setActionPointStatus(sourceId, action, status); audit("source", sourceId, "action_status_$status", action) }
+    suspend fun setActionPointStatus(sourceId: Long, action: String, status: String) {
+        dao.setActionPointStatus(sourceId, action, status)
+        val point = dao.actionPointBySourceAndAction(sourceId, action)
+        if (point != null && status in setOf("rejected", "approved")) {
+            dao.insertLearningCorrection(LearningCorrectionEntity(actionPointId = point.id, field = "decision", before = null, after = status))
+        }
+        audit("source", sourceId, "action_status_$status", action)
+    }
     suspend fun updateActionPoint(point: ActionPointEntity) {
         val previous = dao.actionPoint(point.id)
         val normalized = point.copy(
