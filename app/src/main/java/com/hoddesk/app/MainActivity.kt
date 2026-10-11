@@ -686,6 +686,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     onBack = ::pop,
                     onCopy = { candidate -> status = "Draft copied for review."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_copied", detail = candidate.evidence)) } },
                     onShare = { candidate -> status = "Review the draft in your sharing app before sending."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_share_started", detail = candidate.evidence)) } },
+                    onDismiss = { candidate -> scope.launch { dao.setCommitmentStatus(candidate.commitmentId, "dismissed"); dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_dismissed", detail = candidate.evidence)); status = "Follow-up dismissed." } },
                 )
                 "secretary" -> SecretaryPage(initialTranscript = secretaryTranscript, onBack = ::pop, onRecord = { if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO) }, onRun = { intent ->
                     when (intent.kind) {

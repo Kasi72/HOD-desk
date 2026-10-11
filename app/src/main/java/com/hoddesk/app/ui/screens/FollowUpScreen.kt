@@ -19,7 +19,7 @@ import com.hoddesk.app.ui.components.RowDivider
 import com.hoddesk.app.ui.theme.Hod
 
 @Composable
-fun FollowUpPage(candidates: List<FollowUpCandidate>, onBack: () -> Unit, onCopy: (FollowUpCandidate) -> Unit, onShare: (FollowUpCandidate) -> Unit) {
+fun FollowUpPage(candidates: List<FollowUpCandidate>, onBack: () -> Unit, onCopy: (FollowUpCandidate) -> Unit, onShare: (FollowUpCandidate) -> Unit, onDismiss: (FollowUpCandidate) -> Unit) {
     val c = Hod.colors
     SettingsPage("Follow-ups", "Settings", onBack) {
         Text("Drafts are prepared from waiting commitments and their evidence. Nothing is sent automatically.", style = Hod.type.subheadline, color = c.secondaryLabel)
@@ -39,6 +39,7 @@ fun FollowUpPage(candidates: List<FollowUpCandidate>, onBack: () -> Unit, onCopy
                     RowDivider()
                     HodButton("Copy draft", { onCopy(candidate.copy(draft = draft.value)) }, style = HodButtonStyle.Tinted, modifier = Modifier.fillMaxWidth())
                     HodButton("Share after review", { onShare(candidate.copy(draft = draft.value)) }, style = HodButtonStyle.Gray, modifier = Modifier.fillMaxWidth())
+                    HodButton("Dismiss", { onDismiss(candidate) }, style = HodButtonStyle.Gray, modifier = Modifier.fillMaxWidth())
                 }
             }
         }
