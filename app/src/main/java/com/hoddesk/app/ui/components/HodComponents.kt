@@ -64,6 +64,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.hoddesk.app.ui.theme.Hod
+import com.hoddesk.app.ui.theme.Neu
 import com.hoddesk.app.ui.theme.Squircles
 
 /** Press feedback used instead of Material ripple: a soft dim, as on iOS. */
@@ -99,8 +100,7 @@ fun GroupedSection(header: String? = null, footer: String? = null, modifier: Mod
     Column(modifier.fillMaxWidth()) {
         header?.let { SectionHeader(it) }
         Column(
-            Modifier.fillMaxWidth().clip(Squircles.card).background(Hod.colors.surface)
-                .border(0.5.dp, Hod.colors.separator.copy(alpha = 0.45f), Squircles.card),
+            Modifier.fillMaxWidth().then(Neu.card(shape = Squircles.card)).clip(Squircles.card).background(Hod.colors.surface),
             content = content,
         )
         footer?.let { SectionFooter(it) }
@@ -208,6 +208,7 @@ fun HodButton(
     Row(
         modifier
             .heightIn(min = height)
+            .then(if (style == HodButtonStyle.Filled) Neu.raisedSmall(shape = shape) else Modifier)
             .clip(shape)
             .background(bg)
             .border(0.5.dp, if (style == HodButtonStyle.Gray) c.separator.copy(alpha = 0.7f) else Color.Transparent, shape)
@@ -225,14 +226,14 @@ fun HodButton(
 /** iOS segmented control with a raised squircle thumb. */
 @Composable
 fun SegmentedControl(options: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().height(40.dp).clip(Squircles.small).background(Hod.colors.segmentTrack).padding(3.dp)) {
+    Row(modifier.fillMaxWidth().height(44.dp).clip(Squircles.small).background(Hod.colors.segmentTrack).then(Neu.inset(shape = Squircles.small)).padding(3.dp)) {
         options.forEachIndexed { index, label ->
             val selected = index == selectedIndex
             Box(
                 Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .then(if (selected) Modifier.shadow(2.dp, Squircles.small).clip(Squircles.small).background(Hod.colors.surface).border(0.5.dp, Hod.colors.separator.copy(alpha = 0.35f), Squircles.small) else Modifier)
+                    .then(if (selected) Neu.raisedSmall(shape = Squircles.small).clip(Squircles.small).background(Hod.colors.surface) else Modifier)
                     .pressable(role = Role.Tab) { onSelect(index) }
                     .semantics { contentDescription = "$label${if (selected) ", selected" else ""}" },
                 contentAlignment = Alignment.Center,
@@ -278,7 +279,7 @@ fun NavBar(backLabel: String, onBack: () -> Unit, title: String? = null, subtitl
 @Composable
 fun SearchField(value: String, onValueChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier) {
     Row(
-        modifier.fillMaxWidth().height(44.dp).clip(Squircles.small).background(Hod.colors.fill).border(0.5.dp, Hod.colors.separator.copy(alpha = 0.35f), Squircles.small).padding(horizontal = 12.dp),
+        modifier.fillMaxWidth().height(48.dp).clip(Squircles.small).background(Hod.colors.fill).then(Neu.inset(shape = Squircles.small)).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -362,8 +363,7 @@ fun FloatingTabBar(items: List<TabItem>, selected: Int, onSelect: (Int) -> Unit,
     val c = Hod.colors
     Row(modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
-            Modifier.weight(1f).height(68.dp).shadow(14.dp, Squircles.card, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.12f))
-                .clip(Squircles.card).background(c.surface.copy(alpha = 0.96f)).border(0.5.dp, c.separator.copy(alpha = 0.6f), Squircles.card).padding(5.dp),
+            Modifier.weight(1f).height(72.dp).then(Neu.card(shape = Squircles.card)).clip(Squircles.card).background(c.surface.copy(alpha = 0.98f)).padding(5.dp),
         ) {
             items.forEachIndexed { index, item ->
                 val isSelected = index == selected
@@ -386,7 +386,7 @@ fun FloatingTabBar(items: List<TabItem>, selected: Int, onSelect: (Int) -> Unit,
             }
         }
         Box(
-            Modifier.size(68.dp).shadow(14.dp, Squircles.button, spotColor = c.tint.copy(alpha = 0.4f)).clip(Squircles.button).background(c.tint)
+            Modifier.size(68.dp).then(Neu.raisedSmall(shape = Squircles.button)).clip(Squircles.button).background(c.tint)
                 .pressable(onClick = onCapture).semantics { contentDescription = "Capture" },
             contentAlignment = Alignment.Center,
         ) { Icon(captureIcon, null, tint = c.onTint, modifier = Modifier.size(28.dp)) }
@@ -435,7 +435,7 @@ fun GroupedPage(modifier: Modifier = Modifier, content: @Composable BoxScope.() 
     Box(modifier.fillMaxSize().background(Hod.colors.groupedBackground), content = content)
 }
 
-val PageContentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp)
+val PageContentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 24.dp, bottom = 124.dp)
 
 @Composable
 fun CheckCircle(checked: Boolean, onToggle: () -> Unit, label: String) {

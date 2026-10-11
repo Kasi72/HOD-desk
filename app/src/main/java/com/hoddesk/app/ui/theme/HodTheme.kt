@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
@@ -68,33 +69,33 @@ data class HodColors(
 )
 
 val LightHodColors = HodColors(
-    tint = Color(0xFF0A7A70),
+    tint = MeridianColors.teal,
     onTint = Color.White,
-    tintSoft = Color(0x1F0A7A70),
-    groupedBackground = Color(0xFFF2F2F7),
-    surface = Color.White,
-    fill = Color(0xFFE3E3E8),
-    segmentTrack = Color(0xFFEEEEF0),
-    separator = Color(0xFFD1D1D6),
-    label = Color(0xFF1C1C1E),
-    secondaryLabel = Color(0xFF6C6C70),
-    tertiaryLabel = Color(0xFF8E8E93),
-    chevron = Color(0xFFC7C7CC),
-    orange = Color(0xFFFF9500),
-    orangeText = Color(0xFFC25E00),
-    red = Color(0xFFFF3B30),
-    redText = Color(0xFFD70015),
-    green = Color(0xFF34C759),
-    greenText = Color(0xFF248A3D),
-    blue = Color(0xFF007AFF),
-    blueText = Color(0xFF0062CC),
-    indigo = Color(0xFF5856D6),
-    purple = Color(0xFFAF52DE),
-    yellow = Color(0xFFFFCC00),
-    gray = Color(0xFF8E8E93),
-    evidenceMark = Color(0x290A7A70),
-    evidenceText = Color(0xFF064E47),
-    hatch = Color(0xFFF2F2F7),
+    tintSoft = Color(0x1F0E6B63),
+    groupedBackground = MeridianColors.ground,
+    surface = MeridianColors.porcelain,
+    fill = MeridianColors.well,
+    segmentTrack = MeridianColors.well,
+    separator = MeridianColors.hairline,
+    label = MeridianColors.ink,
+    secondaryLabel = MeridianColors.text2,
+    tertiaryLabel = MeridianColors.text3,
+    chevron = MeridianColors.chevron,
+    orange = Color(0xFFC98235),
+    orangeText = MeridianColors.orange,
+    red = Color(0xFFD15C53),
+    redText = MeridianColors.red,
+    green = Color(0xFF3AA874),
+    greenText = MeridianColors.green,
+    blue = Color(0xFF4A78BE),
+    blueText = MeridianColors.blue,
+    indigo = MeridianColors.ai,
+    purple = Color(0xFF7568B5),
+    yellow = Color(0xFFD59A3A),
+    gray = MeridianColors.text4,
+    evidenceMark = MeridianColors.mark,
+    evidenceText = MeridianColors.paperText,
+    hatch = MeridianColors.paperBorder,
 )
 
 val DarkHodColors = HodColors(
@@ -131,20 +132,27 @@ val LocalHodColors = staticCompositionLocalOf { LightHodColors }
 
 /** iOS text styles, mapped to sp. The system font carries Tamil through Noto Sans Tamil. */
 private val NoFontPadding = PlatformTextStyle(includeFontPadding = false)
+private val CenteredLineHeight = androidx.compose.ui.text.style.LineHeightStyle(
+    alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+    trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.None,
+)
 
 @Immutable
 data class HodType(
-    val largeTitle: TextStyle = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em, lineHeight = 40.sp, platformStyle = NoFontPadding),
-    val title1: TextStyle = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em, lineHeight = 34.sp, platformStyle = NoFontPadding),
-    val title2: TextStyle = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.01).em, lineHeight = 27.sp, platformStyle = NoFontPadding),
-    val title3: TextStyle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, lineHeight = 25.sp, platformStyle = NoFontPadding),
-    val headline: TextStyle = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, lineHeight = 22.sp, platformStyle = NoFontPadding),
-    val body: TextStyle = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, platformStyle = NoFontPadding),
-    val callout: TextStyle = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, platformStyle = NoFontPadding),
-    val subheadline: TextStyle = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, platformStyle = NoFontPadding),
-    val footnote: TextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, platformStyle = NoFontPadding),
-    val caption: TextStyle = TextStyle(fontSize = 12.sp, lineHeight = 15.sp, platformStyle = NoFontPadding),
-    val tabLabel: TextStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, lineHeight = 14.sp, platformStyle = NoFontPadding),
+    val largeTitle: TextStyle = TextStyle(fontFamily = FontFamily.Serif, fontSize = 40.sp, fontWeight = FontWeight.Medium, letterSpacing = (-0.02).em, lineHeight = 40.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
+    val title1: TextStyle = TextStyle(fontFamily = FontFamily.Serif, fontSize = 28.sp, fontWeight = FontWeight.Medium, letterSpacing = (-0.015).em, lineHeight = 33.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
+    val title2: TextStyle = TextStyle(fontFamily = FontFamily.Serif, fontSize = 24.sp, fontWeight = FontWeight.Medium, letterSpacing = (-0.01).em, lineHeight = 28.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
+    val title3: TextStyle = TextStyle(fontFamily = FontFamily.Serif, fontSize = 21.sp, fontWeight = FontWeight.Medium, lineHeight = 26.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
+    val headline: TextStyle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.01).em, lineHeight = 21.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
+    val body: TextStyle = TextStyle(fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, lineHeight = 19.5.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
+    val callout: TextStyle = TextStyle(fontFamily = FontFamily.Serif, fontSize = 15.5.sp, lineHeight = 24.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
+    val subheadline: TextStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Medium, lineHeight = 21.75.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
+    val footnote: TextStyle = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
+    val caption: TextStyle = TextStyle(fontSize = 11.5.sp, fontWeight = FontWeight.Medium, lineHeight = 15.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
+    val tabLabel: TextStyle = TextStyle(fontSize = 10.5.sp, fontWeight = FontWeight.Bold, lineHeight = 13.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
+    val label: TextStyle = TextStyle(fontSize = 10.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.12.em, lineHeight = 14.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
+    val mono: TextStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
+    val source: TextStyle = TextStyle(fontFamily = FontFamily.Serif, fontSize = 15.5.sp, lineHeight = 24.sp, platformStyle = NoFontPadding, lineHeightStyle = CenteredLineHeight),
 )
 
 val LocalHodType = staticCompositionLocalOf { HodType() }
@@ -225,7 +233,10 @@ object Hod {
 
 @Composable
 fun HodTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    val colors = if (dark) DarkHodColors else LightHodColors
+    // Meridian v1 is intentionally light-only: porcelain surfaces and the
+    // source/AI/approved layer contrast are part of the information model.
+    // Keep the parameter for API compatibility and future dark-theme work.
+    val colors = LightHodColors
     val scheme = if (dark) darkColorScheme(
         primary = colors.tint, onPrimary = colors.onTint, background = colors.groupedBackground,
         surface = colors.surface, onSurface = colors.label, onBackground = colors.label, error = colors.red,

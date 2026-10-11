@@ -1,0 +1,48 @@
+package com.hoddesk.app.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+/** Meridian's porcelain workspace palette. Keep all screen colours in this file. */
+object MeridianColors {
+    val ground = Color(0xFFFFECE9E4)
+    val porcelain = Color(0xFFF3F1ED)
+    val porcelainBorder = Color(0xBFFFFFFF)
+    val well = Color(0xFFE5E1DB)
+    val trackOff = Color(0xFFDEDAD3)
+    val hairline = Color(0x1A544A3C)
+    val ink = Color(0xFF15181E)
+    val ink2 = Color(0xFF3D434E)
+    val text2 = Color(0xFF4A505B)
+    val text3 = Color(0xFF5A6170)
+    val text4 = Color(0xFF6B7180)
+    val chevron = Color(0xFF9AA3B2)
+    val panelTop = Color(0xFF262B34)
+    val panelBottom = Color(0xFF15181E)
+    val panelBrief = Color(0xFF1A1E25)
+    val panelWell = Color(0xFF12151A)
+    val onPanel = Color.White
+    val onPanel2 = Color(0xFFB8BFCB)
+    val onPanel3 = Color(0xFF8A93A3)
+    val teal = Color(0xFF0E6B63)
+    val tealPressed = Color(0xFF0A524C)
+    val tealBtnTop = Color(0xFF158A7E)
+    val tealBtnBottom = Color(0xFF0B5E57)
+    val tealBright = Color(0xFF17A493)
+    val mint = Color(0xFF7FDCCD)
+    val tealSoft = Color(0xFFDCEEEA)
+    val ai = Color(0xFF463FBF)
+    val aiDeep = Color(0xFF2E2A85)
+    val aiSoft = Color(0xFFECEBFB)
+    val aiCard = Color(0xFFF7F6FE)
+    val aiDash = Color(0xFFA9A4EE)
+    val paper = Color(0xFFFBF7EF)
+    val paperBorder = Color(0xFFEFE5D2)
+    val paperText = Color(0xFF2B2418)
+    val paperLabel = Color(0xFF6B5430)
+    val mark = Color(0xFFF8DE9F)
+    val bronze = Color(0xFF8C7048)
+    val red = Color(0xFFA3221B)
+    val orange = Color(0xFF8E4504)
+    val green = Color(0xFF13653A)
+    val blue = Color(0xFF1F4E96)
+}
