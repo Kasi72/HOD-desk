@@ -23,6 +23,7 @@ class IndexMaintenanceJobService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         job = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             var runtime: EmbeddingGemmaLiteRtRuntime? = null
+            var succeeded = false
             try {
                 val battery = registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
                 val level = battery?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, 0) ?: 0
@@ -41,14 +42,20 @@ class IndexMaintenanceJobService : JobService() {
                         val scheduler = CalendarProviderScheduler.fromResolver(contentResolver) { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
                         repository.reconcilePendingCalendarEvents { event -> scheduler.findMatchingEventId(event.title, event.startsAt, event.endsAt) }
                     }
-                    val sources = db.dao().sourcesOnce().filter { it.sensitivity != "T3" && it.sensitivity != "T4" }
-                    SourceSemanticIndexer(db.dao(), runtime!!).indexAll(sources)
+                    val sources = db.dao().sourcesOnce().filter { it.sensitivity != "T3" && it.sensitivity != "T4" }.sortedBy { it.id }
+                    val prefs = getSharedPreferences("semantic_index_progress", MODE_PRIVATE)
+                    val cursor = prefs.getLong("source_cursor", 0L)
+                    val pending = if (cursor == 0L) sources else sources.filter { it.id > cursor }
+                    val indexer = SourceSemanticIndexer(db.dao(), runtime!!)
+                    pending.forEach { source -> indexer.index(source); prefs.edit().putLong("source_cursor", source.id).apply() }
+                    if (pending.size == sources.size || sources.all { it.id <= prefs.getLong("source_cursor", 0L) }) prefs.edit().remove("source_cursor").apply()
                 }
+                succeeded = true
             } catch (t: Throwable) {
                 Log.e("HOD_SEMANTIC", "scheduled_index_failed", t)
             } finally {
                 runtime?.close()
-                jobFinished(params, false)
+                jobFinished(params, !succeeded)
             }
         }
         return true

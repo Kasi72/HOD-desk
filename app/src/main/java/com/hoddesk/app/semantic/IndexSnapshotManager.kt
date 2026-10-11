@@ -22,7 +22,7 @@ data class IndexSnapshot(
 )
 
 object IndexSnapshotManager {
-    private const val FORMAT_VERSION = 2
+    private const val FORMAT_VERSION = 3
     private const val ACTIVE_FILE = "active-snapshot"
     fun checksum(modelVersion: String, promptVersion: Int, sourceIds: List<Long>, chunkCount: Int): String {
         val payload = modelVersion + "|" + promptVersion + "|" + sourceIds.sorted().joinToString(",") + "|" + chunkCount
@@ -106,11 +106,20 @@ object IndexSnapshotManager {
     private data class Quad(val model: String, val prompt: Int, val embeddings: List<SemanticEmbeddingEntity>, val chunks: List<SourceChunkEntity>)
     private fun writeBytes(out: DataOutputStream, bytes: ByteArray) { out.writeInt(bytes.size); out.write(bytes) }
     private fun readBytes(input: DataInputStream): ByteArray = ByteArray(input.readInt().also { require(it in 0..20_000_000) }).also(input::readFully)
-    private fun writeEmbedding(out: DataOutputStream, e: SemanticEmbeddingEntity) { out.writeLong(e.sourceId); out.writeUTF(e.modelVersion); out.writeInt(e.dimension); out.writeLong(e.indexedAt); writeBytes(out, e.vector) }
-    private fun readEmbedding(input: DataInputStream) = SemanticEmbeddingEntity(input.readLong(), input.readUTF(), input.readInt(), readBytes(input), input.readLong())
+    private fun writeEmbedding(out: DataOutputStream, e: SemanticEmbeddingEntity) { out.writeLong(e.sourceId); out.writeUTF(e.modelVersion); out.writeInt(e.dimension); out.writeUTF(e.modality); out.writeBoolean(e.evidenceLocator != null); e.evidenceLocator?.let(out::writeUTF); out.writeLong(e.indexedAt); writeBytes(out, e.vector) }
+    private fun readEmbedding(input: DataInputStream): SemanticEmbeddingEntity {
+        val sourceId = input.readLong()
+        val model = input.readUTF()
+        val dimension = input.readInt()
+        val modality = input.readUTF()
+        val locator = if (input.readBoolean()) input.readUTF() else null
+        val indexedAt = input.readLong()
+        val vector = readBytes(input)
+        return SemanticEmbeddingEntity(sourceId, model, dimension, vector, modality, locator, indexedAt)
+    }
     private fun writeChunk(out: DataOutputStream, c: SourceChunkEntity) { out.writeLong(c.id); out.writeLong(c.sourceId); out.writeInt(c.ordinal); out.writeUTF(c.modality); out.writeUTF(c.text); out.writeUTF(c.citation); out.writeBoolean(c.page != null); c.page?.let(out::writeInt); out.writeBoolean(c.paragraphIndex != null); c.paragraphIndex?.let(out::writeInt); out.writeBoolean(c.messageIndex != null); c.messageIndex?.let(out::writeInt); out.writeBoolean(c.startMs != null); c.startMs?.let(out::writeLong); out.writeBoolean(c.endMs != null); c.endMs?.let(out::writeLong); out.writeUTF(c.modelVersion); out.writeInt(c.dimension); out.writeLong(c.indexedAt); writeBytes(out, c.vector) }
     private fun readChunk(input: DataInputStream) = SourceChunkEntity(input.readLong(), input.readLong(), input.readInt(), input.readUTF(), input.readUTF(), input.readUTF(), if (input.readBoolean()) input.readInt() else null, if (input.readBoolean()) input.readInt() else null, if (input.readBoolean()) input.readInt() else null, if (input.readBoolean()) input.readLong() else null, if (input.readBoolean()) input.readLong() else null, input.readUTF(), input.readInt(), readBytes(input), input.readLong())
     private fun readMetadata(file: File): IndexSnapshot = DataInputStream(FileInputStream(file)).use { input -> require(input.readInt() == FORMAT_VERSION); val model = input.readUTF(); val prompt = input.readInt(); val created = input.readLong(); val checksum = input.readUTF(); val ec = input.readInt(); repeat(ec) { skipEmbedding(input) }; val cc = input.readInt(); repeat(cc) { skipChunk(input) }; IndexSnapshot(file.nameWithoutExtension, model, prompt, ec, cc, checksum, created) }
-    private fun skipEmbedding(input: DataInputStream) { input.readLong(); input.readUTF(); input.readInt(); input.readLong(); input.skipBytes(input.readInt()) }
+    private fun skipEmbedding(input: DataInputStream) { input.readLong(); input.readUTF(); input.readInt(); input.readUTF(); if (input.readBoolean()) input.readUTF(); input.readLong(); input.skipBytes(input.readInt()) }
     private fun skipChunk(input: DataInputStream) { input.readLong(); input.readLong(); input.readInt(); input.readUTF(); input.readUTF(); input.readUTF(); if (input.readBoolean()) input.readInt(); if (input.readBoolean()) input.readInt(); if (input.readBoolean()) input.readInt(); if (input.readBoolean()) input.readLong(); if (input.readBoolean()) input.readLong(); input.readUTF(); input.readInt(); input.readLong(); input.skipBytes(input.readInt()) }
 }

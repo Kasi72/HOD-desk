@@ -65,6 +65,8 @@ data class SemanticEmbeddingEntity(
     val modelVersion: String,
     val dimension: Int,
     val vector: ByteArray,
+    val modality: String = "text",
+    val evidenceLocator: String? = null,
     val indexedAt: Long = System.currentTimeMillis()
 )
 

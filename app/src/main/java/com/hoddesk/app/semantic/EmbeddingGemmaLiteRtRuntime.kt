@@ -23,6 +23,13 @@ import java.net.URL
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.StandardOpenOption
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.rendering.PDFRenderer
+
+data class AudioEmbeddingSegment(val startMs: Long, val endMs: Long, val vector: FloatArray)
+data class ImageRegionEmbedding(val region: String, val vector: FloatArray)
+data class PagePreviewEmbedding(val page: Int, val vector: FloatArray)
 
 /** Real on-device EmbeddingGemma 2 service backed by MediaPipe UniversalEmbedder/LiteRT-LM. */
 class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemmaService, AutoCloseable {
@@ -186,6 +193,20 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
         }
     }
 
+    /** Embeds a small set of quadrants so text queries can find a relevant image region. */
+    suspend fun embedImageRegions(uri: Uri): List<ImageRegionEmbedding> = withContext(Dispatchers.Default) {
+        val bitmap = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+            ?: error("Unable to decode image for region embedding")
+        try {
+            val regions = listOf("top-left" to android.graphics.Rect(0, 0, bitmap.width / 2, bitmap.height / 2), "top-right" to android.graphics.Rect(bitmap.width / 2, 0, bitmap.width, bitmap.height / 2), "bottom-left" to android.graphics.Rect(0, bitmap.height / 2, bitmap.width / 2, bitmap.height), "bottom-right" to android.graphics.Rect(bitmap.width / 2, bitmap.height / 2, bitmap.width, bitmap.height))
+            regions.map { (name, rect) ->
+                val crop = android.graphics.Bitmap.createBitmap(bitmap, rect.left, rect.top, rect.width().coerceAtLeast(1), rect.height().coerceAtLeast(1))
+                val image = BitmapImageBuilder(crop).build()
+                try { ImageRegionEmbedding(name, inferenceMutex.withLock { engine().embedImage(image).embeddings().first().floatEmbedding().copyOf() }) } finally { image.close(); crop.recycle() }
+            }
+        } finally { bitmap.recycle() }
+    }
+
     /** Embeds canonical mono PCM audio; callers must provide 16 kHz float samples. */
     suspend fun embedAudio(samples: FloatArray, sampleRate: Float = 16_000f, channels: Int = 1): FloatArray = inferenceMutex.withLock {
         withContext(Dispatchers.Default) {
@@ -212,6 +233,32 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
         val data = bytes.copyOfRange(44, bytes.size)
         val samples = FloatArray(data.size / 2) { i -> (((data[i * 2].toInt() and 0xff) or (data[i * 2 + 1].toInt() shl 8)).toShort().toInt() / 32768f) }
         embedAudio(samples, rate.toFloat(), channels)
+    }
+
+    /** Embeds overlapping 30-second waveform windows with timestamp locators. */
+    suspend fun embedWavSegments(uri: Uri, windowMs: Long = 30_000L, overlapMs: Long = 5_000L): List<AudioEmbeddingSegment> = withContext(Dispatchers.IO) {
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Unable to read audio")
+        require(bytes.size > 44 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF" && String(bytes, 8, 4, Charsets.US_ASCII) == "WAVE")
+        val channels = u16(bytes, 22); val rate = u32(bytes, 24); val bits = u16(bytes, 34)
+        require(channels == 1 && rate == 16_000 && bits == 16) { "Audio embedding requires 16 kHz mono 16-bit PCM WAV" }
+        val data = bytes.copyOfRange(44, bytes.size)
+        val samples = FloatArray(data.size / 2) { i -> (((data[i * 2].toInt() and 0xff) or (data[i * 2 + 1].toInt() shl 8)).toShort().toInt() / 32768f) }
+        val window = (rate * windowMs / 1000L).toInt().coerceAtLeast(1); val step = (rate * (windowMs - overlapMs) / 1000L).toInt().coerceAtLeast(1)
+        buildList { var start = 0; while (start < samples.size) { val end = (start + window).coerceAtMost(samples.size); add(AudioEmbeddingSegment(start * 1000L / rate, end * 1000L / rate, embedAudio(samples.copyOfRange(start, end), rate.toFloat(), 1))); if (end == samples.size) break; start += step } }
+    }
+
+    /** Renders PDF pages to previews and embeds them in the same multimodal space. */
+    suspend fun embedPdfPagePreviews(uri: Uri): List<PagePreviewEmbedding> = withContext(Dispatchers.Default) {
+        PDFBoxResourceLoader.init(context)
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Unable to read PDF")
+        PDDocument.load(bytes).use { document ->
+            val renderer = PDFRenderer(document)
+            (0 until document.numberOfPages).map { index ->
+                val bitmap = renderer.renderImage(index, 1.0f)
+                val image = BitmapImageBuilder(bitmap).build()
+                try { PagePreviewEmbedding(index + 1, inferenceMutex.withLock { engine().embedImage(image).embeddings().first().floatEmbedding().copyOf() }) } finally { image.close(); bitmap.recycle() }
+            }
+        }
     }
 
     private fun u16(bytes: ByteArray, offset: Int): Int = (bytes[offset].toInt() and 0xff) or ((bytes[offset + 1].toInt() and 0xff) shl 8)

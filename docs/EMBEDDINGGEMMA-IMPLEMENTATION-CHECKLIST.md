@@ -26,6 +26,10 @@ The checklist is updated only after the associated code and tests pass.
 - [x] OCR/transcript text is embedded separately into passage chunks.
 - [x] Extracted action candidates receive dedicated vectors.
 - [x] Original modality vectors retain a source citation and modality label.
+- [x] Semantic source vectors now persist modality and evidence locator metadata.
+- [x] Audio is indexed in overlapping timestamped waveform windows; image quadrants and PDF page previews receive vectors.
+- [x] Text, image and audio query APIs share the same vector search path and return the strongest evidence locator.
+- [x] Scheduled indexing persists a source cursor and retries interrupted jobs without losing completed work.
 - [x] Unreadable media falls back to text indexing without crashing ingestion.
 - [ ] Device verification with a real Tamil screenshot and WAV recording.
 

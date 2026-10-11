@@ -67,7 +67,7 @@ class SourceSemanticIndexer(
         Log.i("HOD_SEMANTIC", "source_modality source=${source.id},modality=$directModality,direct=$directEmbedding")
         val validation = EmbeddingIntegrity.validate(vector)
         check(validation.valid) { "Embedding rejected for source ${source.id}: ${validation.reason}" }
-        dao.upsertSemanticEmbedding(SemanticEmbeddingEntity(source.id, MODEL_VERSION, vector.size, vector.toBytes()))
+        dao.upsertSemanticEmbedding(SemanticEmbeddingEntity(source.id, MODEL_VERSION, vector.size, vector.toBytes(), directModality, source.sourceUri))
         dao.deleteSourceChunks(source.id)
         val textChunks = chunk(source.body, source.sourceType).mapIndexed { index, item ->
             val chunkVector = embedder.embed(EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source, item.citation), item.text))
@@ -95,8 +95,24 @@ class SourceSemanticIndexer(
         val modalityChunk = if (directModality == "image" || directModality == "audio") {
             SourceChunkEntity(sourceId = source.id, ordinal = -1, modality = directModality, text = source.title, citation = "${source.title} · original $directModality", modelVersion = MODEL_VERSION, dimension = vector.size, vector = vector.toBytes())
         } else null
+        val mediaChunks = if (embedder is EmbeddingGemmaLiteRtRuntime && source.sourceUri != null) {
+            val multimodal = embedder as EmbeddingGemmaLiteRtRuntime
+            when {
+                directModality == "audio" -> runCatching { multimodal.embedWavSegments(Uri.parse(source.sourceUri)) }.getOrDefault(emptyList()).mapIndexed { index, segment ->
+                    SourceChunkEntity(sourceId = source.id, ordinal = -10_000 - index, modality = "audio_segment", text = source.title, citation = "${source.title} · ${segment.startMs / 1000}s–${segment.endMs / 1000}s", startMs = segment.startMs, endMs = segment.endMs, modelVersion = MODEL_VERSION, dimension = segment.vector.size, vector = segment.vector.toBytes())
+                }
+                directModality == "image" -> runCatching { multimodal.embedImageRegions(Uri.parse(source.sourceUri)) }.getOrDefault(emptyList()).mapIndexed { index, region ->
+                    SourceChunkEntity(sourceId = source.id, ordinal = -20_000 - index, modality = "image_region", text = source.title, citation = "${source.title} · image region ${region.region}", modelVersion = MODEL_VERSION, dimension = region.vector.size, vector = region.vector.toBytes())
+                }
+                source.sourceType.contains("PDF", true) -> runCatching { multimodal.embedPdfPagePreviews(Uri.parse(source.sourceUri)) }.getOrDefault(emptyList()).map { page ->
+                    SourceChunkEntity(sourceId = source.id, ordinal = -30_000 - page.page, modality = "document_page_preview", text = source.title, citation = "${source.title} · page ${page.page} preview", page = page.page, modelVersion = MODEL_VERSION, dimension = page.vector.size, vector = page.vector.toBytes())
+                }
+                else -> emptyList()
+            }
+        } else emptyList()
         val chunks = buildList {
             modalityChunk?.let(::add)
+            addAll(mediaChunks)
             addAll(textChunks)
             addAll(actionChunks)
         }
@@ -176,6 +192,29 @@ class SourceSemanticIndexer(
             .take(limit).map { match ->
                 SourceSemanticHit(match.source, match.score, match.score.coerceIn(0f, 1f), match.evidenceCitation, match.evidenceModality)
         }
+    }
+
+    /** Cross-modal image query: a camera/screenshot can retrieve text and audio sources. */
+    suspend fun searchImage(uri: Uri, sources: List<SourceEntity>, limit: Int = 5): List<SourceSemanticHit> {
+        val multimodal = embedder as? EmbeddingGemmaLiteRtRuntime ?: return emptyList()
+        return searchVector(multimodal.embedImage(uri), sources, limit)
+    }
+
+    /** Cross-modal audio query: each query waveform window is matched against indexed chunks. */
+    suspend fun searchAudio(uri: Uri, sources: List<SourceEntity>, limit: Int = 5): List<SourceSemanticHit> {
+        val multimodal = embedder as? EmbeddingGemmaLiteRtRuntime ?: return emptyList()
+        val hits = multimodal.embedWavSegments(uri).flatMap { searchVector(it.vector, sources, limit) }
+        return hits.groupBy { it.source.id }.map { (_, values) -> values.maxBy { it.score } }.sortedByDescending { it.score }.take(limit)
+    }
+
+    private suspend fun searchVector(queryVector: FloatArray, sources: List<SourceEntity>, limit: Int): List<SourceSemanticHit> {
+        val byId = sources.filter { it.sensitivity != "T3" && it.sensitivity != "T4" }.associateBy { it.id }
+        return dao.allSourceChunks(MODEL_VERSION).groupBy { it.sourceId }.mapNotNull { (sourceId, sourceChunks) ->
+            val source = byId[sourceId] ?: return@mapNotNull null
+            val best = sourceChunks.maxByOrNull { cosine(queryVector, it.vector.toFloatArray()) } ?: return@mapNotNull null
+            val score = cosine(queryVector, best.vector.toFloatArray())
+            SourceSemanticHit(source, score, score.coerceIn(0f, 1f), best.citation, best.modality)
+        }.filter { it.confidence >= minConfidence }.sortedByDescending { it.score }.take(limit)
     }
 
     private data class IndexedChunk(val text: String, val citation: String, val page: Int? = null, val paragraphIndex: Int? = null, val messageIndex: Int? = null, val startMs: Long? = null, val endMs: Long? = null)
