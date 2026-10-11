@@ -209,7 +209,7 @@ fun PrivacyPage(store: PrivacyStore, onBack: () -> Unit, onOpenActivity: () -> U
             RowDivider(58.dp)
             ListRow("Clinical material", value = "Quarantined", icon = Icons.Rounded.Shield, iconColor = c.green, valueColor = c.greenText)
             RowDivider(58.dp)
-            ListRow("Recovery", subtitle = "Rebuilds are validated before activation; failed checks keep the prior index.", value = "Protected", icon = Icons.Rounded.History, iconColor = c.blue, valueColor = c.greenText)
+            ListRow("Recovery", subtitle = "Self-check and rebuild status remain visible for review before using AI suggestions.", value = "Inspectable", icon = Icons.Rounded.History, iconColor = c.blue, valueColor = c.greenText)
         }
     }
     if (customRetention) TextPromptDialog("Keep Items For", "Days (1–3650)", retention.toString(), "Save", onDismiss = { customRetention = false }, numeric = true) {
@@ -267,7 +267,7 @@ fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebu
             RowDivider()
             ListRow("Rebuild Search Index", titleColor = c.tint, onClick = onRebuild)
             RowDivider()
-            ListRow("Rollback protection", subtitle = "A rebuild is checked before it becomes active. If validation fails, the previous index remains in use.", icon = Icons.Rounded.History, iconColor = c.blue, value = "Protected", valueColor = c.greenText)
+            ListRow("Rebuild safety", subtitle = "Self-check exposes stale or invalid vectors before you rely on search.", icon = Icons.Rounded.History, iconColor = c.blue, value = "Inspectable", valueColor = c.greenText)
             RowDivider(58.dp)
             ListRow("Clinical boundary", subtitle = "Clinical items stay outside search, reasoning and calendar output.", icon = Icons.Rounded.Shield, iconColor = c.green, value = "${status.clinicalCount} protected", valueColor = c.greenText)
             RowDivider(58.dp)
