@@ -18,6 +18,7 @@ object HybridRetriever {
                 val exact = exactTokens(query, source.title + " " + source.body)
                 if (exact.isNotEmpty()) add("keyword: ${exact.take(3).joinToString()}")
                 if (containsNumber(query) && Regex("\\d+").findAll(source.body).any { it.value in query }) add("document number")
+                if (lexical > .08f && exact.isEmpty()) add("fuzzy text")
             }
             HybridMatch(source, (semantic * .72f + lexical * .28f).coerceIn(0f, 1f), semantic, lexical, reasons)
         }.sortedByDescending { it.score }.take(limit)
@@ -31,8 +32,8 @@ object HybridRetriever {
         if (text.contains(q)) score += .65f
         val tokens = exactTokens(q, text)
         score += (tokens.size.toFloat() / qTokens(q).size.coerceAtLeast(1) * .25f)
-        val qgrams = tamilNgrams(q)
-        if (qgrams.isNotEmpty()) score += (qgrams.count { it in tamilNgrams(text) }.toFloat() / qgrams.size * .10f)
+        val qgrams = characterNgrams(q)
+        if (qgrams.isNotEmpty()) score += (qgrams.count { it in characterNgrams(text) }.toFloat() / qgrams.size * .10f)
         return score.coerceIn(0f, 1f)
     }
 
@@ -42,6 +43,6 @@ object HybridRetriever {
     }
 
     private fun qTokens(value: String): List<String> = Regex("[\\p{L}\\p{N}]+").findAll(value.lowercase()).map { it.value }.toList()
-    private fun tamilNgrams(value: String): Set<String> = value.filter { it.code >= 0x0B80 && it.code <= 0x0BFF }.windowed(3, 1, partialWindows = false).toSet()
+    private fun characterNgrams(value: String): Set<String> = value.filter { it.isLetterOrDigit() }.windowed(3, 1, partialWindows = false).toSet()
     private fun containsNumber(value: String) = value.any { it.isDigit() }
 }

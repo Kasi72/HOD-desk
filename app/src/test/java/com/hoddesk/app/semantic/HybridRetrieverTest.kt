@@ -20,4 +20,12 @@ class HybridRetrieverTest {
         assertEquals(1, ranked.size)
         assertTrue(ranked.first().keywordScore > 0f)
     }
+
+    @Test fun short_character_overlap_recovers_ocr_typo() {
+        val source = SourceEntity(id = 1, title = "Erode Collectorate", body = "Attend the DME review", sourceType = "Screenshot")
+        val ranked = HybridRetriever.rank("Erode Collectrate", listOf(source), emptyList())
+        assertEquals(1, ranked.size)
+        assertTrue(ranked.first().keywordScore > 0f)
+        assertTrue(ranked.first().reasons.any { it.contains("keyword") || it == "fuzzy text" })
+    }
 }
