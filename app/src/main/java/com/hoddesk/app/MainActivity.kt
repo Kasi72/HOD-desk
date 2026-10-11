@@ -224,6 +224,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     var showCapture by remember { mutableStateOf(false) }
     var showNote by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
+    var secretaryTranscript by rememberSaveable { mutableStateOf("") }
     val processing = remember { mutableStateListOf<ProcessingItem>() }
     var settingsVersion by remember { mutableIntStateOf(0) }
 
@@ -298,12 +299,12 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         viewModel.ingestWithActions(source, actions)
     }
     fun saveImportedBatch(items: List<ImportedSource>, uri: Uri) = items.forEach { saveImported(it, uri) }
-    fun transcribe(uri: Uri, title: String, type: String) {
+    fun transcribe(uri: Uri, title: String, type: String, onTranscript: ((String) -> Unit)? = null) {
         val item = ProcessingItem(title, "Transcribing Tamil and English on this phone…", null)
         processing += item
         scope.launch {
             runCatching { audioRuntime.transcribeWav(uri) }
-                .onSuccess { text -> saveImported(ImportedSource(title, text.ifBlank { "No speech detected" }, type, uri), uri); status = "$title added for review" }
+                .onSuccess { text -> onTranscript?.invoke(text); saveImported(ImportedSource(title, text.ifBlank { "No speech detected" }, type, uri), uri); status = "$title added for review" }
                 .onFailure { error ->
                     Log.e("HOD_AUDIO", "transcription_failed", error)
                     saveImported(AudioTranscriptImportAdapter(context.contentResolver).importAudio(uri), uri)
@@ -413,7 +414,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         r.release(); recorder = null
         if (file != null && file.length() > 0) {
             showCapture = false
-            transcribe(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file), "Voice note · ${timeLabel(System.currentTimeMillis())}", "Voice note")
+                transcribe(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file), "Voice note · ${timeLabel(System.currentTimeMillis())}", "Voice note") { secretaryTranscript = it }
         }
     }
     DisposableEffect(Unit) { onDispose { recorder?.let { runCatching { it.stop() }; it.release() } } }
@@ -686,7 +687,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     onCopy = { candidate -> status = "Draft copied for review."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_copied", detail = candidate.evidence)) } },
                     onShare = { candidate -> status = "Review the draft in your sharing app before sending."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_share_started", detail = candidate.evidence)) } },
                 )
-                "secretary" -> SecretaryPage(onBack = ::pop, onRun = { intent ->
+                "secretary" -> SecretaryPage(initialTranscript = secretaryTranscript, onBack = ::pop, onRecord = { if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO) }, onRun = { intent ->
                     when (intent.kind) {
                         com.hoddesk.app.secretary.SecretaryIntent.Kind.SHOW_WAITING -> { tasksSegment = 1; tab = TAB_TASKS; pop(); status = "Showing work you are waiting on." }
                         com.hoddesk.app.secretary.SecretaryIntent.Kind.SHOW_MEETINGS -> { tab = TAB_CALENDAR; pop(); status = "Showing your calendar." }

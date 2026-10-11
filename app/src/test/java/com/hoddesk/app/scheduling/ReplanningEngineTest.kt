@@ -14,4 +14,11 @@ class ReplanningEngineTest {
         assertFalse(proposal.changes.isEmpty())
         assertTrue(proposal.rationale.contains("confirmation"))
     }
+
+    @Test fun configuredVenueTravelAddsBufferToProposal() {
+        val task = TaskEntity(id = 3, title = "Collector meeting", project = "Erode Collectorate", dueAt = 10_000L)
+        val event = EventEntity(id = 4, title = "Ward round", startsAt = 1_000L, endsAt = 9_000L, location = "Psychiatry ward")
+        val proposal = ReplanningEngine.propose(listOf(task), listOf(event), emptyList(), mapOf(("Psychiatry ward" to "Erode Collectorate") to 20_000L), now = 10_000L)
+        assertTrue(proposal.changes.first().reason.contains("travel"))
+    }
 }

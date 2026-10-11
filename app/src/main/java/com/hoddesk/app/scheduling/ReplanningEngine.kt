@@ -14,16 +14,20 @@ object ReplanningEngine {
         tasks.filter { it.status == "open" }.sortedWith(compareByDescending<TaskEntity> { priority(it.priority) }.thenBy { it.dueAt ?: Long.MAX_VALUE }).forEach { task ->
             val duration = 30 * 60 * 1000L
             var candidate = maxOf(now, task.dueAt ?: now)
+            val venue = task.project.takeIf { it.isNotBlank() }
+            val previous = events.filter { it.endsAt <= candidate && !it.location.isNullOrBlank() }.maxByOrNull { it.endsAt }
+            val travel = if (venue != null && previous?.location != null) travelFor(previous.location!!, venue, travelMinutes) else 0L
+            if (travel > 0L) candidate += travel
             while (busy.any { candidate < it.second && candidate + duration > it.first }) {
                 candidate = busy.first { candidate < it.second && candidate + duration > it.first }.second
             }
             val end = candidate + duration
             if (task.dueAt != null && candidate != task.dueAt) {
-                changes += ReplanChange(task.id, task.dueAt, candidate, end, "higher-priority block or conflict")
+                changes += ReplanChange(task.id, task.dueAt, candidate, end, if (travel > 0L) "travel buffer plus higher-priority block or conflict" else "higher-priority block or conflict")
             }
             busy += candidate to end
         }
-        if (travelMinutes.isNotEmpty()) conflicts += "Travel time is included only when venue pairs are known"
+        if (travelMinutes.isNotEmpty()) conflicts += "Travel buffers applied for configured venue pairs"
         return ReplanProposal(changes, changes.map { it.taskId }, conflicts, "Proposed blocks preserve protected time and priority order; confirmation is required.")
     }
 
@@ -33,4 +37,7 @@ object ReplanningEngine {
         "medium" -> 2
         else -> 1
     }
+
+    private fun travelFor(from: String, to: String, map: Map<Pair<String, String>, Long>): Long =
+        map.entries.firstOrNull { (pair, _) -> pair.first.equals(from, true) && pair.second.equals(to, true) }?.value?.coerceAtLeast(0L) ?: 0L
 }
