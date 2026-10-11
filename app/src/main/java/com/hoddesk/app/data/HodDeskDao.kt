@@ -58,6 +58,7 @@ interface HodDeskDao {
     @Query("SELECT * FROM commitments WHERE taskId = :taskId LIMIT 1") suspend fun commitmentForTask(taskId: Long): CommitmentEntity?
     @Query("SELECT * FROM commitments WHERE status = 'open' AND direction = 'OWED_BY_ME' ORDER BY dueAt") suspend fun pendingCommitments(): List<CommitmentEntity>
     @Query("SELECT * FROM commitments WHERE status = 'open' AND direction = 'OWED_TO_ME' ORDER BY dueAt") suspend fun waitingCommitments(): List<CommitmentEntity>
+    @Query("SELECT * FROM commitments ORDER BY updatedAt DESC") fun observeCommitments(): Flow<List<CommitmentEntity>>
     @Query("SELECT * FROM commitments WHERE status = 'open' AND dueAt IS NOT NULL AND dueAt < :now ORDER BY dueAt") suspend fun overdueCommitments(now: Long): List<CommitmentEntity>
     @Query("UPDATE commitments SET status = :status, updatedAt = :now WHERE taskId = :taskId") suspend fun setCommitmentStatus(taskId: Long, status: String, now: Long = System.currentTimeMillis())
     @Query("DELETE FROM commitments WHERE taskId = :taskId") suspend fun deleteCommitmentForTask(taskId: Long)

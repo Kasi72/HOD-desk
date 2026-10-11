@@ -48,6 +48,7 @@ import com.hoddesk.app.ui.components.pressable
 import com.hoddesk.app.ui.theme.Hod
 import com.hoddesk.app.ui.theme.Squircles
 import com.hoddesk.app.workflow.SecretaryIntelligence
+import com.hoddesk.app.secretary.SecretaryStateSnapshot
 import com.hoddesk.app.workflow.MeetingPreparation
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -83,12 +84,13 @@ fun TodayScreen(
     onOpenTask: (TaskEntity) -> Unit,
     onOpenCalendar: () -> Unit,
     onOpenWaiting: () -> Unit,
+    secretaryState: SecretaryStateSnapshot? = null,
 ) {
     val c = Hod.colors
     val today = LocalDate.now()
     val mustAct = buildMustAct(sources, tasks, today)
     val toReview = sources.count { !it.reviewed && !it.isClinical() }
-    val waiting = tasks.count { it.status != "completed" && it.status != "deleted" && it.status != "archived" && !it.assignee.isNullOrBlank() }
+    val waiting = secretaryState?.waiting ?: tasks.count { it.status != "completed" && it.status != "deleted" && it.status != "archived" && !it.assignee.isNullOrBlank() }
     LazyColumn(Modifier.statusBarsPadding(), contentPadding = PageContentPadding, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 8.dp), verticalAlignment = Alignment.Bottom) {
@@ -195,7 +197,7 @@ fun TodayScreen(
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CountTile(toReview, "To review", Modifier.weight(1f)) { onOpenReview(null) }
+                CountTile(secretaryState?.action ?: toReview, "To review", Modifier.weight(1f)) { onOpenReview(null) }
                 CountTile(waiting, "Waiting on others", Modifier.weight(1f), onClick = onOpenWaiting)
             }
         }

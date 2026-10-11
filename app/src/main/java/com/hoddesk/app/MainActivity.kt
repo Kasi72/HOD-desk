@@ -123,6 +123,7 @@ import com.hoddesk.app.ui.screens.isClinical
 import com.hoddesk.app.ui.screens.sourceLook
 import com.hoddesk.app.ui.screens.timeLabel
 import com.hoddesk.app.ui.screens.workdayLine
+import com.hoddesk.app.secretary.SecretaryStateBuilder
 import com.hoddesk.app.ui.theme.Hod
 import com.hoddesk.app.ui.theme.HodTheme
 import com.hoddesk.app.ui.theme.Squircles
@@ -173,6 +174,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val allTasks by viewModel.tasks.collectAsState()
     val auditLog by viewModel.auditLog.collectAsState()
     val learningCorrectionCount by remember { dao.observeLearningCorrectionCount() }.collectAsState(0)
+    val commitments by remember { dao.observeCommitments() }.collectAsState(emptyList())
     LaunchedEffect(Unit) {
         // Enforce the configured retention policy after every process start.
         // Sources backing approved tasks are deliberately retained by the DAO.
@@ -511,6 +513,9 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     // --- Derived status ---
     val reviewQueue = sources.filter { !it.reviewed && !it.isClinical() }.sortedWith(compareByDescending<SourceEntity> { it.priorityScore }.thenByDescending { it.capturedAt })
     val aiHealthy = embeddingReady && (indexHealth?.healthy != false)
+    val secretaryState = remember(sources, tasks, todayEvents, commitments) {
+        SecretaryStateBuilder.build(sources, tasks, todayEvents, commitments)
+    }
     var reasoningProgress by remember { mutableStateOf<Int?>(null) }
 
     val c = Hod.colors
@@ -527,6 +532,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     onOpenTask = { openTaskId = it.id },
                     onOpenCalendar = { selectedDayEpoch = LocalDate.now().toEpochDay(); tab = TAB_CALENDAR },
                     onOpenWaiting = { tasksSegment = 1; tab = TAB_TASKS },
+                    secretaryState = secretaryState,
                 )
                 TAB_REVIEW -> ReviewScreen(
                     queue = reviewQueue, startSourceId = reviewStartId, team = team,
