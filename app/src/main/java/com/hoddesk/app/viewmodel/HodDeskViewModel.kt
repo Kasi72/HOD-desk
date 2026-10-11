@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.ViewModelProvider
 import com.hoddesk.app.data.SourceEntity
+import com.hoddesk.app.data.ActionPointEntity
 import com.hoddesk.app.repository.HodDeskRepository
 import com.hoddesk.app.repository.ActionPointDraft
 import com.hoddesk.app.reasoning.ActionReasoningOutput
@@ -28,6 +29,7 @@ class HodDeskViewModel(private val repository: HodDeskRepository) : ViewModel() 
     suspend fun proposeSchedule(title: String, startsAt: Long, endsAt: Long, taskId: Long? = null) = repository.proposeSchedule(title, startsAt, endsAt, taskId)
     fun confirmSchedule(proposal: com.hoddesk.app.repository.ScheduleProposal) = viewModelScope.launch { repository.confirmSchedule(proposal) }
     fun setActionPointStatus(sourceId: Long, action: String, status: String) = viewModelScope.launch { repository.setActionPointStatus(sourceId, action, status) }
+    fun updateActionPoint(point: ActionPointEntity) = viewModelScope.launch { repository.updateActionPoint(point) }
     fun complete(taskId: Long) = viewModelScope.launch { repository.completeTask(taskId) }
     fun setDone(taskId: Long, done: Boolean) = viewModelScope.launch { repository.setTaskDone(taskId, done) }
     fun setBlocker(taskId: Long, blocker: String?) = viewModelScope.launch { repository.setBlocker(taskId, blocker) }

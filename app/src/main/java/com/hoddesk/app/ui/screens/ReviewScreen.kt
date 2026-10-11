@@ -83,6 +83,7 @@ fun ReviewScreen(
     rankActions: suspend (List<String>) -> List<String>,
     instructionModelPath: String?,
     onReasoning: (Long, ActionReasoningOutput) -> Unit,
+    onUpdateActionPoint: (ActionPointEntity) -> Unit,
     onApprove: (source: SourceEntity, action: String, assignee: String?) -> Unit,
     onActionStatus: (sourceId: Long, action: String, status: String) -> Unit,
     onDismissSource: (sourceId: Long, reason: String) -> Unit,
@@ -115,6 +116,7 @@ fun ReviewScreen(
             SourceReview(
                 source = source, team = team, observeActionPoints = observeActionPoints, searchRelated = searchRelated,
                 rankActions = rankActions, instructionModelPath = instructionModelPath, onReasoning = onReasoning,
+                onUpdateActionPoint = onUpdateActionPoint,
                 onApprove = onApprove, onActionStatus = onActionStatus, onDismissSource = onDismissSource,
             )
         }
@@ -130,6 +132,7 @@ private fun SourceReview(
     rankActions: suspend (List<String>) -> List<String>,
     instructionModelPath: String?,
     onReasoning: (Long, ActionReasoningOutput) -> Unit,
+    onUpdateActionPoint: (ActionPointEntity) -> Unit,
     onApprove: (SourceEntity, String, String?) -> Unit,
     onActionStatus: (Long, String, String) -> Unit,
     onDismissSource: (Long, String) -> Unit,
@@ -155,6 +158,10 @@ private fun SourceReview(
 
     var editing by remember(source.id, action) { mutableStateOf(false) }
     var edited by remember(source.id, action) { mutableStateOf(action.orEmpty()) }
+    var editedDate by remember(source.id, action, point?.id) { mutableStateOf(point?.dateText.orEmpty()) }
+    var editedTime by remember(source.id, action, point?.id) { mutableStateOf(point?.timeText.orEmpty()) }
+    var editedLocation by remember(source.id, action, point?.id) { mutableStateOf(point?.locationText.orEmpty()) }
+    var editedPeople by remember(source.id, action, point?.id) { mutableStateOf(point?.peopleText.orEmpty()) }
     var showReject by remember { mutableStateOf(false) }
     var showDelegate by remember { mutableStateOf(false) }
     var customDelegate by remember { mutableStateOf<String?>(null) }
@@ -212,6 +219,10 @@ private fun SourceReview(
                         label = { Text("Action wording") }, textStyle = Hod.type.headline,
                         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.tint, focusedLabelColor = c.tint, cursorColor = c.tint),
                     )
+                    OutlinedTextField(value = editedDate, onValueChange = { editedDate = it }, modifier = Modifier.fillMaxWidth(), shape = Squircles.small, label = { Text("Due date (optional)") }, singleLine = true)
+                    OutlinedTextField(value = editedTime, onValueChange = { editedTime = it }, modifier = Modifier.fillMaxWidth(), shape = Squircles.small, label = { Text("Time (optional)") }, singleLine = true)
+                    OutlinedTextField(value = editedLocation, onValueChange = { editedLocation = it }, modifier = Modifier.fillMaxWidth(), shape = Squircles.small, label = { Text("Where (optional)") }, singleLine = true)
+                    OutlinedTextField(value = editedPeople, onValueChange = { editedPeople = it }, modifier = Modifier.fillMaxWidth(), shape = Squircles.small, label = { Text("People / owner (optional)") }, singleLine = true)
                 } else {
                     Text(action, style = Hod.type.title2, color = c.label)
                 }
@@ -228,7 +239,17 @@ private fun SourceReview(
                             when (f.state) { FieldState.Missing -> "Not stated"; FieldState.Confirm -> f.value.orEmpty(); FieldState.Verified -> f.value.orEmpty() },
                             style = Hod.type.body,
                             color = when (f.state) { FieldState.Verified -> c.secondaryLabel; FieldState.Confirm -> c.orangeText; FieldState.Missing -> c.tertiaryLabel },
-                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1.4f, fill = false),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1.4f, fill = false).pressable {
+                                // Field values are edited together with the
+                                // action so uncertain extraction can never be
+                                // silently accepted as fact.
+                                editedDate = point?.dateText.orEmpty()
+                                editedTime = point?.timeText.orEmpty()
+                                editedLocation = point?.locationText.orEmpty()
+                                editedPeople = point?.peopleText.orEmpty()
+                                edited = action.orEmpty()
+                                editing = true
+                            },
                         )
                         when (f.state) {
                             FieldState.Verified -> Icon(Icons.Rounded.CheckCircle, "Found in source", tint = c.green, modifier = Modifier.size(22.dp))
@@ -279,9 +300,21 @@ private fun SourceReview(
         }
         if (action != null) Column(Modifier.fillMaxWidth().background(c.groupedBackground).navigationBarsPadding().imePadding().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             val finalAction = if (editing && edited.isNotBlank()) edited.trim() else action
-            HodButton(if (editing) "Approve Edited Action" else "Approve", onClick = { onApprove(source, finalAction, null); finish(true, action) }, modifier = Modifier.fillMaxWidth())
+            HodButton(if (editing) "Save fields and approve" else "Approve", onClick = {
+                if (editing && point != null) onUpdateActionPoint(point.copy(action = finalAction, dateText = editedDate, timeText = editedTime, locationText = editedLocation, peopleText = editedPeople))
+                onApprove(source, finalAction, null); finish(true, action)
+            }, modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                HodButton(if (editing) "Cancel Edit" else "Edit", onClick = { if (editing) editing = false else { edited = action; editing = true } }, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.weight(1f))
+                HodButton(if (editing) "Save fields" else "Edit fields", onClick = {
+                    if (editing) {
+                        if (point != null) onUpdateActionPoint(point.copy(action = edited.trim(), dateText = editedDate, timeText = editedTime, locationText = editedLocation, peopleText = editedPeople))
+                        editing = false
+                    } else {
+                        edited = action
+                        editedDate = point?.dateText.orEmpty(); editedTime = point?.timeText.orEmpty(); editedLocation = point?.locationText.orEmpty(); editedPeople = point?.peopleText.orEmpty()
+                        editing = true
+                    }
+                }, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.weight(1f))
                 HodButton("Delegate", onClick = { showDelegate = true }, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.weight(1f))
                 HodButton("Reject", onClick = { showReject = true }, style = HodButtonStyle.DestructiveTinted, height = 46.dp, modifier = Modifier.weight(1f))
             }

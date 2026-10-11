@@ -534,6 +534,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     rankActions = { list -> if (embeddingReady) EmbeddingGemmaActionRanker(embeddingRuntime).rank(list).map { it.first } else list },
                     instructionModelPath = installedInstructionModel,
                     onReasoning = { id, output -> viewModel.saveReasoning(id, output) },
+                    onUpdateActionPoint = { point -> viewModel.updateActionPoint(point) },
                     onApprove = { source, action, assignee -> viewModel.approveAction(source.id, action, source.sourceType, assignee = assignee) },
                     onActionStatus = { id, action, s -> viewModel.setActionPointStatus(id, action, s) },
                     onDismissSource = { id, reason -> viewModel.dismissSource(id, reason) },

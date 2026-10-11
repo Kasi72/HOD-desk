@@ -75,6 +75,16 @@ class HodDeskRepository(private val dao: HodDeskDao) {
 
     suspend fun deleteAllWorkData() { dao.deleteAllWorkData(); audit("app", 0, "all_data_deleted") }
     suspend fun setActionPointStatus(sourceId: Long, action: String, status: String) { dao.setActionPointStatus(sourceId, action, status); audit("source", sourceId, "action_status_$status", action) }
+    suspend fun updateActionPoint(point: ActionPointEntity) {
+        dao.updateActionPoint(point.copy(
+            action = point.action.trim(),
+            dateText = point.dateText?.trim()?.takeIf { it.isNotBlank() },
+            timeText = point.timeText?.trim()?.takeIf { it.isNotBlank() },
+            locationText = point.locationText?.trim()?.takeIf { it.isNotBlank() },
+            peopleText = point.peopleText?.trim()?.takeIf { it.isNotBlank() },
+        ))
+        audit("action_point", point.id, "edited", point.action.trim())
+    }
 
     suspend fun proposeSchedule(title: String, startsAt: Long, endsAt: Long, taskId: Long? = null): ScheduleProposal {
         require(endsAt > startsAt) { "Event must end after it starts" }
