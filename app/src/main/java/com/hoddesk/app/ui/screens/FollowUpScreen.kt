@@ -1,12 +1,11 @@
 package com.hoddesk.app.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,7 +29,12 @@ fun FollowUpPage(candidates: List<FollowUpCandidate>, onBack: () -> Unit, onCopy
             val draft = remember(candidate.commitmentId) { mutableStateOf(candidate.draft) }
             GroupedSection(header = candidate.reason) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(draft.value, style = Hod.type.body, color = c.label, modifier = Modifier.fillMaxWidth().background(c.fill, RoundedCornerShape(14.dp)).padding(14.dp))
+                    OutlinedTextField(
+                        value = draft.value,
+                        onValueChange = { draft.value = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Draft message") },
+                    )
                     Text("Evidence: " + candidate.evidence, style = Hod.type.footnote, color = c.secondaryLabel)
                     RowDivider()
                     HodButton("Copy draft", { onCopy(candidate.copy(draft = draft.value)) }, style = HodButtonStyle.Tinted, modifier = Modifier.fillMaxWidth())

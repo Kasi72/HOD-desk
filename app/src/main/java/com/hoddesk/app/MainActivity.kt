@@ -674,11 +674,12 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     onShare = { candidate -> status = "Review the draft in your sharing app before sending."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_share_started", detail = candidate.evidence)) } },
                 )
                 "secretary" -> SecretaryPage(onBack = ::pop, onRun = { intent ->
-                    status = when (intent.kind) {
-                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SHOW_WAITING -> "Open Tasks › Delegated to see waiting items."
-                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SHOW_MEETINGS -> "Open Calendar to review upcoming meetings."
-                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SEARCH -> "Search request ready: " + intent.query
-                        else -> if (intent.requiresConfirmation) "Proposal ready; review and confirm before applying." else "Secretary request received."
+                    when (intent.kind) {
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SHOW_WAITING -> { tasksSegment = 1; tab = TAB_TASKS; pop(); status = "Showing work you are waiting on." }
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SHOW_MEETINGS -> { tab = TAB_CALENDAR; pop(); status = "Showing your calendar." }
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SEARCH -> { libraryQuery = intent.query; tab = TAB_LIBRARY; pop(); status = "Searching your indexed sources." }
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.PLAN_DAY -> { tab = TAB_CALENDAR; pop(); status = "Review the proposed day plan before applying it." }
+                        else -> status = if (intent.requiresConfirmation) "Proposal ready; review and confirm before applying." else "Secretary request received."
                     }
                 })
                 "control" -> SecretaryControlCentre(
