@@ -30,6 +30,10 @@ class HodDeskViewModel(private val repository: HodDeskRepository) : ViewModel() 
     fun confirmSchedule(proposal: com.hoddesk.app.repository.ScheduleProposal) = viewModelScope.launch { repository.confirmSchedule(proposal) }
     fun setActionPointStatus(sourceId: Long, action: String, status: String) = viewModelScope.launch { repository.setActionPointStatus(sourceId, action, status) }
     fun updateActionPoint(point: ActionPointEntity) = viewModelScope.launch { repository.updateActionPoint(point) }
+    fun approveEditedAction(point: ActionPointEntity?, sourceId: Long, project: String, action: String, assignee: String? = null) = viewModelScope.launch {
+        point?.let { repository.updateActionPoint(it) }
+        repository.approveAction(sourceId, action, project, assignee = assignee)
+    }
     fun complete(taskId: Long) = viewModelScope.launch { repository.completeTask(taskId) }
     fun setDone(taskId: Long, done: Boolean) = viewModelScope.launch { repository.setTaskDone(taskId, done) }
     fun setBlocker(taskId: Long, blocker: String?) = viewModelScope.launch { repository.setBlocker(taskId, blocker) }

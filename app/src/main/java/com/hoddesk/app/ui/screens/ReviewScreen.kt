@@ -84,6 +84,7 @@ fun ReviewScreen(
     instructionModelPath: String?,
     onReasoning: (Long, ActionReasoningOutput) -> Unit,
     onUpdateActionPoint: (ActionPointEntity) -> Unit,
+    onApproveEdited: (SourceEntity, ActionPointEntity?, String, String?) -> Unit,
     onApprove: (source: SourceEntity, action: String, assignee: String?) -> Unit,
     onActionStatus: (sourceId: Long, action: String, status: String) -> Unit,
     onDismissSource: (sourceId: Long, reason: String) -> Unit,
@@ -117,6 +118,7 @@ fun ReviewScreen(
                 source = source, team = team, observeActionPoints = observeActionPoints, searchRelated = searchRelated,
                 rankActions = rankActions, instructionModelPath = instructionModelPath, onReasoning = onReasoning,
                 onUpdateActionPoint = onUpdateActionPoint,
+                onApproveEdited = onApproveEdited,
                 onApprove = onApprove, onActionStatus = onActionStatus, onDismissSource = onDismissSource,
             )
         }
@@ -133,6 +135,7 @@ private fun SourceReview(
     instructionModelPath: String?,
     onReasoning: (Long, ActionReasoningOutput) -> Unit,
     onUpdateActionPoint: (ActionPointEntity) -> Unit,
+    onApproveEdited: (SourceEntity, ActionPointEntity?, String, String?) -> Unit,
     onApprove: (SourceEntity, String, String?) -> Unit,
     onActionStatus: (Long, String, String) -> Unit,
     onDismissSource: (Long, String) -> Unit,
@@ -302,7 +305,9 @@ private fun SourceReview(
             val finalAction = if (editing && edited.isNotBlank()) edited.trim() else action
             HodButton(if (editing) "Save fields and approve" else "Approve", onClick = {
                 if (editing && point != null) onUpdateActionPoint(point.copy(action = finalAction, dateText = editedDate, timeText = editedTime, locationText = editedLocation, peopleText = editedPeople))
-                onApprove(source, finalAction, null); finish(true, action)
+                if (editing) onApproveEdited(source, point?.copy(action = finalAction, dateText = editedDate, timeText = editedTime, locationText = editedLocation, peopleText = editedPeople), finalAction, null)
+                else onApprove(source, finalAction, null)
+                finish(true, action)
             }, modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 HodButton(if (editing) "Save fields" else "Edit fields", onClick = {
