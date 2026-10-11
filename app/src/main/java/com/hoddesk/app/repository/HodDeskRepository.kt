@@ -85,6 +85,12 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         return eventId
     }
 
+    suspend fun returnSourceToInbox(sourceId: Long) {
+        val source = dao.source(sourceId) ?: return
+        dao.updateSource(source.copy(reviewed = false, processingStatus = "needs_review"))
+        audit("source", sourceId, "returned_to_inbox")
+    }
+
     /** Creates a durable local pending record before an external calendar write. */
     suspend fun beginCalendarWrite(event: EventEntity): Long = dao.insertEvent(event.copy(confirmed = false, calendarEventId = null))
 

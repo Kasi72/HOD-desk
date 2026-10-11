@@ -663,11 +663,10 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(16.dp)) {
                         EvidenceText(cleanEvidence(s.body).ifBlank { "No readable text." }, emptyList(), maxLines = 18)
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        s.sourceUri?.let { uri -> HodButton("Open Original", { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { status = "No app can open this file." } }, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.weight(1f)) }
-                        if (!s.reviewed && !s.isClinical()) HodButton("Review", { openSource = null; openTaskId = null; reviewStartId = s.id; tab = TAB_REVIEW }, height = 46.dp, modifier = Modifier.weight(1f))
-                        HodButton("Delete", { openSource = null; requestDelete(PendingDelete("source", listOf(s.id), "“${s.title}”")) }, style = HodButtonStyle.DestructiveTinted, height = 46.dp, modifier = Modifier.weight(1f))
-                    }
+                    s.sourceUri?.let { uri -> HodButton("Open Original", { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { status = "No app can open this file." } }, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.fillMaxWidth()) }
+                    if (!s.isClinical()) HodButton("Review and extract actions", { openSource = null; openTaskId = null; reviewStartId = s.id; tab = TAB_REVIEW }, height = 46.dp, modifier = Modifier.fillMaxWidth())
+                    HodButton("Send to Inbox", { viewModel.returnToInbox(s.id); openSource = null; tab = TAB_REVIEW }, style = HodButtonStyle.Tinted, height = 46.dp, modifier = Modifier.fillMaxWidth())
+                    HodButton("Delete", { openSource = null; requestDelete(PendingDelete("source", listOf(s.id), "“${s.title}”")) }, style = HodButtonStyle.DestructiveTinted, height = 46.dp, modifier = Modifier.fillMaxWidth())
                 }
             }
         }

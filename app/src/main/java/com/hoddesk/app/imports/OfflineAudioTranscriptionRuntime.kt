@@ -22,9 +22,12 @@ import java.util.zip.ZipInputStream
 /** Tamil-first multilingual offline transcription with Whisper, with an English Vosk fallback. */
 class OfflineAudioTranscriptionRuntime(private val context: Context) {
     companion object {
-        private const val WHISPER_MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin?download=true"
-        private const val WHISPER_MODEL_NAME = "ggml-small.bin"
-        private const val MIN_WHISPER_MODEL_BYTES = 400_000_000L
+        // The small checkpoint produced visibly unreliable Tamil on mixed
+        // clinical calls. Medium is the minimum Whisper checkpoint we ship for
+        // dependable Tamil names, numbers and action phrases on an S26 Ultra.
+        private const val WHISPER_MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin?download=true"
+        private const val WHISPER_MODEL_NAME = "ggml-medium.bin"
+        private const val MIN_WHISPER_MODEL_BYTES = 1_400_000_000L
         private const val MODEL_URL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
         private const val MODEL_DIR = "vosk-model-small-en-us-0.15"
     }

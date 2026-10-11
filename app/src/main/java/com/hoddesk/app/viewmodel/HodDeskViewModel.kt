@@ -20,6 +20,7 @@ class HodDeskViewModel(private val repository: HodDeskRepository) : ViewModel() 
     fun approve(sourceId: Long, project: String, dueAt: Long? = null) = viewModelScope.launch { repository.approveSource(sourceId, project, dueAt) }
     fun approveAction(sourceId: Long, action: String, project: String, dueAt: Long? = null, assignee: String? = null) = viewModelScope.launch { repository.approveAction(sourceId, action, project, dueAt, assignee) }
     fun dismissSource(sourceId: Long, reason: String) = viewModelScope.launch { repository.dismissSource(sourceId, reason) }
+    fun returnToInbox(sourceId: Long) = viewModelScope.launch { repository.returnSourceToInbox(sourceId) }
     fun setTaskDue(taskId: Long, dueAt: Long?) = viewModelScope.launch { repository.setTaskDue(taskId, dueAt) }
     fun setAssignee(taskId: Long, assignee: String?) = viewModelScope.launch { repository.setAssignee(taskId, assignee) }
     fun deleteAllWorkData() = viewModelScope.launch { repository.deleteAllWorkData() }
