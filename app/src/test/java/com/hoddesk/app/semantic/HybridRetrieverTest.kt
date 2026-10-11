@@ -14,6 +14,13 @@ class HybridRetrieverTest {
         assertTrue(ranked.first().reasons.any { it.contains("keyword") || it.contains("document") })
     }
 
+    @Test fun exact_reference_floor_beats_high_semantic_similarity() {
+        val exact = SourceEntity(id = 1, title = "GO 214/2026", body = "Administrative order", sourceType = "PDF")
+        val broad = SourceEntity(id = 2, title = "DME meeting", body = "Administrative review", sourceType = "WhatsApp")
+        val ranked = HybridRetriever.rank("GO 214/2026", listOf(exact, broad), listOf(SourceSemanticHit(broad, .99f, .99f)))
+        assertEquals(exact.id, ranked.first().source.id)
+    }
+
     @Test fun tamil_suffix_and_character_overlap_are_supported() {
         val source = SourceEntity(id = 1, title = "கூட்டத்தில் பங்கேற்கவும்", body = "மாவட்ட கூட்டம் நாளை", sourceType = "WhatsApp")
         val ranked = HybridRetriever.rank("கூட்டம்", listOf(source), emptyList())

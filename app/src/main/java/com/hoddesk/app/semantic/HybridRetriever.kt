@@ -36,6 +36,7 @@ object HybridRetriever {
             val exact = exactScore(plan, source)
             if (semantic == 0f && lexical == 0f && exact == 0f) return@mapNotNull null
             val text = normalizedSource(source)
+            val exactReference = plan.referenceNumbers.any { it in text }
             val reasons = buildList {
                 if (semantic > 0f) add("semantic evidence")
                 val exactTokens = exactTokens(query, source.title + " " + source.body)
@@ -49,7 +50,10 @@ object HybridRetriever {
                 if (lexical > .08f && exactTokens.isEmpty()) add("fuzzy text")
                 semanticById[source.id]?.citation?.let { add("evidence: $it") }
             }
-            val fused = (semantic * weights.semantic + lexical * weights.lexical + exact * weights.exact).coerceIn(0f, 1f)
+            val fusedBase = semantic * weights.semantic + lexical * weights.lexical + exact * weights.exact
+            // A verified document/reference number is a deterministic identity
+            // signal and must outrank a broad semantic similarity hit.
+            val fused = (if (exactReference) maxOf(fusedBase, .90f) else fusedBase).coerceIn(0f, 1f)
             HybridMatch(source, fused, semantic, lexical, reasons, semanticById[source.id]?.citation, semanticById[source.id]?.modality)
         }.sortedByDescending { it.score }.take(limit)
     }
