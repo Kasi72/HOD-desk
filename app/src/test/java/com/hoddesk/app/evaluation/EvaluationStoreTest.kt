@@ -17,4 +17,11 @@ class EvaluationStoreTest {
         assertEquals(1, EvaluationStore.report(listOf(expected), listOf(actual)).caseCount)
         assertEquals(1.0, EvaluationStore.report(listOf(expected), listOf(actual)).recallAt10, 0.01)
     }
+    @Test fun gateBlocksUnsafeRegression() {
+        val baseline = EvaluationReport(10, .95)
+        val current = EvaluationReport(10, .91)
+        val gate = EvaluationStore.gate(baseline, current, .03)
+        assertTrue(!gate.passed)
+        assertTrue(gate.reasons.any { it.contains("false verified") })
+    }
 }

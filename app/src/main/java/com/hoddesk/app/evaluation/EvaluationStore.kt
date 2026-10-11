@@ -18,7 +18,11 @@ data class EvaluationRun(
     val generatedAt: Long = System.currentTimeMillis(),
 )
 
+data class EvaluationGate(val passed: Boolean, val reasons: List<String>)
+
 object EvaluationStore {
+    private const val MAX_FALSE_VERIFIED = 0.02
+    private const val MIN_RECALL = 0.90
     fun anonymize(source: String): String = source
         .replace(Regex("(?i)\\b[\\w.-]+@[\\w.-]+\\.[a-z]{2,}\\b"), "[EMAIL]")
         .replace(Regex("\\b\\+?\\d[\\d -]{7,}\\b"), "[PHONE]")
@@ -34,5 +38,15 @@ object EvaluationStore {
             cer = if (comparable.isEmpty()) null else falseVerified.toDouble() / comparable.size,
             wer = null,
         )
+    }
+
+    /** Release gate: a candidate must preserve recall and keep unsafe verified fields below 2%. */
+    fun gate(baseline: EvaluationReport, current: EvaluationReport, currentFalseVerifiedRate: Double): EvaluationGate {
+        val reasons = buildList {
+            if (current.recallAt10 < MIN_RECALL) add("action recall below ${(MIN_RECALL * 100).toInt()}%")
+            if (currentFalseVerifiedRate > MAX_FALSE_VERIFIED) add("false verified rate exceeds ${(MAX_FALSE_VERIFIED * 100).toInt()}%")
+            if (current.recallAt10 + 0.001 < baseline.recallAt10) add("recall regressed against baseline")
+        }
+        return EvaluationGate(reasons.isEmpty(), reasons)
     }
 }
