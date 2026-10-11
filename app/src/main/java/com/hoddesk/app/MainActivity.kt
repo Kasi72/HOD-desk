@@ -230,6 +230,8 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     var showNote by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var secretaryTranscript by rememberSaveable { mutableStateOf("") }
+    var secretaryEvidence by remember { mutableStateOf<List<SourceEntity>>(emptyList()) }
+    var secretaryProposalDiff by remember { mutableStateOf<String?>(null) }
     val processing = remember { mutableStateListOf<ProcessingItem>() }
     var settingsVersion by remember { mutableIntStateOf(0) }
 
@@ -260,6 +262,46 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     var embeddingLine by remember { mutableStateOf("Preparing search on this phone") }
     var indexHealth by remember { mutableStateOf<IndexHealth?>(null) }
     var aiBusy by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(secretaryTranscript, embeddingReady, allSources) {
+        if (secretaryTranscript.isBlank()) { secretaryEvidence = emptyList(); return@LaunchedEffect }
+        secretaryEvidence = if (embeddingReady) {
+            runCatching { semanticIndexer.search(secretaryTranscript, searchable, limit = 5).map { it.source } }.getOrDefault(emptyList())
+        } else {
+            val terms = secretaryTranscript.lowercase().split(Regex("\\s+" )).filter { it.length >= 3 }
+            searchable.filter { source -> terms.any { source.title.lowercase().contains(it) || source.body.lowercase().contains(it) } }.take(5)
+        }
+    }
+    LaunchedEffect(secretaryTranscript, calendarEvents, allTasks, settingsVersion) {
+        val intent = com.hoddesk.app.secretary.VoiceSecretary.parse(secretaryTranscript)
+        secretaryProposalDiff = if (!intent.requiresConfirmation) null else {
+            val target = intent.parameters["target"].orEmpty().lowercase()
+            val tokens = target.split(Regex("\\s+")).filter { it.length >= 3 }
+            fun score(text: String) = tokens.count { text.lowercase().contains(it) }
+            val matchedEvent = calendarEvents.map { it to score("${it.title} ${it.location.orEmpty()}") }
+                .maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
+            val matchedTask = allTasks.map { it to score("${it.title} ${it.project}") }
+                .maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
+            val requestedTime = intent.parameters["time"]
+            when (intent.kind) {
+                com.hoddesk.app.secretary.SecretaryIntent.Kind.MOVE_TASKS,
+                com.hoddesk.app.secretary.SecretaryIntent.Kind.UPDATE_TASK,
+                com.hoddesk.app.secretary.SecretaryIntent.Kind.SCHEDULE_TASK -> {
+                    when {
+                        requestedTime == null -> "No exact time was detected; the request will remain unchanged until clarified."
+                        matchedEvent != null -> "${matchedEvent.title}: ${timeLabel(matchedEvent.startsAt)} → $requestedTime"
+                        matchedTask != null -> "${matchedTask.title}: ${matchedTask.dueAt?.let(::timeLabel) ?: "unscheduled"} → $requestedTime"
+                        else -> "No matching meeting or task was found; nothing will be changed."
+                    }
+                }
+                com.hoddesk.app.secretary.SecretaryIntent.Kind.DELEGATE_TASK -> {
+                    val member = settings.team.firstOrNull { target.contains(it.name.lowercase()) }
+                    if (matchedTask != null && member != null) "${matchedTask.title}: ${matchedTask.assignee ?: "Me"} → ${member.name}" else "Select a matching task and configured team member before delegating."
+                }
+                com.hoddesk.app.secretary.SecretaryIntent.Kind.CREATE_TASK -> "Create task: ${intent.parameters["target"].orEmpty().removePrefix("to ").trim()}"
+                else -> null
+            }
+        }
+    }
     LaunchedEffect(allSources) {
         embeddingReady = false
         embeddingLine = if (searchable.isEmpty()) "Search ready" else "Search ready · semantic search starts when you search"
@@ -762,13 +804,56 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     onShare = { candidate -> status = "Review the draft in your sharing app before sending."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_share_started", detail = candidate.draft.take(1000))) }; runCatching { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, candidate.draft) }, "Review follow-up before sending")) }.onFailure { status = "No sharing app is available; copy the draft instead." } },
                     onDismiss = { candidate -> scope.launch { dao.setCommitmentStatus(candidate.commitmentId, "dismissed"); dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_dismissed", detail = candidate.evidence)); status = "Follow-up dismissed." } },
                 )
-                "secretary" -> SecretaryPage(initialTranscript = secretaryTranscript, onBack = ::pop, onRecord = { if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO) }, onRun = { intent ->
+                "secretary" -> SecretaryPage(initialTranscript = secretaryTranscript, supportingSources = secretaryEvidence, proposalDiff = secretaryProposalDiff, onBack = ::pop, onRecord = { if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO) }, onRun = { intent ->
+                    fun auditCommand(action: String, detail: String) { scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "secretary", entityId = 0, action = action, detail = detail.take(1000))) } }
+                    val citationDigest = secretaryEvidence.take(5).joinToString(" • ") { source ->
+                        "${source.title}: ${source.body.trim().replace(Regex("\\s+"), " ").take(120)}"
+                    }.ifBlank { "No cited source evidence was retrieved." }
                     when (intent.kind) {
-                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SHOW_WAITING -> { tasksSegment = 1; tab = TAB_TASKS; pop(); status = "Showing work you are waiting on." }
-                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SHOW_MEETINGS -> { tab = TAB_CALENDAR; pop(); status = "Showing your calendar." }
-                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SEARCH -> { libraryQuery = intent.query; tab = TAB_LIBRARY; pop(); status = "Searching your indexed sources." }
-                        com.hoddesk.app.secretary.SecretaryIntent.Kind.PLAN_DAY -> { tab = TAB_CALENDAR; pop(); status = "Review the proposed day plan before applying it." }
-                        else -> status = if (intent.requiresConfirmation) "Proposal ready; review and confirm before applying." else "Secretary request received."
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SHOW_WAITING -> { tasksSegment = 1; tab = TAB_TASKS; pop(); status = "Showing work you are waiting on."; auditCommand("secretary_read_waiting", intent.query) }
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SHOW_MEETINGS -> { if (intent.query.contains("tomorrow", true) || intent.query.contains("நாளை")) selectedDayEpoch = LocalDate.now().plusDays(1).toEpochDay(); tab = TAB_CALENDAR; pop(); status = "Showing your calendar."; auditCommand("secretary_read_meetings", intent.query) }
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SEARCH -> { libraryQuery = intent.query; tab = TAB_LIBRARY; pop(); status = "Searching your indexed sources."; auditCommand("secretary_read_search", "query=${intent.query};evidence=${secretaryEvidence.map { it.id }}") }
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.PLAN_DAY -> { planDay(); pop(); status = "Review the proposed day plan before applying it."; auditCommand("secretary_proposed_plan", intent.query) }
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.CREATE_TASK -> {
+                            val title = intent.parameters["target"].orEmpty().removePrefix("to ").trim()
+                            if (title.isBlank()) { status = "The task wording is missing; nothing was created."; auditCommand("secretary_rejected_create", "${intent.query}; evidence=${secretaryEvidence.map { it.id }}") } else scope.launch { val id = dao.insertTask(TaskEntity(title = title, project = "Secretary")); dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "secretary", entityId = id, action = "secretary_task_created", detail = "${intent.query}; evidence=${secretaryEvidence.map { it.id }}")); tasksSegment = 0; tab = TAB_TASKS; status = "Task created after confirmation. Evidence: $citationDigest"; pop() }
+                        }
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.DELEGATE_TASK -> {
+                            val target = intent.parameters["target"].orEmpty().lowercase()
+                            val task = allTasks.map { candidate -> candidate to target.split(Regex("\\s+" )).count { it.length >= 3 && (candidate.title.lowercase().contains(it) || candidate.project.lowercase().contains(it)) } }.maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
+                            val member = settings.team.firstOrNull { target.contains(it.name.lowercase()) }
+                            if (task == null || member == null) { status = "I need the task and a configured team member before delegating."; auditCommand("secretary_rejected_delegate", "${intent.query}; evidence=${secretaryEvidence.map { it.id }}") } else scope.launch {
+                                dao.updateTask(task.copy(assignee = member.name))
+                                dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "secretary", entityId = task.id, action = "secretary_task_delegated", detail = "${task.title} -> ${member.name}; evidence=${secretaryEvidence.map { it.id }}"))
+                                tasksSegment = 1; tab = TAB_TASKS; status = "${task.title} delegated to ${member.name} after confirmation. Evidence: $citationDigest"; pop()
+                            }
+                        }
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.MOVE_TASKS,
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.UPDATE_TASK,
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SCHEDULE_TASK -> {
+                            val time = com.hoddesk.app.secretary.VoiceSecretary.time(intent.query)
+                            val target = intent.parameters["target"].orEmpty().lowercase()
+                            val event = calendarEvents.map { e -> e to target.split(Regex("\\s+" )).count { it.length >= 3 && (e.title.lowercase().contains(it) || e.location?.lowercase()?.contains(it) == true) } }.maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
+                            val task = allTasks.map { candidate -> candidate to target.split(Regex("\\s+" )).count { it.length >= 3 && (candidate.title.lowercase().contains(it) || candidate.project.lowercase().contains(it)) } }.maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
+                            if (time == null || (event == null && (intent.kind != com.hoddesk.app.secretary.SecretaryIntent.Kind.SCHEDULE_TASK || task == null))) { status = "I need an exact meeting/task and time before proposing a change."; auditCommand("secretary_rejected_schedule", "${intent.query}; evidence=${secretaryEvidence.map { it.id }}") } else scope.launch {
+                                val date = if (event != null) java.time.Instant.ofEpochMilli(event.startsAt).atZone(zone).toLocalDate() else if (intent.query.contains("tomorrow", true)) LocalDate.now().plusDays(1) else LocalDate.now()
+                                val newStart = date.atTime(time.first, time.second).atZone(zone).toInstant().toEpochMilli()
+                                if (event != null) {
+                                    val duration = (event.endsAt - event.startsAt).coerceAtLeast(30 * 60_000L)
+                                    dao.updateEvent(event.copy(startsAt = newStart, endsAt = newStart + duration))
+                                    event.taskId?.let { repository.setTaskDue(it, newStart) }
+                                    dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "secretary", entityId = event.id, action = "secretary_schedule_changed", detail = "${event.title}: ${event.startsAt} -> $newStart; evidence=${secretaryEvidence.map { it.id }}"))
+                                    tab = TAB_CALENDAR; status = "${event.title} moved after confirmation. Evidence: $citationDigest"
+                                } else if (task != null) {
+                                    dao.updateTask(task.copy(dueAt = newStart))
+                                    val eventId = dao.insertEvent(EventEntity(taskId = task.id, title = task.title, startsAt = newStart, endsAt = newStart + 60 * 60_000L, confirmed = true))
+                                    dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "secretary", entityId = eventId, action = "secretary_task_scheduled", detail = "${task.title} at $newStart; evidence=${secretaryEvidence.map { it.id }}"))
+                                    tab = TAB_CALENDAR; status = "${task.title} scheduled after confirmation. Evidence: $citationDigest"
+                                }
+                                pop()
+                            }
+                        }
+                        else -> { status = "This secretary action is not supported yet; no data was changed."; auditCommand("secretary_rejected_unsupported", intent.query) }
                     }
                 })
                 "control" -> SecretaryControlCentre(

@@ -15,13 +15,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.hoddesk.app.secretary.SecretaryIntent
 import com.hoddesk.app.secretary.VoiceSecretary
+import com.hoddesk.app.data.SourceEntity
 import com.hoddesk.app.ui.components.GroupedSection
 import com.hoddesk.app.ui.components.HodButton
 import com.hoddesk.app.ui.components.HodButtonStyle
 import com.hoddesk.app.ui.theme.Hod
 
 @Composable
-fun SecretaryPage(initialTranscript: String = "", onBack: () -> Unit, onRecord: () -> Unit, onRun: (SecretaryIntent) -> Unit) {
+fun SecretaryPage(initialTranscript: String = "", supportingSources: List<SourceEntity> = emptyList(), proposalDiff: String? = null, onBack: () -> Unit, onRecord: () -> Unit, onRun: (SecretaryIntent) -> Unit) {
     val c = Hod.colors
     val transcript = remember(initialTranscript) { mutableStateOf(initialTranscript) }
     val intent = remember(transcript.value) { VoiceSecretary.parse(transcript.value) }
@@ -36,6 +37,16 @@ fun SecretaryPage(initialTranscript: String = "", onBack: () -> Unit, onRecord: 
                 Text(if (intent.requiresConfirmation) "Confirmation required before any change." else "Read-only request.", style = Hod.type.footnote, color = c.secondaryLabel)
                 if (intent.requiresConfirmation) {
                     Text("This request can change tasks or schedules. Review it before continuing.", style = Hod.type.footnote, color = c.orangeText)
+                    if (supportingSources.isNotEmpty()) {
+                        Text("Supporting evidence", style = Hod.type.subheadline, color = c.label)
+                        supportingSources.take(5).forEach { source ->
+                            Text("${source.title}: ${source.body.trim().take(180)}", style = Hod.type.footnote, color = c.secondaryLabel)
+                        }
+                    } else Text("No supporting evidence was found; confirmation will not guess missing details.", style = Hod.type.footnote, color = c.orangeText)
+                    proposalDiff?.let {
+                        Text("Proposed change", style = Hod.type.subheadline, color = c.label)
+                        Text(it, style = Hod.type.body, color = c.tint)
+                    }
                     HodButton("Review request", { confirmedTranscript = transcript.value }, style = HodButtonStyle.Gray, modifier = Modifier.fillMaxWidth(), enabled = transcript.value.isNotBlank())
                     if (confirmedTranscript == transcript.value) {
                         Text("Ready to apply: ${intent.kind.name.replace('_', ' ').lowercase()}", style = Hod.type.subheadline, color = c.tint)
