@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.hoddesk.app.data.SourceEntity
@@ -19,6 +20,7 @@ import com.hoddesk.app.ui.theme.Hod
 @Composable
 fun EvaluationLabPage(sources: List<SourceEntity>, onBack: () -> Unit) {
     val c = Hod.colors
+    val latest = EvaluationStore.latest(LocalContext.current)
     val anonymized = sources.count { EvaluationStore.anonymize(it.body) != it.body }
     SettingsPage("Evaluation lab", "Settings", onBack) {
         Text("Measure retrieval and extraction changes before promoting a new model or prompt. Only anonymised text is used in this view.", style = Hod.type.subheadline, color = c.secondaryLabel)
@@ -33,6 +35,16 @@ fun EvaluationLabPage(sources: List<SourceEntity>, onBack: () -> Unit) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("A model or prompt change is ready only when action recall improves without increasing false verified fields.", style = Hod.type.body, color = c.label)
                 Text("Run the fixed Tamil, Tanglish and English cases on a desktop reference model, then compare the report before switching the index snapshot.", style = Hod.type.footnote, color = c.secondaryLabel)
+            }
+        }
+        latest?.let { run ->
+            val gate = EvaluationStore.gate(run.baseline, run.current, run.falseVerifiedRate)
+            GroupedSection(header = "Last recorded run") {
+                ListRow("Release gate", value = if (gate.passed) "Passed" else "Blocked", valueColor = if (gate.passed) c.greenText else c.redText)
+                RowDivider(58.dp)
+                ListRow("Action recall", value = "${(run.current.recallAt10 * 100).toInt()}%")
+                RowDivider(58.dp)
+                ListRow("False verified", value = "${(run.falseVerifiedRate * 100).toInt()}%", valueColor = if (run.falseVerifiedRate <= .02) c.greenText else c.redText)
             }
         }
     }

@@ -1,5 +1,8 @@
 package com.hoddesk.app.evaluation
 
+import android.content.Context
+import org.json.JSONObject
+
 data class EvaluationExample(
     val id: String,
     val inputType: String,
@@ -21,6 +24,7 @@ data class EvaluationRun(
 data class EvaluationGate(val passed: Boolean, val reasons: List<String>)
 
 object EvaluationStore {
+    private const val RUN_FILE = "evaluation-latest.json"
     private const val MAX_FALSE_VERIFIED = 0.02
     private const val MIN_RECALL = 0.90
     fun anonymize(source: String): String = source
@@ -49,4 +53,17 @@ object EvaluationStore {
         }
         return EvaluationGate(reasons.isEmpty(), reasons)
     }
+
+    fun saveLatest(context: Context, run: EvaluationRun) {
+        val root = JSONObject()
+        fun report(value: EvaluationReport) = JSONObject().put("cases", value.caseCount).put("recall", value.recallAt10).put("cer", value.cer).put("wer", value.wer)
+        root.put("baseline", report(run.baseline)).put("current", report(run.current)).put("falseVerified", run.falseVerifiedRate).put("generatedAt", run.generatedAt)
+        context.getFileStreamPath(RUN_FILE).writeText(root.toString())
+    }
+
+    fun latest(context: Context): EvaluationRun? = runCatching {
+        val root = JSONObject(context.openFileInput(RUN_FILE).bufferedReader().use { it.readText() })
+        fun report(value: JSONObject) = EvaluationReport(value.getInt("cases"), value.getDouble("recall"), value.optDouble("cer").takeUnless { it.isNaN() }, value.optDouble("wer").takeUnless { it.isNaN() })
+        EvaluationRun(report(root.getJSONObject("baseline")), report(root.getJSONObject("current")), root.getDouble("falseVerified"), root.getLong("generatedAt"))
+    }.getOrNull()
 }
