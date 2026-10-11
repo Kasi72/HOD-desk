@@ -84,6 +84,8 @@ import com.hoddesk.app.semantic.HybridRetriever
 import com.hoddesk.app.semantic.IndexHealth
 import com.hoddesk.app.semantic.IndexHealthChecker
 import com.hoddesk.app.semantic.SourceSemanticIndexer
+import com.hoddesk.app.semantic.MatterGrouper
+import com.hoddesk.app.semantic.MatterTimelineBuilder
 import com.hoddesk.app.settings.DeskSettingsStore
 import com.hoddesk.app.ui.components.ActionSheetContent
 import com.hoddesk.app.ui.components.EvidenceText
@@ -104,6 +106,7 @@ import com.hoddesk.app.ui.screens.CaptureSheet
 import com.hoddesk.app.ui.screens.DepartmentPage
 import com.hoddesk.app.ui.screens.HowToPage
 import com.hoddesk.app.ui.screens.LibraryScreen
+import com.hoddesk.app.ui.screens.MatterPage
 import com.hoddesk.app.ui.screens.NoteDialog
 import com.hoddesk.app.ui.screens.PrivacyPage
 import com.hoddesk.app.ui.screens.ProcessingItem
@@ -208,6 +211,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     var tasksSegment by rememberSaveable { mutableIntStateOf(0) }
     val settingsStack = remember { mutableStateListOf<String>() }
     var openSource by remember { mutableStateOf<SourceEntity?>(null) }
+    var matterSourceId by remember { mutableStateOf<Long?>(null) }
     var sourceSheetTab by remember { mutableIntStateOf(0) }
     var showCapture by remember { mutableStateOf(false) }
     var showNote by remember { mutableStateOf(false) }
@@ -649,6 +653,13 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     )
                 }
                 "activity" -> ActivityPage(auditLog, onBack = ::pop, onExport = { exportLauncher.launch("hod-desk-activity-${LocalDate.now()}.txt") })
+                "matter" -> {
+                    val sourceId = matterSourceId
+                    val relations by remember(sourceId) { sourceId?.let { dao.observeRelations(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList()) }.collectAsState(emptyList())
+                    val matter = sourceId?.let { id -> MatterGrouper.group(allSources, relations).firstOrNull { it.sources.any { source -> source.id == id } } }
+                    if (matter != null) MatterPage(MatterTimelineBuilder.build(matter, allTasks, calendarEvents), onBack = ::pop, onReviewChange = { tab = TAB_REVIEW; pop() })
+                    else com.hoddesk.app.ui.components.EmptyState("Matter not available", "The related sources have not been indexed yet.")
+                }
                 "howto" -> HowToPage(onBack = ::pop)
                 "vault" -> VaultPage(allSources.filter { it.isClinical() }, onBack = ::pop)
                 "department" -> DepartmentPage(settings, onBack = ::pop, onChanged = { settingsVersion++ })
@@ -701,6 +712,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     SegmentedControl(listOf("Actions", "Evidence", "Original"), sourceSheetTab, { sourceSheetTab = it }, Modifier.fillMaxWidth())
                     when (sourceSheetTab) {
                         0 -> {
+                            if (!s.isClinical()) HodButton("Open matter file", { matterSourceId = s.id; openSource = null; settingsStack.clear(); settingsStack += "matter" }, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.fillMaxWidth())
                             if (!s.isClinical()) HodButton("Review and extract actions", { openSource = null; openTaskId = null; reviewStartId = s.id; tab = TAB_REVIEW }, height = 46.dp, modifier = Modifier.fillMaxWidth())
                             if (!s.isClinical()) HodButton("Edit and save in Review", { openSource = null; openTaskId = null; reviewStartId = s.id; tab = TAB_REVIEW }, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.fillMaxWidth())
                             HodButton("Send to Inbox", { viewModel.returnToInbox(s.id); openSource = null; tab = TAB_REVIEW }, style = HodButtonStyle.Tinted, height = 46.dp, modifier = Modifier.fillMaxWidth())
