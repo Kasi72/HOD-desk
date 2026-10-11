@@ -38,19 +38,27 @@ class SourceSemanticIndexer(
             if (chunks.isNotEmpty() && indexedActions == expectedActions) return
         }
         val directModality: String
+        var directEmbedding = false
         val vector = if (embedder is EmbeddingGemmaLiteRtRuntime && source.sourceUri != null &&
             (source.sourceType.contains("Screenshot", true) || source.sourceType.contains("Camera", true))) {
             directModality = "image"
             val multimodal = embedder as EmbeddingGemmaLiteRtRuntime
-            runCatching { multimodal.embedImage(Uri.parse(source.sourceUri)) }.getOrElse { embedder.embed(EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source), source.body)) }
+            runCatching { multimodal.embedImage(Uri.parse(source.sourceUri)).also { directEmbedding = true } }.getOrElse {
+                Log.w("HOD_SEMANTIC", "direct_image_embedding_failed source=${source.id}; using OCR text", it)
+                embedder.embed(EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source), source.body))
+            }
         } else if (embedder is EmbeddingGemmaLiteRtRuntime && source.sourceUri != null && source.sourceType.contains("Audio", true)) {
             directModality = "audio"
             val multimodal = embedder as EmbeddingGemmaLiteRtRuntime
-            runCatching { multimodal.embedWav(Uri.parse(source.sourceUri)) }.getOrElse { embedder.embed(EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source), source.body)) }
+            runCatching { multimodal.embedWav(Uri.parse(source.sourceUri)).also { directEmbedding = true } }.getOrElse {
+                Log.w("HOD_SEMANTIC", "direct_audio_embedding_failed source=${source.id}; using transcript text", it)
+                embedder.embed(EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source), source.body))
+            }
         } else {
             directModality = "text"
             embedder.embed(EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source), source.body))
         }
+        Log.i("HOD_SEMANTIC", "source_modality source=${source.id},modality=$directModality,direct=$directEmbedding")
         val validation = EmbeddingIntegrity.validate(vector)
         check(validation.valid) { "Embedding rejected for source ${source.id}: ${validation.reason}" }
         dao.upsertSemanticEmbedding(SemanticEmbeddingEntity(source.id, MODEL_VERSION, vector.size, vector.toBytes()))

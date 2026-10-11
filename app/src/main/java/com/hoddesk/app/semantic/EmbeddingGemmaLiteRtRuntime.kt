@@ -175,8 +175,10 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
                 ?: error("Unable to decode image for EmbeddingGemma")
             val image = BitmapImageBuilder(bitmap).build()
             try {
-                engine().embedImage(image).embeddings().firstOrNull()?.floatEmbedding()?.copyOf()
-                    ?: error("EmbeddingGemma returned no image embedding")
+                (engine().embedImage(image).embeddings().firstOrNull()?.floatEmbedding()?.copyOf()
+                    ?: error("EmbeddingGemma returned no image embedding")).also {
+                    check(it.size == EXPECTED_DIMENSION) { "Unexpected EmbeddingGemma image dimension ${it.size}; expected $EXPECTED_DIMENSION" }
+                }
             } finally {
                 image.close()
                 bitmap.recycle()
@@ -191,8 +193,10 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
             val format = AudioData.AudioDataFormat.builder().setSampleRate(sampleRate).setNumOfChannels(channels).build()
             val audio = AudioData.create(format, samples.size)
             audio.load(samples)
-            engine().embedAudio(audio).embeddings().firstOrNull()?.floatEmbedding()?.copyOf()
-                ?: error("EmbeddingGemma returned no audio embedding")
+            (engine().embedAudio(audio).embeddings().firstOrNull()?.floatEmbedding()?.copyOf()
+                ?: error("EmbeddingGemma returned no audio embedding")).also {
+                check(it.size == EXPECTED_DIMENSION) { "Unexpected EmbeddingGemma audio dimension ${it.size}; expected $EXPECTED_DIMENSION" }
+            }
         }
     }
 
