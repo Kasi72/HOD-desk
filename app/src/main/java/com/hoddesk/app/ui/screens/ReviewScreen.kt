@@ -171,10 +171,15 @@ private fun SourceReview(
     var showAllEvidence by remember(source.id) { mutableStateOf(false) }
 
     var related by remember(source.id) { mutableStateOf<List<SourceSemanticHit>>(emptyList()) }
+    var possibleUpdates by remember(source.id) { mutableStateOf<List<SourceSemanticHit>>(emptyList()) }
     var reasoning by remember(source.id) { mutableStateOf<ActionReasoningOutput?>(null) }
     var reasoningStatus by remember(source.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(source.id, actions.firstOrNull()) {
-        actions.firstOrNull()?.let { first -> related = runCatching { searchRelated(first, source.id) }.getOrDefault(emptyList()).take(3) }
+        actions.firstOrNull()?.let { first ->
+            related = runCatching { searchRelated(first, source.id) }.getOrDefault(emptyList()).take(3)
+            val revisionCue = Regex("\\b(revis|amend|replace|latest|updated|corrigendum|cancel|withdraw)\\w*\\b", RegexOption.IGNORE_CASE)
+            possibleUpdates = related.filter { hit -> hit.source.capturedAt > source.capturedAt && revisionCue.containsMatchIn("${hit.source.title} ${hit.source.body}") }
+        }
     }
     LaunchedEffect(source.id, instructionModelPath, related) {
         if (instructionModelPath == null) return@LaunchedEffect
@@ -277,6 +282,14 @@ private fun SourceReview(
                     if (evidence.lines().size > 10 || evidence.length > 600) Text(if (showAllEvidence) "Show less" else "Show all", style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.tint, modifier = Modifier.pressable { showAllEvidence = !showAllEvidence })
                 }
                 if (related.isNotEmpty()) Text("Related: " + related.joinToString(" · ") { it.source.title }, style = Hod.type.footnote, color = c.secondaryLabel, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp))
+                if (possibleUpdates.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.orange.copy(alpha = 0.12f)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("Possible update", style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.orangeText)
+                        Text("A newer related source contains revision language. Compare its date, time, venue, and owner before approving.", style = Hod.type.footnote, color = c.label)
+                        possibleUpdates.forEach { hit -> Text("• ${hit.source.title}", style = Hod.type.footnote, color = c.secondaryLabel, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    }
+                }
             }
 
             reasoning?.let { r ->
