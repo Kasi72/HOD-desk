@@ -179,6 +179,8 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         // Older builds could turn the fallback diagnostic into a real task.
         // Remove only those synthetic, still-open tasks during migration.
         repository.removePendingAudioPlaceholders()
+        // Populate the in-app itinerary for tasks created by earlier builds.
+        repository.backfillTaskEvents()
     }
 
     // --- Undo-able deletes: hidden immediately, committed after the Undo window. ---

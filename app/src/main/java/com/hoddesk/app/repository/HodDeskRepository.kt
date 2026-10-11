@@ -180,6 +180,10 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     }
 
     suspend fun removePendingAudioPlaceholders(): Int = dao.deletePendingAudioPlaceholderTasks()
+
+    suspend fun backfillTaskEvents() {
+        dao.tasksWithDueTimes().forEach { task -> ensureLocalTaskEvent(task.id, task.title, task.dueAt) }
+    }
 }
 
 data class ActionPointDraft(
