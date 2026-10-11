@@ -17,4 +17,8 @@ class SecretaryLearningTest {
         assertTrue(profile.phraseWeights["collectorate"]!! <= .25f)
         assertEquals(3, profile.sampleCount)
     }
+    @Test fun sensitiveCorrectionsNeverEnterProfile() {
+        val corrections = (1..3).map { LearningCorrectionEntity(actionPointId = it.toLong(), field = "people", before = "patient", after = "Patient 3") }
+        assertEquals(0, SecretaryLearning.profile(corrections).sampleCount)
+    }
 }
