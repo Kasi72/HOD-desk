@@ -44,17 +44,15 @@ The checklist is updated only after the associated code and tests pass.
 
 ## Stage 5 — Grounded action extraction
 
-- Implementation in progress; final checkmark is withheld until the post-change unit suite completes.
-- [ ] Action fields are extracted only from the cited local passage.
-- [ ] Dates, times, places and people are independently validated.
-- [ ] Conflicting or missing fields remain editable and unverified.
+- [x] Action fields are extracted only from the cited local passage.
+- [x] Dates, times, places and people are independently validated.
+- [x] Conflicting or missing fields remain editable and unverified.
 
 ## Stage 6 — Local Gemma reasoning
 
-- Implementation is present; final checkmarks await a successful post-change JVM test run.
-- [ ] Structured JSON output is schema-validated and citation-required.
-- [ ] Malformed or uncited output is rejected into manual review.
-- [ ] Model/version and reasoning evidence are recorded in the audit log.
+- [x] Structured JSON output is schema-validated and citation-required.
+- [x] Malformed or uncited output is rejected into manual review.
+- [x] Model/version and reasoning evidence are recorded in the audit log.
 
 ## Release verification
 
