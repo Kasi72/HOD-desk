@@ -44,9 +44,16 @@ The checklist is updated only after the associated code and tests pass.
 
 ## Stage 5 — Grounded action extraction
 
-- [x] Action fields are extracted only from the cited local passage.
-- [x] Dates, times, places and people are independently validated.
-- [x] Conflicting or missing fields remain editable and unverified.
+- [ ] Action candidates are sentence-local; the current extractor adds adjacent units and can attach a neighbouring date/time.
+- [x] Action verbs and obligation language are detected for English and common Tamil cues.
+- [x] Dates, times, locations and people are extracted for supported English formats.
+- [ ] Owner, reference number and recurrence extraction are not implemented.
+- [ ] Related chunks are not yet used specifically for pronoun or follow-up resolution.
+- [ ] Government-order and delegation intents are not separate ranking intents.
+- [ ] Ambiguous candidates are not persisted with a dedicated `needs_confirmation` status.
+- [ ] OCR/transcription failure messages can still contain words such as “review” or “required” and must be blocked before extraction.
+- [x] Multiple independent units generally produce separate candidates.
+- [ ] Multiple actions within one sentence are not yet split reliably.
 
 ## Stage 6 — Local Gemma reasoning
 
