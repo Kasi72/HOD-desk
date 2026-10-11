@@ -107,6 +107,8 @@ import com.hoddesk.app.ui.screens.DepartmentPage
 import com.hoddesk.app.ui.screens.HowToPage
 import com.hoddesk.app.ui.screens.LibraryScreen
 import com.hoddesk.app.ui.screens.MatterPage
+import com.hoddesk.app.ui.screens.FollowUpPage
+import com.hoddesk.app.followup.FollowUpEngine
 import com.hoddesk.app.ui.screens.NoteDialog
 import com.hoddesk.app.ui.screens.PrivacyPage
 import com.hoddesk.app.ui.screens.ProcessingItem
@@ -660,6 +662,12 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     if (matter != null) MatterPage(MatterTimelineBuilder.build(matter, allTasks, calendarEvents), onBack = ::pop, onReviewChange = { tab = TAB_REVIEW; pop() })
                     else com.hoddesk.app.ui.components.EmptyState("Matter not available", "The related sources have not been indexed yet.")
                 }
+                "followups" -> FollowUpPage(
+                    candidates = FollowUpEngine.candidates(commitments),
+                    onBack = ::pop,
+                    onCopy = { candidate -> status = "Draft copied for review."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_copied", detail = candidate.evidence)) } },
+                    onShare = { candidate -> status = "Review the draft in your sharing app before sending."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_share_started", detail = candidate.evidence)) } },
+                )
                 "howto" -> HowToPage(onBack = ::pop)
                 "vault" -> VaultPage(allSources.filter { it.isClinical() }, onBack = ::pop)
                 "department" -> DepartmentPage(settings, onBack = ::pop, onChanged = { settingsVersion++ })
