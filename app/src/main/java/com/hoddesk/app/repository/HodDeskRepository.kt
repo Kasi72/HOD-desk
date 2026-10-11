@@ -38,7 +38,9 @@ class HodDeskRepository(private val dao: HodDeskDao) {
 
     suspend fun approveSource(sourceId: Long, project: String, dueAt: Long? = null): Long {
         val source = requireNotNull(dao.source(sourceId)) { "Source $sourceId does not exist" }
+        dao.approvedTask(sourceId, source.title.trim())?.let { return it.id }
         val taskId = dao.insertTask(TaskEntity(sourceId = source.id, title = source.title, project = project, dueAt = dueAt))
+        ensureLocalTaskEvent(taskId, source.title, dueAt)
         dao.updateSource(source.copy(reviewed = true))
         return taskId
     }
@@ -59,7 +61,9 @@ class HodDeskRepository(private val dao: HodDeskDao) {
 
     suspend fun setTaskDue(taskId: Long, dueAt: Long?) {
         val task = dao.task(taskId) ?: return
-        dao.updateTask(task.copy(dueAt = dueAt)); audit("task", taskId, if (dueAt == null) "due_cleared" else "rescheduled", dueAt?.let { java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it)) })
+        dao.updateTask(task.copy(dueAt = dueAt))
+        if (dueAt == null) dao.deleteEventsForTask(taskId) else ensureLocalTaskEvent(taskId, task.title, dueAt)
+        audit("task", taskId, if (dueAt == null) "due_cleared" else "rescheduled", dueAt?.let { java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it)) })
     }
 
     suspend fun setAssignee(taskId: Long, assignee: String?) {
@@ -161,6 +165,18 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         val count = dao.purgeExpiredUnapprovedSources(before)
         if (count > 0) audit("app", 0, "retention_purge", "sources=$count")
         return count
+    }
+
+    /**
+     * Keeps the in-app itinerary in sync with task due times. This is local and
+     * idempotent; writing to an Android provider calendar still requires the
+     * separate explicit confirmation flow.
+     */
+    private suspend fun ensureLocalTaskEvent(taskId: Long, title: String, dueAt: Long?) {
+        if (dueAt == null) return
+        if (dao.eventsForTask(taskId).any { it.startsAt == dueAt && it.endsAt > dueAt }) return
+        dao.deleteEventsForTask(taskId)
+        dao.insertEvent(EventEntity(taskId = taskId, title = title, startsAt = dueAt, endsAt = dueAt + 60 * 60 * 1000L, confirmed = true))
     }
 
     suspend fun removePendingAudioPlaceholders(): Int = dao.deletePendingAudioPlaceholderTasks()

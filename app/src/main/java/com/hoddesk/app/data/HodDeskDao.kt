@@ -25,6 +25,7 @@ interface HodDeskDao {
     @Query("SELECT * FROM sources WHERE id = :id LIMIT 1") suspend fun source(id: Long): SourceEntity?
     @Query("SELECT * FROM tasks WHERE id = :id LIMIT 1") suspend fun task(id: Long): TaskEntity?
     @Query("SELECT * FROM events WHERE id = :id LIMIT 1") suspend fun event(id: Long): EventEntity?
+    @Query("SELECT * FROM events WHERE taskId = :taskId ORDER BY id") suspend fun eventsForTask(taskId: Long): List<EventEntity>
     @Query("SELECT * FROM tasks WHERE sourceId = :sourceId AND title = :title AND status != 'deleted' ORDER BY id LIMIT 1") suspend fun approvedTask(sourceId: Long, title: String): TaskEntity?
     @Query("SELECT * FROM evidence WHERE taskId = :taskId ORDER BY capturedAt DESC") fun observeEvidence(taskId: Long): Flow<List<EvidenceEntity>>
     @Query("SELECT * FROM semantic_embeddings WHERE sourceId = :sourceId LIMIT 1") suspend fun semanticEmbedding(sourceId: Long): SemanticEmbeddingEntity?
@@ -84,6 +85,7 @@ interface HodDeskDao {
         val source = requireNotNull(source(sourceId)) { "Source $sourceId does not exist" }
         approvedTask(sourceId, normalized)?.let { return it.id }
         val taskId = insertTask(TaskEntity(sourceId = sourceId, title = normalized, project = project, dueAt = dueAt, assignee = assignee?.takeIf { it.isNotBlank() }))
+        if (dueAt != null) insertEvent(EventEntity(taskId = taskId, title = normalized, startsAt = dueAt, endsAt = dueAt + 60 * 60 * 1000L, confirmed = true))
         setActionPointStatus(sourceId, normalized, "approved")
         updateSource(source.copy(reviewed = true))
         insertAudit(AuditEntryEntity(entityType = "source", entityId = sourceId, action = "action_approved", detail = normalized))
