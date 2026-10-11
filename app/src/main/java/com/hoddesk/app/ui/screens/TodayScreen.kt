@@ -32,6 +32,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import com.hoddesk.app.data.EventEntity
 import com.hoddesk.app.data.SourceEntity
 import com.hoddesk.app.data.TaskEntity
@@ -46,6 +48,8 @@ import com.hoddesk.app.ui.components.PageContentPadding
 import com.hoddesk.app.ui.components.RowDivider
 import com.hoddesk.app.ui.components.pressable
 import com.hoddesk.app.ui.theme.Hod
+import com.hoddesk.app.ui.theme.MeridianColors
+import com.hoddesk.app.ui.theme.Neu
 import com.hoddesk.app.ui.theme.Squircles
 import com.hoddesk.app.workflow.SecretaryIntelligence
 import com.hoddesk.app.secretary.SecretaryStateSnapshot
@@ -124,7 +128,7 @@ fun TodayScreen(
 
         item {
             val brief = SecretaryIntelligence.brief(sources, tasks, today)
-            Banner("Secretary brief", brief.headline + " · " + brief.detail, if (brief.urgent > 0 || brief.conflicts > 0) BannerTone.Attention else BannerTone.Info)
+            SecretaryBriefPanel(brief)
         }
 
         MeetingPreparation.next(todayEvents)?.let { nextEvent ->
@@ -231,5 +235,39 @@ private fun CountTile(count: Int, label: String, modifier: Modifier, onClick: ()
     Column(modifier.clip(Squircles.card).background(Hod.colors.surface).pressable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp)) {
         Text(count.toString(), style = Hod.type.title1, color = Hod.colors.label)
         Text(label, style = Hod.type.subheadline, color = Hod.colors.secondaryLabel)
+    }
+}
+
+@Composable
+private fun SecretaryBriefPanel(brief: SecretaryIntelligence.Brief) {
+    val c = Hod.colors
+    Column(
+        Modifier.fillMaxWidth().then(Neu.darkHero(shape = Squircles.card)).clip(Squircles.card)
+            .background(MeridianColors.panelBrief).padding(horizontal = 18.dp, vertical = 17.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("SECRETARY BRIEF", style = Hod.type.label, color = MeridianColors.aiOnDark)
+            Spacer(Modifier.weight(1f))
+            Text("${brief.urgent} URGENT", style = Hod.type.mono, color = MeridianColors.onPanel3)
+        }
+        Text(brief.headline, style = Hod.type.title3.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Serif), color = MeridianColors.onPanel)
+        Text(brief.detail, style = Hod.type.subheadline, color = MeridianColors.onPanel2, maxLines = 2)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            BriefStat("${brief.toReview}", "TO REVIEW")
+            BriefStat("${brief.dueSoon}", "DUE SOON")
+            BriefStat("${brief.waiting}", "WAITING")
+        }
+    }
+}
+
+@Composable
+private fun BriefStat(value: String, label: String) {
+    Column(
+        Modifier.fillMaxWidth(0.333f).clip(Squircles.small).background(MeridianColors.panelWell).padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(value, style = Hod.type.title3, color = MeridianColors.onPanel)
+        Text(label, style = Hod.type.label.copy(fontSize = 9.sp, letterSpacing = 0.08.em), color = MeridianColors.onPanel3)
     }
 }

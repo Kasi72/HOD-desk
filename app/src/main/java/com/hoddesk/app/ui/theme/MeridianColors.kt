@@ -35,6 +35,7 @@ object MeridianColors {
     val aiSoft = Color(0xFFECEBFB)
     val aiCard = Color(0xFFF7F6FE)
     val aiDash = Color(0xFFA9A4EE)
+    val aiOnDark = Color(0xFFBDB8F7)
     val paper = Color(0xFFFBF7EF)
     val paperBorder = Color(0xFFEFE5D2)
     val paperText = Color(0xFF2B2418)
