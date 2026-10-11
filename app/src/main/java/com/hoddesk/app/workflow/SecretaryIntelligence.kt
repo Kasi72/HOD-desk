@@ -29,16 +29,17 @@ object SecretaryIntelligence {
         val end = today.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val soon = end + 48 * 60 * 60 * 1000L
         val now = System.currentTimeMillis()
-        val activeTasks = tasks.filter(::active)
-        val toReview = sources.count { !it.reviewed && it.triageBucket == "ACT" && it.sensitivity != "T3" && it.sensitivity != "T4" }
+        val visibleSources = sources.filter { it.processingStatus !in setOf("deleted", "archived") && it.sensitivity !in setOf("T3", "T4", "T3_CLINICAL", "T4_SPECIAL") && it.body.isNotBlank() }
+        val visibleIds = visibleSources.map { it.id }.toSet()
+        val activeTasks = tasks.filter { active(it) && (it.sourceId == null || it.sourceId in visibleIds) }
+        val toReview = visibleSources.count { !it.reviewed }
         val dueSoon = activeTasks.count { it.dueAt != null && it.dueAt in now..soon }
         val followUps = activeTasks.count { !it.assignee.isNullOrBlank() && now - it.createdAt >= 2 * 24 * 60 * 60 * 1000L }
         val blocked = activeTasks.count { !it.blocker.isNullOrBlank() || !it.clarification.isNullOrBlank() }
         // Keep the brief aligned with Today/Review: only actionable, non-clinical
         // sources count. Clinical and explicitly dismissed items must never inflate
         // the user's attention count.
-        val urgent = tasks.count { active(it) && it.dueAt != null && it.dueAt < end } +
-            sources.count { !it.reviewed && it.triageBucket == "ACT" && it.sensitivity != "T3" && it.sensitivity != "T4" }
+        val urgent = activeTasks.count { it.dueAt != null && it.dueAt < end } + toReview
         val waiting = activeTasks.count { !it.assignee.isNullOrBlank() }
         val conflicts = conflicts(tasks).size
         val headline = when {
@@ -83,4 +84,51 @@ object SecretaryIntelligence {
     fun followUpCandidates(tasks: List<TaskEntity>, now: Long = System.currentTimeMillis()): List<TaskEntity> =
         tasks.filter { active(it) && !it.assignee.isNullOrBlank() && now - it.createdAt >= 2 * 24 * 60 * 60 * 1000L }
             .sortedBy { it.dueAt ?: Long.MAX_VALUE }
+
+    /** Cited executive views used by the brief card, notifications and review UI. */
+    enum class BriefKind { MORNING, MEETING_PREPARATION, MIDDAY_RISK, EVENING_CLOSE }
+    data class BriefCitation(val sourceId: Long?, val taskId: Long?, val quote: String, val locator: String, val authority: String = "Unspecified", val unresolved: Boolean = false)
+    data class ExecutiveBrief(val kind: BriefKind, val title: String, val summary: String, val citations: List<BriefCitation>, val requiresReview: Boolean)
+
+    fun executiveBrief(kind: BriefKind, sources: List<SourceEntity>, tasks: List<TaskEntity>, events: List<com.hoddesk.app.data.EventEntity> = emptyList(), commitments: List<com.hoddesk.app.data.CommitmentEntity> = emptyList(), now: Long = System.currentTimeMillis()): ExecutiveBrief {
+        val visible = sources.filter { it.processingStatus !in setOf("deleted", "archived") && it.sensitivity !in setOf("T3", "T4", "T3_CLINICAL", "T4_SPECIAL") && it.body.isNotBlank() }
+        val visibleIds = visible.map { it.id }.toSet()
+        val activeTasks = tasks.filter { active(it) && (it.sourceId == null || it.sourceId in visibleIds) }
+        val activeCommitments = commitments.filter { it.status == "open" && (it.sourceId == null || it.sourceId in visibleIds) && it.evidence.isNotBlank() }
+        fun sourceAuthority(sourceId: Long?): String = visible.firstOrNull { it.id == sourceId }?.let { when { it.priorityScore >= 80 -> "High authority"; it.priorityScore >= 40 -> "Official"; else -> "Routine" } } ?: "User-confirmed"
+        fun taskCitation(task: TaskEntity, quote: String, locator: String, unresolved: Boolean = false) = BriefCitation(task.sourceId, task.id, quote, locator, sourceAuthority(task.sourceId), unresolved)
+        val citations = mutableListOf<BriefCitation>()
+        val title: String
+        val summary: String
+        when (kind) {
+            BriefKind.MORNING -> {
+                title = "Morning brief"
+                activeTasks.filter { it.dueAt != null && it.dueAt <= now + 24 * 60 * 60 * 1000L }.take(8).forEach { citations += taskCitation(it, it.title, "task", it.blocker != null || it.clarification != null) }
+                visible.filter { !it.reviewed }.take(8).forEach { citations += BriefCitation(it.id, null, it.body.trim().take(240), "${it.sourceType} · ${it.title}", sourceAuthority(it.id), unresolved = true) }
+                val authorityCount = citations.count { it.authority == "High authority" || it.authority == "Official" }
+                summary = "${events.count { it.startsAt >= now && it.startsAt < now + 24 * 60 * 60 * 1000L }} meetings · ${citations.size} cited attention items · $authorityCount official"
+            }
+            BriefKind.MEETING_PREPARATION -> {
+                title = "Meeting preparation"
+                events.filter { it.startsAt >= now }.sortedBy { it.startsAt }.take(3).forEach { event ->
+                    citations += BriefCitation(null, event.taskId, event.title, "calendar")
+                    activeTasks.filter { it.id == event.taskId || it.project.equals(event.title, true) }.take(5).forEach { task -> citations += taskCitation(task, task.title, "preparation") }
+                }
+                summary = if (citations.isEmpty()) "No upcoming meetings need preparation." else "${citations.count { it.locator == "calendar" }} meeting${if (citations.count { it.locator == "calendar" } == 1) "" else "s"} with cited preparation"
+            }
+            BriefKind.MIDDAY_RISK -> {
+                title = "Midday risk brief"
+                activeTasks.filter { !it.blocker.isNullOrBlank() || !it.clarification.isNullOrBlank() || (it.dueAt != null && it.dueAt < now) }.take(10).forEach { task -> citations += taskCitation(task, task.blocker ?: task.clarification ?: task.title, "risk", unresolved = true) }
+                activeCommitments.filter { it.dueAt != null && it.dueAt < now }.take(10).forEach { item -> citations += BriefCitation(item.sourceId, item.taskId, item.summary, "commitment", sourceAuthority(item.sourceId), unresolved = true) }
+                summary = "${citations.size} unresolved or overdue risk${if (citations.size == 1) "" else "s"}"
+            }
+            BriefKind.EVENING_CLOSE -> {
+                title = "Evening close"
+                activeTasks.filter { it.dueAt != null && it.dueAt < now }.take(10).forEach { task -> citations += taskCitation(task, task.title, "unfinished task", unresolved = true) }
+                activeCommitments.take(10).forEach { item -> citations += BriefCitation(item.sourceId, item.taskId, item.summary, if (item.direction == "OWED_TO_ME") "waiting on others" else "owed by me", sourceAuthority(item.sourceId), unresolved = true) }
+                summary = "${citations.size} item${if (citations.size == 1) "" else "s"} remains open for review"
+            }
+        }
+        return ExecutiveBrief(kind, title, summary, citations.distinctBy { Triple(it.sourceId, it.taskId, it.quote) }, requiresReview = true)
+    }
 }

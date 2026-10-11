@@ -33,7 +33,42 @@ interface HodDeskDao {
     @Query("SELECT * FROM semantic_embeddings WHERE sourceId = :sourceId LIMIT 1") suspend fun semanticEmbedding(sourceId: Long): SemanticEmbeddingEntity?
     @Query("SELECT * FROM semantic_embeddings") suspend fun allSemanticEmbeddings(): List<SemanticEmbeddingEntity>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertSemanticEmbedding(embedding: SemanticEmbeddingEntity)
+    @Query("DELETE FROM semantic_embeddings_staging") suspend fun clearStagedEmbeddings()
+    @Query("DELETE FROM source_chunks_staging") suspend fun clearStagedChunks()
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertStagedEmbedding(embedding: SemanticEmbeddingStagingEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertStagedChunks(chunks: List<SourceChunkStagingEntity>)
+    @Transaction
+    suspend fun replaceStagedSourceIndex(embedding: SemanticEmbeddingStagingEntity, chunks: List<SourceChunkStagingEntity>) {
+        clearStagedSource(embedding.sourceId)
+        upsertStagedEmbedding(embedding)
+        if (chunks.isNotEmpty()) insertStagedChunks(chunks)
+    }
+    @Query("DELETE FROM semantic_embeddings_staging WHERE sourceId = :sourceId") suspend fun deleteStagedEmbedding(sourceId: Long)
+    @Query("DELETE FROM source_chunks_staging WHERE sourceId = :sourceId") suspend fun deleteStagedChunks(sourceId: Long)
+    @Transaction
+    suspend fun clearStagedSource(sourceId: Long) { deleteStagedEmbedding(sourceId); deleteStagedChunks(sourceId) }
+    @Query("SELECT * FROM semantic_embeddings_staging") suspend fun allStagedEmbeddings(): List<SemanticEmbeddingStagingEntity>
+    @Query("SELECT * FROM source_chunks_staging ORDER BY sourceId, ordinal") suspend fun allStagedChunks(): List<SourceChunkStagingEntity>
+    @Query("SELECT * FROM source_chunks_staging WHERE sourceId = :sourceId ORDER BY ordinal") suspend fun stagedSourceChunks(sourceId: Long): List<SourceChunkStagingEntity>
+    @Transaction
+    suspend fun promoteStagedSemanticIndex() {
+        val stagedEmbeddings = allStagedEmbeddings()
+        val stagedChunks = allStagedChunks()
+        deleteAllEmbeddings()
+        deleteAllChunks()
+        stagedEmbeddings.forEach { e -> upsertSemanticEmbedding(SemanticEmbeddingEntity(e.sourceId, e.modelVersion, e.dimension, e.vector, e.modality, e.evidenceLocator, e.indexedAt, e.sourceFingerprint, e.promptVersion, e.chunkNumber)) }
+        if (stagedChunks.isNotEmpty()) insertSourceChunks(stagedChunks.map { c -> SourceChunkEntity(c.id, c.sourceId, c.ordinal, c.modality, c.text, c.citation, c.page, c.paragraphIndex, c.messageIndex, c.startMs, c.endMs, c.modelVersion, c.dimension, c.vector, c.indexedAt, c.sourceFingerprint, c.promptVersion, c.chunkNumber) })
+        clearStagedEmbeddings()
+        clearStagedChunks()
+    }
     @Query("DELETE FROM source_chunks WHERE sourceId = :sourceId") suspend fun deleteSourceChunks(sourceId: Long)
+    @Transaction
+    suspend fun replaceSourceIndex(embedding: SemanticEmbeddingEntity, chunks: List<SourceChunkEntity>) {
+        deleteSemanticEmbedding(embedding.sourceId)
+        deleteSourceChunks(embedding.sourceId)
+        upsertSemanticEmbedding(embedding)
+        if (chunks.isNotEmpty()) insertSourceChunks(chunks)
+    }
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSourceChunks(chunks: List<SourceChunkEntity>)
     @Query("SELECT * FROM source_chunks WHERE sourceId = :sourceId ORDER BY ordinal") suspend fun sourceChunks(sourceId: Long): List<SourceChunkEntity>
     @Query("SELECT * FROM source_chunks WHERE modelVersion = :modelVersion") suspend fun allSourceChunks(modelVersion: String): List<SourceChunkEntity>

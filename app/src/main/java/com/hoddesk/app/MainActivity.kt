@@ -3,6 +3,8 @@ package com.hoddesk.app
 import android.Manifest
 import android.app.KeyguardManager
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
@@ -84,6 +86,7 @@ import com.hoddesk.app.semantic.HybridMatch
 import com.hoddesk.app.semantic.HybridRetriever
 import com.hoddesk.app.semantic.IndexHealth
 import com.hoddesk.app.semantic.IndexHealthChecker
+import com.hoddesk.app.semantic.IndexSelfCheck
 import com.hoddesk.app.semantic.IndexSnapshotManager
 import com.hoddesk.app.semantic.SourceSemanticIndexer
 import com.hoddesk.app.semantic.MatterGrouper
@@ -240,6 +243,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val todayStart = LocalDate.now().atStartOfDay(zone).toInstant().toEpochMilli()
     val todayEvents by remember(todayStart) { dao.observeEvents(todayStart, todayStart + 86_400_000L) }.collectAsState(emptyList())
     var proposals by remember { mutableStateOf<List<ProposedBlock>>(emptyList()) }
+    var planningWarning by remember { mutableStateOf<String?>(null) }
     var openEvent by remember { mutableStateOf<EventEntity?>(null) }
     var protectTimePicker by remember { mutableStateOf(false) }
     val team = remember(settingsVersion) { settings.team }
@@ -474,15 +478,28 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         val workEnd = dayStart + settings.workdayEndMinute * 60_000L
         val fixedAsEvents = settings.blocksOn(selectedDay.dayOfWeek).map { b -> EventEntity(title = b.label, startsAt = dayStart + b.startMinute * 60_000L, endsAt = dayStart + b.endMinute * 60_000L) }
         val earliest = maxOf(workStart, if (selectedDay == LocalDate.now()) System.currentTimeMillis() else workStart)
-        val planned = SmartScheduling.propose(allTasks.filter { it.assignee.isNullOrBlank() }, calendarEvents + fixedAsEvents, earliest, workEnd)
-        val freeMinutes = ((workEnd - earliest) / 60_000L) - fixedAsEvents.sumOf { (it.endsAt - it.startsAt) / 60_000L }
-        val budget = (freeMinutes * (100 - settings.slackPercent) / 100).coerceAtLeast(0)
+        val candidates = allTasks.filter { it.assignee.isNullOrBlank() && it.status != "completed" && it.status != "deleted" && it.status != "archived" }
+        val venueTravel = settings.venues.associate { it.name to it.travelMinutes.toLong() }
+        val planned = SmartScheduling.propose(candidates, calendarEvents + fixedAsEvents, earliest, workEnd, venueTravel, allTasks)
+        val freeMinutes = ((workEnd - earliest) / 60_000L).coerceAtLeast(0L) - fixedAsEvents.sumOf { (it.endsAt - it.startsAt).coerceAtLeast(0L) / 60_000L }
+        val budget = (freeMinutes * (100 - settings.slackPercent) / 100).coerceAtLeast(0L)
+        val capacity = SmartScheduling.capacity(candidates, calendarEvents + fixedAsEvents, earliest, workEnd, venueTravel, allTasks)
+        planningWarning = if (capacity.overcommitted) {
+            "Overloaded by ${capacity.overcommittedMinutes} min. Showing the highest-priority fit; alternatives: move low-priority work, delegate, or plan another day."
+        } else null
         var used = 0L
-        proposals = planned.takeWhile { b -> used += (b.end - b.start) / 60_000L; used <= budget }.map { b ->
-            ProposedBlock(b.task.id, b.task.title, b.start, b.end, clashesFor(b.start, b.end, calendarEvents), b.rationale)
+        proposals = planned.takeWhile { b -> used += (b.end - b.start) / 60_000L + b.travelMinutes; used <= budget }.map { b ->
+            ProposedBlock(b.task.id, b.task.title, b.start, b.end, clashesFor(b.start, b.end, calendarEvents), b.rationale, b.task.dueAt)
         }
         tab = TAB_CALENDAR
         if (proposals.isEmpty()) status = "Nothing to plan: no open tasks fit the free time today (fixed clinical time and ${settings.slackPercent}% free time are protected)."
+        else if (planningWarning != null) status = planningWarning
+    }
+    // A visible proposal is a draft of the current world. If a meeting moves,
+    // a task completes, or a block changes while it is open, rebuild that draft
+    // automatically; no calendar write occurs until the user confirms again.
+    LaunchedEffect(calendarEvents, allTasks, selectedDayEpoch) {
+        if (proposals.isNotEmpty()) planDay()
     }
     fun writeProposals(selected: List<ProposedBlock>? = null) {
         val calendarId = settings.calendarId
@@ -497,6 +514,9 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
             var written = 0
             val denied = mutableListOf<String>()
             toWrite.forEach { p ->
+                val taskId = p.taskId
+                if (taskId != null && dao.eventsForTask(taskId).any { it.startsAt == p.start && it.endsAt == p.end && it.confirmed }) return@forEach
+                if (scheduler.findMatchingEventId(p.title, p.start, p.end) != null) return@forEach
                 val proposal = ScheduleProposal(EventEntity(taskId = p.taskId, title = p.title, startsAt = p.start, endsAt = p.end), emptyList())
                 // Persist first. If the process dies after the provider insert,
                 // the pending row is available for reconciliation on next start.
@@ -548,7 +568,8 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     }
 
     // --- Derived status ---
-    val reviewQueue = sources.filter { !it.reviewed && !it.isClinical() }.sortedWith(compareByDescending<SourceEntity> { it.priorityScore }.thenByDescending { it.capturedAt })
+    val reviewQueue = sources.filter { it.processingStatus !in setOf("deleted", "archived") && it.body.isNotBlank() && !it.reviewed && !it.isClinical() }
+        .sortedWith(compareByDescending<SourceEntity> { it.priorityScore }.thenByDescending { it.capturedAt })
     val aiHealthy = embeddingReady && (indexHealth?.healthy != false)
     val secretaryState = remember(sources, tasks, todayEvents, commitments) {
         SecretaryStateBuilder.build(sources, tasks, todayEvents, commitments)
@@ -574,7 +595,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         GroupedPage {
             when (tab) {
                 TAB_TODAY -> TodayScreen(
-                    sources = sources, tasks = tasks, todayEvents = todayEvents.filter { it.id !in hiddenEvents }, todayBlocks = todayBlocks,
+                    sources = sources, tasks = tasks, todayEvents = todayEvents.filter { it.id !in hiddenEvents }, commitments = commitments, todayBlocks = todayBlocks,
                     onDeviceLine = "On this phone · $embeddingLine", onDeviceHealthy = aiHealthy || searchable.isEmpty(),
                     status = null, onDismissStatus = {},
                     onOpenSettings = { settingsStack.clear(); settingsStack += "home" },
@@ -602,9 +623,10 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                 TAB_TASKS -> TasksScreen(tasks, tasksSegment, onToggleDone = { t -> viewModel.setDone(t.id, t.status != "completed") }, onOpen = { openTaskId = it.id })
                 TAB_CALENDAR -> CalendarScreen(
                     selectedDay = selectedDay, events = calendarEvents.filter { it.id !in hiddenEvents }, fixedBlocks = selectedDayBlocks,
-                    proposals = proposals, onSelectDay = { selectedDayEpoch = it.toEpochDay(); proposals = emptyList() },
+                    proposals = proposals, onSelectDay = { selectedDayEpoch = it.toEpochDay(); proposals = emptyList(); planningWarning = null },
                     onPlanDay = ::planDay, onProtectTime = { protectTimePicker = true }, onOpenEvent = { openEvent = it },
-                    onConfirmProposals = { writeProposals() }, onConfirmProposal = { writeProposals(listOf(it)) }, onDiscardProposals = { proposals = emptyList() },
+                    onConfirmProposals = { writeProposals() }, onConfirmProposal = { writeProposals(listOf(it)) }, onDiscardProposals = { proposals = emptyList(); planningWarning = null },
+                    planningWarning = planningWarning,
                 )
                 else -> LibraryScreen(
                     sources = sources, query = libraryQuery, matches = libraryMatches.filter { it.source.id !in hiddenSources },
@@ -688,7 +710,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                             clinicalCount = allSources.count { it.isClinical() },
                         ),
                         onBack = ::pop,
-                        onSelfCheck = { scope.launch { aiBusy = "Checking…"; indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull(); aiBusy = indexHealth?.let { if (it.healthy) "Self-check passed." else "Self-check found ${it.staleSourceIds.size} stale and ${it.invalidSourceIds.size} invalid item(s). Rebuild the index." } ?: "Self-check could not run." } },
+                        onSelfCheck = { scope.launch { aiBusy = "Checking…"; val modelCheck = IndexSelfCheck.run(embeddingRuntime); indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull(); aiBusy = if (modelCheck.isFailure) "Model self-check failed · keyword search remains available." else indexHealth?.let { if (it.healthy) "Self-check passed." else "Self-check found ${it.staleSourceIds.size} stale and ${it.invalidSourceIds.size} invalid item(s). Rebuild the index." } ?: "Index self-check could not run." } },
                         onRebuild = { scope.launch { aiBusy = "Rebuilding search index…"; runCatching { semanticIndexer.indexAll(searchable) }.onSuccess { embeddingReady = true; aiBusy = "Search index rebuilt." }.onFailure { aiBusy = "Rebuild failed: ${it.message}" }; indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull() } },
                         snapshotSummary = latestSnapshot?.let { "${if (it.id == activeSnapshot) "Active · " else "Rollback · "}${it.modelVersion} · ${it.sourceCount} sources" },
                         onCreateSnapshot = { scope.launch {
@@ -734,8 +756,10 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                 "followups" -> FollowUpPage(
                     candidates = FollowUpEngine.candidates(commitments),
                     onBack = ::pop,
-                    onCopy = { candidate -> status = "Draft copied for review."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_copied", detail = candidate.evidence)) } },
-                    onShare = { candidate -> status = "Review the draft in your sharing app before sending."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_share_started", detail = candidate.evidence)) } },
+                    onDraftGenerated = { candidate -> scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_draft_generated", detail = candidate.draft.take(1000))) } },
+                    onDraftSaved = { candidate -> status = "Draft saved for review."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_draft_saved", detail = candidate.draft.take(1000))) } },
+                    onCopy = { candidate -> (context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.setPrimaryClip(ClipData.newPlainText("HOD Desk follow-up draft", candidate.draft)); status = "Draft copied for review."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_copied", detail = candidate.draft.take(1000))) } },
+                    onShare = { candidate -> status = "Review the draft in your sharing app before sending."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_share_started", detail = candidate.draft.take(1000))) }; runCatching { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, candidate.draft) }, "Review follow-up before sending")) }.onFailure { status = "No sharing app is available; copy the draft instead." } },
                     onDismiss = { candidate -> scope.launch { dao.setCommitmentStatus(candidate.commitmentId, "dismissed"); dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_dismissed", detail = candidate.evidence)); status = "Follow-up dismissed." } },
                 )
                 "secretary" -> SecretaryPage(initialTranscript = secretaryTranscript, onBack = ::pop, onRecord = { if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO) }, onRun = { intent ->
@@ -828,6 +852,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         openEvent?.let { e ->
             SheetDialog({ openEvent = null }) {
                 ActionSheetContent(e.title, "${timeLabel(e.startsAt)} – ${timeLabel(e.endsAt)}${e.location?.let { " · $it" } ?: ""}\nRemoving here doesn't change your Android calendar.", listOf(
+                    SheetAction("Mark overrun until now") { scope.launch { val extended = maxOf(e.endsAt, System.currentTimeMillis()); if (extended > e.endsAt) { dao.updateEvent(e.copy(endsAt = extended)); status = "Overrun protected; planning proposals refreshed." } else status = "This event has not overrun yet." }; openEvent = null },
                     SheetAction("Remove from HOD Desk", destructive = true) { openEvent = null; requestDelete(PendingDelete("event", listOf(e.id), "“${e.title}”")) },
                 ), onCancel = { openEvent = null })
             }

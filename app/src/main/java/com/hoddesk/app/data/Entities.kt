@@ -67,7 +67,10 @@ data class SemanticEmbeddingEntity(
     val vector: ByteArray,
     val modality: String = "text",
     val evidenceLocator: String? = null,
-    val indexedAt: Long = System.currentTimeMillis()
+    val indexedAt: Long = System.currentTimeMillis(),
+    val sourceFingerprint: String = "",
+    val promptVersion: Int = 0,
+    val chunkNumber: Int = 0
 )
 
 @Entity(tableName = "source_chunks", indices = [Index("sourceId"), Index("modality")])
@@ -86,7 +89,47 @@ data class SourceChunkEntity(
     val modelVersion: String,
     val dimension: Int,
     val vector: ByteArray,
-    val indexedAt: Long = System.currentTimeMillis()
+    val indexedAt: Long = System.currentTimeMillis(),
+    val sourceFingerprint: String = "",
+    val promptVersion: Int = 0,
+    val chunkNumber: Int = ordinal
+)
+
+/** Physical staging copies used while rebuilding the semantic index. */
+@Entity(tableName = "semantic_embeddings_staging")
+data class SemanticEmbeddingStagingEntity(
+    @PrimaryKey val sourceId: Long,
+    val modelVersion: String,
+    val dimension: Int,
+    val vector: ByteArray,
+    val modality: String = "text",
+    val evidenceLocator: String? = null,
+    val indexedAt: Long = System.currentTimeMillis(),
+    val sourceFingerprint: String = "",
+    val promptVersion: Int = 0,
+    val chunkNumber: Int = 0
+)
+
+@Entity(tableName = "source_chunks_staging", indices = [Index("sourceId"), Index("modality")])
+data class SourceChunkStagingEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sourceId: Long,
+    val ordinal: Int,
+    val modality: String,
+    val text: String,
+    val citation: String,
+    val page: Int? = null,
+    val paragraphIndex: Int? = null,
+    val messageIndex: Int? = null,
+    val startMs: Long? = null,
+    val endMs: Long? = null,
+    val modelVersion: String,
+    val dimension: Int,
+    val vector: ByteArray,
+    val indexedAt: Long = System.currentTimeMillis(),
+    val sourceFingerprint: String = "",
+    val promptVersion: Int = 0,
+    val chunkNumber: Int = ordinal
 )
 
 @Entity(tableName = "source_relations", indices = [Index("sourceId"), Index("relatedSourceId")])

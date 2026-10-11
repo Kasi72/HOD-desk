@@ -3,6 +3,8 @@ package com.hoddesk.app.semantic
 import com.hoddesk.app.data.HodDeskDao
 import com.hoddesk.app.data.SemanticEmbeddingEntity
 import com.hoddesk.app.data.SourceChunkEntity
+import com.hoddesk.app.data.SemanticEmbeddingStagingEntity
+import com.hoddesk.app.data.SourceChunkStagingEntity
 import com.hoddesk.app.data.SourceRelationEntity
 import android.net.Uri
 import com.hoddesk.app.data.SourceEntity
@@ -28,20 +30,25 @@ class SourceSemanticIndexer(
 ) {
     companion object { const val MODEL_VERSION = "embeddinggemma-2-740m-litertlm-v5-actions-tamil" }
 
-    suspend fun index(source: SourceEntity) {
+    suspend fun index(source: SourceEntity) = index(source, staged = false)
+
+    private suspend fun index(source: SourceEntity, staged: Boolean) {
         if (source.id <= 0L || source.body.isBlank()) return
         // Clinical and special-category sources stay in the encrypted vault;
         // they must never enter semantic retrieval, relations or model calls.
         if (source.sensitivity == "T3" || source.sensitivity == "T4") return
-        val existing = dao.semanticEmbedding(source.id)
+        val fingerprint = SourceFingerprint.of(source)
+        val existing = if (staged) null else dao.semanticEmbedding(source.id)
         // An earlier process can die after writing the document vector but
         // before writing chunks. Also, edited action candidates must become
         // searchable. Only skip when the complete, current chunk set exists.
-        if (existing?.modelVersion == MODEL_VERSION && existing.dimension == 768) {
+        if (existing?.modelVersion == MODEL_VERSION && existing.dimension == 768 &&
+            existing.sourceFingerprint == fingerprint && existing.promptVersion == EmbeddingPromptRegistry.VERSION) {
             val chunks = dao.sourceChunks(source.id)
             val expectedActions = dao.actionPoints(source.id).size
             val indexedActions = chunks.count { it.modality == "action" }
-            if (chunks.isNotEmpty() && indexedActions == expectedActions) return
+            if (chunks.isNotEmpty() && indexedActions == expectedActions &&
+                chunks.all { it.sourceFingerprint == fingerprint && it.promptVersion == EmbeddingPromptRegistry.VERSION && it.dimension == 768 }) return
         }
         val directModality: String
         var directEmbedding = false
@@ -67,12 +74,11 @@ class SourceSemanticIndexer(
         Log.i("HOD_SEMANTIC", "source_modality source=${source.id},modality=$directModality,direct=$directEmbedding")
         val validation = EmbeddingIntegrity.validate(vector)
         check(validation.valid) { "Embedding rejected for source ${source.id}: ${validation.reason}" }
-        dao.upsertSemanticEmbedding(SemanticEmbeddingEntity(source.id, MODEL_VERSION, vector.size, vector.toBytes(), directModality, source.sourceUri))
-        dao.deleteSourceChunks(source.id)
+        val embedding = SemanticEmbeddingEntity(source.id, MODEL_VERSION, vector.size, vector.toBytes(), directModality, source.sourceUri, sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = 0)
         val textChunks = chunk(source.body, source.sourceType).mapIndexed { index, item ->
             val chunkVector = embedder.embed(EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source, item.citation), item.text))
             check(EmbeddingIntegrity.validate(chunkVector).valid) { "Chunk embedding rejected for source ${source.id}" }
-            SourceChunkEntity(sourceId = source.id, ordinal = index, modality = source.sourceType, text = item.text, citation = "${source.title} · ${item.citation}", page = item.page, paragraphIndex = item.paragraphIndex, messageIndex = item.messageIndex, startMs = item.startMs, endMs = item.endMs, modelVersion = MODEL_VERSION, dimension = chunkVector.size, vector = chunkVector.toBytes())
+            SourceChunkEntity(sourceId = source.id, ordinal = index, modality = source.sourceType, text = item.text, citation = "${source.title} · ${item.citation}", page = item.page, paragraphIndex = item.paragraphIndex, messageIndex = item.messageIndex, startMs = item.startMs, endMs = item.endMs, modelVersion = MODEL_VERSION, dimension = chunkVector.size, vector = chunkVector.toBytes(), sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = index)
         }
         // Action candidates get their own vectors.  A query such as “what do
         // I need to submit this week?” should retrieve the extracted action,
@@ -88,24 +94,24 @@ class SourceSemanticIndexer(
             ).joinToString(" · ")
             val actionVector = embedder.embed(EmbeddingPromptRegistry.action(point.action, point.evidence))
             check(EmbeddingIntegrity.validate(actionVector).valid) { "Action embedding rejected for source ${source.id}" }
-            SourceChunkEntity(sourceId = source.id, ordinal = 10_000 + index, modality = "action", text = actionText, citation = "${source.title} · action ${index + 1}", modelVersion = MODEL_VERSION, dimension = actionVector.size, vector = actionVector.toBytes())
+            SourceChunkEntity(sourceId = source.id, ordinal = 10_000 + index, modality = "action", text = actionText, citation = "${source.title} · action ${index + 1}", modelVersion = MODEL_VERSION, dimension = actionVector.size, vector = actionVector.toBytes(), sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = 10_000 + index)
         }
         // Keep the original modality searchable in the same shared vector space.
         // This enables queries such as “find the screenshot about the DME meeting”.
         val modalityChunk = if (directModality == "image" || directModality == "audio") {
-            SourceChunkEntity(sourceId = source.id, ordinal = -1, modality = directModality, text = source.title, citation = "${source.title} · original $directModality", modelVersion = MODEL_VERSION, dimension = vector.size, vector = vector.toBytes())
+            SourceChunkEntity(sourceId = source.id, ordinal = -1, modality = directModality, text = source.title, citation = "${source.title} · original $directModality", modelVersion = MODEL_VERSION, dimension = vector.size, vector = vector.toBytes(), sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = -1)
         } else null
         val mediaChunks = if (embedder is EmbeddingGemmaLiteRtRuntime && source.sourceUri != null) {
             val multimodal = embedder as EmbeddingGemmaLiteRtRuntime
             when {
                 directModality == "audio" -> runCatching { multimodal.embedWavSegments(Uri.parse(source.sourceUri)) }.getOrDefault(emptyList()).mapIndexed { index, segment ->
-                    SourceChunkEntity(sourceId = source.id, ordinal = -10_000 - index, modality = "audio_segment", text = source.title, citation = "${source.title} · ${segment.startMs / 1000}s–${segment.endMs / 1000}s", startMs = segment.startMs, endMs = segment.endMs, modelVersion = MODEL_VERSION, dimension = segment.vector.size, vector = segment.vector.toBytes())
+                    SourceChunkEntity(sourceId = source.id, ordinal = -10_000 - index, modality = "audio_segment", text = source.title, citation = "${source.title} · ${segment.startMs / 1000}s–${segment.endMs / 1000}s", startMs = segment.startMs, endMs = segment.endMs, modelVersion = MODEL_VERSION, dimension = segment.vector.size, vector = segment.vector.toBytes(), sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = -10_000 - index)
                 }
                 directModality == "image" -> runCatching { multimodal.embedImageRegions(Uri.parse(source.sourceUri)) }.getOrDefault(emptyList()).mapIndexed { index, region ->
-                    SourceChunkEntity(sourceId = source.id, ordinal = -20_000 - index, modality = "image_region", text = source.title, citation = "${source.title} · image region ${region.region}", modelVersion = MODEL_VERSION, dimension = region.vector.size, vector = region.vector.toBytes())
+                    SourceChunkEntity(sourceId = source.id, ordinal = -20_000 - index, modality = "image_region", text = source.title, citation = "${source.title} · image region ${region.region}", modelVersion = MODEL_VERSION, dimension = region.vector.size, vector = region.vector.toBytes(), sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = -20_000 - index)
                 }
                 source.sourceType.contains("PDF", true) -> runCatching { multimodal.embedPdfPagePreviews(Uri.parse(source.sourceUri)) }.getOrDefault(emptyList()).map { page ->
-                    SourceChunkEntity(sourceId = source.id, ordinal = -30_000 - page.page, modality = "document_page_preview", text = source.title, citation = "${source.title} · page ${page.page} preview", page = page.page, modelVersion = MODEL_VERSION, dimension = page.vector.size, vector = page.vector.toBytes())
+                    SourceChunkEntity(sourceId = source.id, ordinal = -30_000 - page.page, modality = "document_page_preview", text = source.title, citation = "${source.title} · page ${page.page} preview", page = page.page, modelVersion = MODEL_VERSION, dimension = page.vector.size, vector = page.vector.toBytes(), sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = -30_000 - page.page)
                 }
                 else -> emptyList()
             }
@@ -116,13 +122,34 @@ class SourceSemanticIndexer(
             addAll(textChunks)
             addAll(actionChunks)
         }
-        if (chunks.isNotEmpty()) dao.insertSourceChunks(chunks)
+        if (staged) {
+            dao.replaceStagedSourceIndex(
+                SemanticEmbeddingStagingEntity(embedding.sourceId, embedding.modelVersion, embedding.dimension, embedding.vector, embedding.modality, embedding.evidenceLocator, embedding.indexedAt, embedding.sourceFingerprint, embedding.promptVersion, embedding.chunkNumber),
+                chunks.map { c -> SourceChunkStagingEntity(c.id, c.sourceId, c.ordinal, c.modality, c.text, c.citation, c.page, c.paragraphIndex, c.messageIndex, c.startMs, c.endMs, c.modelVersion, c.dimension, c.vector, c.indexedAt, c.sourceFingerprint, c.promptVersion, c.chunkNumber) }
+            )
+        } else {
+            dao.replaceSourceIndex(embedding, chunks)
+        }
     }
 
     suspend fun indexAll(sources: List<SourceEntity>) {
-        sources.forEach { source ->
-            runCatching { index(source) }
-                .onFailure { Log.e("HOD_SEMANTIC", "source_index_failed id=${source.id}", it) }
+        // Build with an in-process rollback guard. Every source is committed
+        // atomically, and a failed/cancelled rebuild restores the exact
+        // previous vector tables before the exception reaches the UI.
+        try {
+            dao.clearStagedEmbeddings()
+            dao.clearStagedChunks()
+            sources.forEach { source -> index(source, staged = true) }
+            val stagedEmbeddings = dao.allStagedEmbeddings()
+            val stagedChunks = dao.allStagedChunks()
+            check(stagedEmbeddings.map { it.sourceId }.toSet() == sources.filter { it.id > 0L && it.body.isNotBlank() && it.sensitivity !in setOf("T3", "T4") }.map { it.id }.toSet()) { "Staged source set is incomplete" }
+            check(stagedEmbeddings.all { it.dimension == 768 && EmbeddingIntegrity.validate(it.vector.toFloatArray()).valid }) { "Staged embedding integrity check failed" }
+            check(stagedChunks.all { it.dimension == 768 && EmbeddingIntegrity.validate(it.vector.toFloatArray()).valid }) { "Staged chunk integrity check failed" }
+            dao.promoteStagedSemanticIndex()
+        } catch (failure: Throwable) {
+            runCatching { dao.clearStagedEmbeddings(); dao.clearStagedChunks() }
+                .onFailure { Log.e("HOD_SEMANTIC", "staging_cleanup_failed", it) }
+            throw failure
         }
         buildRelations(sources)
     }

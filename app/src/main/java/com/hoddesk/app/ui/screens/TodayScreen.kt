@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.hoddesk.app.data.EventEntity
+import com.hoddesk.app.data.CommitmentEntity
 import com.hoddesk.app.data.SourceEntity
 import com.hoddesk.app.data.TaskEntity
 import com.hoddesk.app.settings.FixedBlock
@@ -67,7 +68,7 @@ fun buildMustAct(sources: List<SourceEntity>, tasks: List<TaskEntity>, today: Lo
     val endOfToday = today.plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
     val dueTasks = tasks.filter { it.status != "completed" && it.status != "deleted" && it.status != "archived" && it.dueAt != null && it.dueAt < endOfToday }
         .sortedBy { it.dueAt }.map { MustAct.Task(it) }
-    val reviews = sources.filter { !it.reviewed && it.triageBucket == "ACT" && !it.isClinical() }
+    val reviews = sources.filter { it.processingStatus !in setOf("deleted", "archived") && it.body.isNotBlank() && !it.reviewed && it.triageBucket == "ACT" && !it.isClinical() }
         .sortedByDescending { it.priorityScore }.map { MustAct.Review(it, it.title) }
     return (dueTasks + reviews).take(4)
 }
@@ -77,6 +78,7 @@ fun TodayScreen(
     sources: List<SourceEntity>,
     tasks: List<TaskEntity>,
     todayEvents: List<EventEntity>,
+    commitments: List<CommitmentEntity> = emptyList(),
     todayBlocks: List<FixedBlock>,
     onDeviceLine: String,
     onDeviceHealthy: Boolean,
@@ -93,7 +95,7 @@ fun TodayScreen(
     val c = Hod.colors
     val today = LocalDate.now()
     val mustAct = buildMustAct(sources, tasks, today)
-    val toReview = sources.count { !it.reviewed && !it.isClinical() }
+    val toReview = sources.count { it.processingStatus !in setOf("deleted", "archived") && it.body.isNotBlank() && !it.reviewed && !it.isClinical() }
     val waiting = secretaryState?.waiting ?: tasks.count { it.status != "completed" && it.status != "deleted" && it.status != "archived" && !it.assignee.isNullOrBlank() }
     LazyColumn(Modifier.statusBarsPadding(), contentPadding = PageContentPadding, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -128,7 +130,21 @@ fun TodayScreen(
 
         item {
             val brief = SecretaryIntelligence.brief(sources, tasks, today)
-            SecretaryBriefPanel(brief)
+            val cited = SecretaryIntelligence.executiveBrief(SecretaryIntelligence.BriefKind.MORNING, sources, tasks, now = System.currentTimeMillis())
+            SecretaryBriefPanel(brief, cited.citations.size)
+        }
+        item {
+            val now = System.currentTimeMillis()
+            val executiveBriefs = listOf(
+                SecretaryIntelligence.BriefKind.MEETING_PREPARATION,
+                SecretaryIntelligence.BriefKind.MIDDAY_RISK,
+                SecretaryIntelligence.BriefKind.EVENING_CLOSE,
+            ).map { kind -> SecretaryIntelligence.executiveBrief(kind, sources, tasks, todayEvents, commitments, now) }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                executiveBriefs.forEach { executive ->
+                    ExecutiveBriefRow(executive)
+                }
+            }
         }
 
         MeetingPreparation.next(todayEvents)?.let { nextEvent ->
@@ -239,7 +255,7 @@ private fun CountTile(count: Int, label: String, modifier: Modifier, onClick: ()
 }
 
 @Composable
-private fun SecretaryBriefPanel(brief: SecretaryIntelligence.Brief) {
+private fun SecretaryBriefPanel(brief: SecretaryIntelligence.Brief, citedCount: Int = 0) {
     val c = Hod.colors
     Column(
         Modifier.fillMaxWidth().then(Neu.darkHero(shape = Squircles.card)).clip(Squircles.card)
@@ -253,11 +269,41 @@ private fun SecretaryBriefPanel(brief: SecretaryIntelligence.Brief) {
         }
         Text(brief.headline, style = Hod.type.title3.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Serif), color = MeridianColors.onPanel)
         Text(brief.detail, style = Hod.type.subheadline, color = MeridianColors.onPanel2, maxLines = 2)
+        Text("${citedCount} evidence-backed item${if (citedCount == 1) "" else "s"} · review before acting", style = Hod.type.footnote, color = MeridianColors.onPanel3)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BriefStat("${brief.toReview}", "TO REVIEW")
             BriefStat("${brief.dueSoon}", "DUE SOON")
             BriefStat("${brief.waiting}", "WAITING")
         }
+    }
+}
+
+@Composable
+private fun ExecutiveBriefRow(brief: SecretaryIntelligence.ExecutiveBrief) {
+    val c = Hod.colors
+    Column(
+        Modifier.fillMaxWidth().clip(Squircles.small).background(c.surface).padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(brief.title, style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.label, modifier = Modifier.weight(1f))
+            Text("${brief.citations.size} cited", style = Hod.type.footnote, color = c.tint)
+        }
+        Text(brief.summary, style = Hod.type.footnote, color = c.secondaryLabel, maxLines = 2)
+        val unresolved = brief.citations.count { it.unresolved }
+        val authority = brief.citations.count { it.authority == "High authority" || it.authority == "Official" }
+        if (unresolved > 0 || authority > 0) {
+            Text(
+                buildString {
+                    if (unresolved > 0) append("$unresolved unresolved")
+                    if (unresolved > 0 && authority > 0) append(" · ")
+                    if (authority > 0) append("$authority official")
+                },
+                style = Hod.type.label,
+                color = if (unresolved > 0) c.orangeText else c.secondaryLabel,
+            )
+        }
+        Text("Review before acting", style = Hod.type.label, color = c.secondaryLabel)
     }
 }
 

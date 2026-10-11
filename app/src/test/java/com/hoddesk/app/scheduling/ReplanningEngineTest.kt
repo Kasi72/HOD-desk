@@ -21,4 +21,13 @@ class ReplanningEngineTest {
         val proposal = ReplanningEngine.propose(listOf(task), listOf(event), emptyList(), mapOf(("Psychiatry ward" to "Erode Collectorate") to 20_000L), now = 10_000L)
         assertTrue(proposal.changes.first().reason.contains("travel"))
     }
+
+    @Test fun overrun_is_protected_and_schedule_diff_is_explicit() {
+        val task = TaskEntity(id = 5, title = "Submit order", project = "Office", dueAt = 1_000L)
+        val event = EventEntity(id = 6, title = "Ward round", startsAt = 1_000L, endsAt = 4_000L)
+        val result = ReplanningEngine.proposeForOverrun(listOf(task), listOf(event), emptyList(), 6L, 8_000L, now = 1_000L)
+        assertTrue(result.conflicts.any { it.contains("overrun") })
+        val diff = ReplanningEngine.scheduleDiff(listOf(task), result.changes)
+        assertTrue(diff.moved.isNotEmpty())
+    }
 }

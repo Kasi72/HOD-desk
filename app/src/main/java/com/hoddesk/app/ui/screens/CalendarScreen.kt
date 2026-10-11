@@ -54,7 +54,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /** A block "Plan my day" or "Protect time" proposes. Nothing is written until confirmed. */
-data class ProposedBlock(val taskId: Long?, val title: String, val start: Long, val end: Long, val clashesWith: List<String>, val rationale: String = "")
+data class ProposedBlock(val taskId: Long?, val title: String, val start: Long, val end: Long, val clashesWith: List<String>, val rationale: String = "", val previousStart: Long? = null)
 
 private val HourHeight: Dp = 56.dp
 private const val FirstHour = 7
@@ -73,6 +73,7 @@ fun CalendarScreen(
     onConfirmProposals: () -> Unit,
     onDiscardProposals: () -> Unit,
     onConfirmProposal: (ProposedBlock) -> Unit = {},
+    planningWarning: String? = null,
 ) {
     val c = Hod.colors
     val today = LocalDate.now()
@@ -113,7 +114,7 @@ fun CalendarScreen(
         LaunchedEffect(selectedDay) { scroll.scrollTo(0) }
         Box(Modifier.weight(1f)) {
             Timeline(selectedDay, events, fixedBlocks, proposals, onOpenEvent, Modifier.verticalScroll(scroll))
-            if (proposals.isNotEmpty()) ProposalPanel(proposals, onConfirmProposals, onDiscardProposals, onConfirmProposal, Modifier.align(Alignment.BottomCenter))
+            if (proposals.isNotEmpty()) ProposalPanel(proposals, onConfirmProposals, onDiscardProposals, onConfirmProposal, planningWarning, Modifier.align(Alignment.BottomCenter))
         }
     }
 }
@@ -193,7 +194,7 @@ private fun Timeline(day: LocalDate, events: List<EventEntity>, fixedBlocks: Lis
 }
 
 @Composable
-private fun ProposalPanel(proposals: List<ProposedBlock>, onConfirm: () -> Unit, onDiscard: () -> Unit, onConfirmOne: (ProposedBlock) -> Unit, modifier: Modifier) {
+private fun ProposalPanel(proposals: List<ProposedBlock>, onConfirm: () -> Unit, onDiscard: () -> Unit, onConfirmOne: (ProposedBlock) -> Unit, planningWarning: String?, modifier: Modifier) {
     val c = Hod.colors
     val clashes = proposals.filter { it.clashesWith.isNotEmpty() }
     Column(
@@ -202,16 +203,23 @@ private fun ProposalPanel(proposals: List<ProposedBlock>, onConfirm: () -> Unit,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("${proposals.size} proposed block(s)", style = Hod.type.headline, color = c.label)
+        val moved = proposals.count { it.previousStart != null && it.previousStart != it.start }
+        if (moved > 0) Text("Before → after diff: $moved block(s) moved; review each change before writing.", style = Hod.type.footnote, color = c.orangeText)
+        planningWarning?.let { Text(it, style = Hod.type.footnote, color = c.orangeText) }
         Text(
             if (clashes.isEmpty()) "Nothing is written to your calendar until you confirm. Fixed clinical time and existing events are left untouched."
             else "${clashes.size} clash with existing events (${clashes.flatMap { it.clashesWith }.distinct().joinToString()}). Clashing blocks will be skipped.",
             style = Hod.type.footnote, color = if (clashes.isEmpty()) c.secondaryLabel else c.redText,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            HodButton("Discard", onDiscard, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.weight(1f))
+            HodButton("Reject", onDiscard, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.weight(1f))
             HodButton("Add ${proposals.size - clashes.size}", onConfirm, enabled = proposals.size > clashes.size, height = 46.dp, modifier = Modifier.weight(1.4f))
         }
         proposals.filter { it.clashesWith.isEmpty() }.forEach { proposal ->
+            if (proposal.rationale.isNotBlank()) Text(proposal.rationale, style = Hod.type.caption, color = c.secondaryLabel, maxLines = 2)
+            proposal.previousStart?.let { previous ->
+                if (previous != proposal.start) Text("Before → after: ${formatMinute(java.time.Instant.ofEpochMilli(previous).atZone(java.time.ZoneId.systemDefault()).toLocalTime().let { it.hour * 60 + it.minute })} → ${formatMinute(java.time.Instant.ofEpochMilli(proposal.start).atZone(java.time.ZoneId.systemDefault()).toLocalTime().let { it.hour * 60 + it.minute })}", style = Hod.type.caption, color = c.orangeText)
+            }
             HodButton("Add only: ${proposal.title}", { onConfirmOne(proposal) }, style = HodButtonStyle.Gray, height = 40.dp, modifier = Modifier.fillMaxWidth())
         }
     }

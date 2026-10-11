@@ -9,7 +9,10 @@ data class FollowUpCandidate(
     val suggestedAt: Long,
     val draft: String,
     val evidence: String,
+    val language: FollowUpLanguage = FollowUpLanguage.ENGLISH,
 )
+
+enum class FollowUpLanguage { ENGLISH, TAMIL, TANGLISH }
 
 object FollowUpEngine {
     fun candidates(items: List<CommitmentEntity>, now: Long = System.currentTimeMillis()): List<FollowUpCandidate> =
@@ -20,11 +23,20 @@ object FollowUpEngine {
                     commitmentId = item.id,
                     reason = if (item.dueAt != null && item.dueAt < now) "Expected response is overdue" else "No response indexed for two days",
                     suggestedAt = now,
-                    draft = "Kindly confirm the status of: " + item.summary + ".",
+                    draft = draft(item.summary, FollowUpLanguage.ENGLISH),
                     evidence = item.evidence,
                 )
             }
 
     fun edit(candidate: FollowUpCandidate, text: String): FollowUpCandidate =
         candidate.copy(draft = text.trim().ifBlank { candidate.draft })
+
+    fun localize(candidate: FollowUpCandidate, language: FollowUpLanguage): FollowUpCandidate =
+        candidate.copy(language = language, draft = draft(candidate.draft.substringAfterLast(": ").removeSuffix("."), language))
+
+    private fun draft(summary: String, language: FollowUpLanguage): String = when (language) {
+        FollowUpLanguage.ENGLISH -> "Kindly confirm the status of: $summary."
+        FollowUpLanguage.TAMIL -> "தயவுசெய்து இதன் நிலையை உறுதிப்படுத்தவும்: $summary."
+        FollowUpLanguage.TANGLISH -> "Dayavu seidhu idhan nilayai confirm pannunga: $summary."
+    }
 }

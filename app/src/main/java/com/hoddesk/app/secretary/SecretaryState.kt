@@ -28,7 +28,7 @@ object SecretaryStateBuilder {
         commitments: List<CommitmentEntity>,
         now: Long = System.currentTimeMillis(),
     ): SecretaryStateSnapshot {
-        val visibleSources = sources.filter { it.sensitivity != "T3" && it.sensitivity != "T4" && it.processingStatus != "deleted" }
+        val visibleSources = sources.filter { it.sensitivity !in setOf("T3", "T4", "T3_CLINICAL", "T4_SPECIAL") && it.processingStatus !in setOf("deleted", "archived") && it.body.isNotBlank() }
         val activeTasks = tasks.filter { it.status != "completed" && it.status != "deleted" && it.status != "archived" }
         val openCommitments = commitments.filter { it.status == "open" }
         val end = now + 48 * 60 * 60 * 1000L
