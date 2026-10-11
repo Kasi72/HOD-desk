@@ -60,7 +60,12 @@ class WhatsAppExportAdapter {
             val sender = body.substringBefore(": ").takeIf { it.length in 1..80 && !it.contains("http") }
             val message = if (sender != null) body.substringAfter(": ") else body
             val title = buildString { append("WhatsApp"); sender?.let { append(" · ").append(it) }; append(" · ").append(header.ifBlank { "message ${index + 1}" }) }
-            ImportedSource(title, message, "WhatsApp", null)
+            val previous = messages.getOrNull(index - 1)?.second
+            val ambiguousReply = Regex("(?iu)^(?:ok|okay|yes|no|sure|done|will do|noted|fine|alright|received|சரி|செய்கிறேன்|அனுப்புகிறேன்|வருகிறேன்)[.! ]*").containsMatchIn(message.trim())
+            val linked = if (ambiguousReply && !previous.isNullOrBlank()) {
+                "[Previous message]\n${previous.trim()}\n[Reply]\n$message"
+            } else message
+            ImportedSource(title, linked, "WhatsApp", null)
         }
     }
 

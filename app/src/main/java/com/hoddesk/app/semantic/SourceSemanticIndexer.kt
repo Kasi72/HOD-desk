@@ -69,10 +69,10 @@ class SourceSemanticIndexer(
         check(validation.valid) { "Embedding rejected for source ${source.id}: ${validation.reason}" }
         dao.upsertSemanticEmbedding(SemanticEmbeddingEntity(source.id, MODEL_VERSION, vector.size, vector.toBytes()))
         dao.deleteSourceChunks(source.id)
-        val textChunks = chunk(source.body).mapIndexed { index, item ->
+        val textChunks = chunk(source.body, source.sourceType).mapIndexed { index, item ->
             val chunkVector = embedder.embed(EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source, item.citation), item.text))
             check(EmbeddingIntegrity.validate(chunkVector).valid) { "Chunk embedding rejected for source ${source.id}" }
-            SourceChunkEntity(sourceId = source.id, ordinal = index, modality = source.sourceType, text = item.text, citation = "${source.title} · ${item.citation}", page = item.page, startMs = item.startMs, endMs = item.endMs, modelVersion = MODEL_VERSION, dimension = chunkVector.size, vector = chunkVector.toBytes())
+            SourceChunkEntity(sourceId = source.id, ordinal = index, modality = source.sourceType, text = item.text, citation = "${source.title} · ${item.citation}", page = item.page, paragraphIndex = item.paragraphIndex, messageIndex = item.messageIndex, startMs = item.startMs, endMs = item.endMs, modelVersion = MODEL_VERSION, dimension = chunkVector.size, vector = chunkVector.toBytes())
         }
         // Action candidates get their own vectors.  A query such as “what do
         // I need to submit this week?” should retrieve the extracted action,
@@ -178,15 +178,16 @@ class SourceSemanticIndexer(
         }
     }
 
-    private data class IndexedChunk(val text: String, val citation: String, val page: Int? = null, val startMs: Long? = null, val endMs: Long? = null)
+    private data class IndexedChunk(val text: String, val citation: String, val page: Int? = null, val paragraphIndex: Int? = null, val messageIndex: Int? = null, val startMs: Long? = null, val endMs: Long? = null)
 
-    private fun chunk(text: String, maxChars: Int = 1600): List<IndexedChunk> {
+    private fun chunk(text: String, sourceType: String, maxChars: Int = 1600, overlap: Int = 240): List<IndexedChunk> {
         // Keep line boundaries: PDF page markers and audio timestamps are
         // evidence anchors, so flattening all whitespace would lose them.
         val clean = text.replace("\r\n", "\n").replace(Regex("[ \\t]+"), " ").trim()
         if (clean.isBlank()) return emptyList()
         val result = mutableListOf<IndexedChunk>()
         var start = 0
+        var paragraph = 0
         while (start < clean.length) {
             var end = (start + maxChars).coerceAtMost(clean.length)
             if (end < clean.length) {
@@ -196,17 +197,29 @@ class SourceSemanticIndexer(
             val piece = clean.substring(start, end).trim()
             val page = Regex("\\[Page (\\d+)\\]", RegexOption.IGNORE_CASE).find(piece)?.groupValues?.getOrNull(1)
                 ?.toIntOrNull()
+            val paragraphIndex = paragraph + piece.substringBefore("\n").let { if (it.isBlank()) 0 else 1 }
+            paragraph += piece.count { it == '\n' }
+            val messageIndex = if (sourceType.contains("WhatsApp", true)) {
+                when {
+                    piece.contains("[Previous message]", true) -> 0
+                    piece.contains("[Reply]", true) -> 1
+                    else -> result.size
+                }
+            } else null
             val time = Regex("(?:\\[)?(\\d{1,2}):(\\d{2})(?:\\s*[-–]\\s*(\\d{1,2}):(\\d{2}))?(?:\\])?").find(piece)
             fun millis(groupMinute: Int, groupSecond: Int): Long = (groupMinute * 60L + groupSecond) * 1000L
             val startMs = time?.let { millis(it.groupValues[1].toInt(), it.groupValues[2].toInt()) }
             val endMs = time?.groupValues?.getOrNull(3)?.takeIf { it.isNotBlank() }?.let { millis(it.toInt(), time.groupValues[4].toInt()) }
             val citation = buildList {
                 page?.let { add("page $it") }
+                paragraphIndex.let { add("paragraph $it") }
+                messageIndex?.let { add("message $it") }
                 startMs?.let { add(if (endMs != null) "${it / 1000}s–${endMs / 1000}s" else "${it / 1000}s") }
                 if (isEmpty()) add("document section ${result.size + 1}")
             }.joinToString(" · ")
-            result += IndexedChunk(piece, citation, page, startMs, endMs)
-            start = end
+            result += IndexedChunk(piece, citation, page, paragraphIndex, messageIndex, startMs, endMs)
+            val next = end - overlap
+            start = if (next > start) next else end
         }
         return result
     }

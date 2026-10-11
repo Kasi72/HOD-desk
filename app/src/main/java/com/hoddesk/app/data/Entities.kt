@@ -77,6 +77,8 @@ data class SourceChunkEntity(
     val text: String,
     val citation: String,
     val page: Int? = null,
+    val paragraphIndex: Int? = null,
+    val messageIndex: Int? = null,
     val startMs: Long? = null,
     val endMs: Long? = null,
     val modelVersion: String,

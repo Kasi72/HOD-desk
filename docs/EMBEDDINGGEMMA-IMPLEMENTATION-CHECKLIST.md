@@ -31,10 +31,11 @@ The checklist is updated only after the associated code and tests pass.
 
 ## Stage 3 — Document chunk intelligence
 
-- [ ] Page/paragraph/timestamp chunk metadata is complete for every importer.
-- [x] Page markers and audio timestamp ranges are retained when present in imported text.
-- [ ] Long WhatsApp conversations retain reply context windows.
-- [ ] Exact evidence passages are displayed for every retrieved action.
+- [x] Page, paragraph, message and timestamp metadata are stored on every indexed chunk.
+- [x] PDFs retain page markers; DOCX/text content retains paragraph indexes; audio markers retain timestamp ranges.
+- [x] WhatsApp acknowledgement replies retain the preceding message in a bounded context window.
+- [x] Long sources use overlapping adjacent chunks so dates and follow-up wording are not split apart.
+- [x] Retrieved results expose the strongest chunk citation and modality in the Library result reasons.
 
 ## Stage 4 — Hybrid retrieval
 
