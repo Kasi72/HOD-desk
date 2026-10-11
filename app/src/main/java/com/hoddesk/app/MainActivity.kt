@@ -678,7 +678,13 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     val sourceId = matterSourceId
                     val relations by remember(sourceId) { sourceId?.let { dao.observeRelations(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList()) }.collectAsState(emptyList())
                     val matter = sourceId?.let { id -> MatterGrouper.group(allSources, relations).firstOrNull { it.sources.any { source -> source.id == id } } }
-                    if (matter != null) MatterPage(MatterTimelineBuilder.build(matter, allTasks, calendarEvents), onBack = ::pop, onReviewChange = { tab = TAB_REVIEW; pop() })
+                    if (matter != null) MatterPage(
+                        MatterTimelineBuilder.build(matter, allTasks, calendarEvents),
+                        onBack = ::pop,
+                        onReviewChange = { tab = TAB_REVIEW; pop() },
+                        onAcceptChange = { taskId -> scope.launch { repository.resolveChangeProposal(taskId, "accepted"); status = "Change accepted."; pop() } },
+                        onKeepExisting = { taskId -> scope.launch { repository.resolveChangeProposal(taskId, "kept_existing"); status = "Existing task kept."; pop() } },
+                    )
                     else com.hoddesk.app.ui.components.EmptyState("Matter not available", "The related sources have not been indexed yet.")
                 }
                 "followups" -> FollowUpPage(

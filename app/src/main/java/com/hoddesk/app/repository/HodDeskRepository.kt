@@ -206,6 +206,13 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         return count
     }
 
+    suspend fun resolveChangeProposal(taskId: Long, decision: String) {
+        val task = requireNotNull(dao.task(taskId)) { "Task $taskId does not exist" }
+        require(decision == "accepted" || decision == "kept_existing")
+        dao.updateTask(task.copy(clarification = null, status = if (task.status == "needs_clarification") "open" else task.status))
+        audit("task", taskId, "change_$decision", task.title)
+    }
+
     /**
      * Keeps the in-app itinerary in sync with task due times. This is local and
      * idempotent; writing to an Android provider calendar still requires the
