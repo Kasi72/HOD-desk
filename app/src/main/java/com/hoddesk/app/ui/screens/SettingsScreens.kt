@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apartment
+import androidx.compose.material.icons.rounded.Assessment
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Call
@@ -157,6 +158,8 @@ fun SettingsHome(summary: SettingsSummary, onBack: () -> Unit, onOpen: (String) 
             ListRow("Secretary", icon = Icons.Rounded.Mic, iconColor = c.indigo, value = "Ask locally", chevron = true, onClick = { onOpen("secretary") })
             RowDivider(58.dp)
             ListRow("Control Centre", icon = Icons.Rounded.PriorityHigh, iconColor = c.orange, value = "All signals", chevron = true, onClick = { onOpen("control") })
+            RowDivider(58.dp)
+            ListRow("Evaluation lab", icon = Icons.Rounded.Assessment, iconColor = c.indigo, value = "Quality gates", chevron = true, onClick = { onOpen("evaluation") })
             RowDivider(58.dp)
             ListRow("How to Import", icon = Icons.Rounded.HelpOutline, iconColor = c.green, value = "WhatsApp, Gmail…", chevron = true, onClick = { onOpen("howto") })
         }

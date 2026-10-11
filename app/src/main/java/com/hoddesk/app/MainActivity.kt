@@ -98,6 +98,7 @@ import com.hoddesk.app.ui.components.TabItem
 import com.hoddesk.app.ui.components.pressable
 import com.hoddesk.app.ui.components.SegmentedControl
 import com.hoddesk.app.ui.screens.ActivityPage
+import com.hoddesk.app.workers.IndexMaintenanceScheduler
 import com.hoddesk.app.ui.screens.AiPage
 import com.hoddesk.app.ui.screens.AiStatus
 import com.hoddesk.app.ui.screens.CalendarScreen
@@ -110,6 +111,7 @@ import com.hoddesk.app.ui.screens.MatterPage
 import com.hoddesk.app.ui.screens.FollowUpPage
 import com.hoddesk.app.ui.screens.SecretaryPage
 import com.hoddesk.app.ui.screens.SecretaryControlCentre
+import com.hoddesk.app.ui.screens.EvaluationLabPage
 import com.hoddesk.app.followup.FollowUpEngine
 import com.hoddesk.app.ui.screens.NoteDialog
 import com.hoddesk.app.ui.screens.PrivacyPage
@@ -183,6 +185,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val learningCorrectionCount by remember { dao.observeLearningCorrectionCount() }.collectAsState(0)
     val commitments by remember { dao.observeCommitments() }.collectAsState(emptyList())
     LaunchedEffect(Unit) {
+        IndexMaintenanceScheduler.schedule(context)
         // Enforce the configured retention policy after every process start.
         // Sources backing approved tasks are deliberately retained by the DAO.
         repository.purgeExpiredSources(privacyStore.retentionCutoff())
@@ -686,6 +689,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     onOpenCalendar = { tab = TAB_CALENDAR; pop() },
                     onOpenWaiting = { tasksSegment = 1; tab = TAB_TASKS; pop() },
                 )
+                "evaluation" -> EvaluationLabPage(sources = allSources, onBack = ::pop)
                 "howto" -> HowToPage(onBack = ::pop)
                 "vault" -> VaultPage(allSources.filter { it.isClinical() }, onBack = ::pop)
                 "department" -> DepartmentPage(settings, onBack = ::pop, onChanged = { settingsVersion++ })

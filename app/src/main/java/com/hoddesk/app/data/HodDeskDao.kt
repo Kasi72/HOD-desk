@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface HodDeskDao {
     @Query("SELECT * FROM sources ORDER BY capturedAt DESC") fun observeSources(): Flow<List<SourceEntity>>
+    @Query("SELECT * FROM sources ORDER BY capturedAt DESC") suspend fun sourcesOnce(): List<SourceEntity>
     @Query("SELECT * FROM tasks ORDER BY CASE WHEN status = 'open' THEN 0 ELSE 1 END, dueAt") fun observeTasks(): Flow<List<TaskEntity>>
     @Query("SELECT * FROM events WHERE startsAt < :end AND endsAt > :start ORDER BY startsAt") suspend fun overlappingEvents(start: Long, end: Long): List<EventEntity>
     @Query("SELECT * FROM events WHERE startsAt >= :start AND startsAt < :end ORDER BY startsAt") fun observeEvents(start: Long, end: Long): Flow<List<EventEntity>>
@@ -132,6 +133,13 @@ interface HodDeskDao {
     @Query("DELETE FROM evidence") suspend fun deleteAllEvidence()
     @Query("DELETE FROM semantic_embeddings") suspend fun deleteAllEmbeddings()
     @Query("DELETE FROM source_chunks") suspend fun deleteAllChunks()
+    @Transaction
+    suspend fun replaceSemanticIndex(embeddings: List<SemanticEmbeddingEntity>, chunks: List<SourceChunkEntity>) {
+        deleteAllEmbeddings()
+        deleteAllChunks()
+        if (embeddings.isNotEmpty()) embeddings.forEach { upsertSemanticEmbedding(it) }
+        if (chunks.isNotEmpty()) insertSourceChunks(chunks)
+    }
     @Query("DELETE FROM action_points") suspend fun deleteAllActionPoints()
     @Query("DELETE FROM reasoning_runs") suspend fun deleteAllReasoningRuns()
 
