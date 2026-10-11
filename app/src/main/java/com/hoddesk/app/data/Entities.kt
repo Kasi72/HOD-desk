@@ -110,6 +110,9 @@ data class ActionPointEntity(
     val confidence: Float,
     val status: String = "needs_review",
     val ambiguity: String? = null,
+    val ownerText: String? = null,
+    val referenceNumber: String? = null,
+    val recurrenceRule: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
 

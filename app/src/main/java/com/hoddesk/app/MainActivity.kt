@@ -313,7 +313,8 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         val needsReview = pendingAudio || body.contains("pending OCR", ignoreCase = true) || body.contains("no readable text", ignoreCase = true) || body.contains("No definite action", ignoreCase = true)
         val source = SourceEntity(title = item.title, body = body, sourceType = item.type, sourceUri = uri?.toString(), processingStatus = if (needsReview) "needs_review" else "ready")
         // A failure message is evidence of a processing error, never an action.
-        val actions = if (pendingAudio) emptyList() else ActionPointExtractor().extract(redactedInput)
+        val extractor = ActionPointExtractor()
+        val actions = if (pendingAudio || extractor.isProcessingFailure(redactedInput) || needsReview && redactedInput.contains("OCR", ignoreCase = true)) emptyList() else extractor.extract(redactedInput)
         viewModel.ingestWithActions(source, actions)
     }
     fun saveImportedBatch(items: List<ImportedSource>, uri: Uri) = items.forEach { saveImported(it, uri) }

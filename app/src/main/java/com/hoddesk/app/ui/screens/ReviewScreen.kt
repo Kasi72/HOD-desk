@@ -145,7 +145,7 @@ private fun SourceReview(
     val context = LocalContext.current
     val actionPoints by remember(source.id) { observeActionPoints(source.id) }.collectAsState(initial = emptyList())
     val evidence = remember(source.id, source.body) { cleanEvidence(source.body) }
-    val pending = actionPoints.filter { it.status == "needs_review" || it.status == "needs_clarification" }
+    val pending = actionPoints.filter { it.status == "needs_review" || it.status == "needs_confirmation" || it.status == "needs_clarification" }
     val fallback = remember(source.id) { ActionPointExtractor().extract(evidence).map { it.action }.filter { it.isNotBlank() } }
     val baseActions = when {
         actionPoints.isNotEmpty() -> pending.map { it.action }

@@ -298,7 +298,10 @@ data class ActionPointDraft(
     val evidence: String,
     val confidence: Float,
     val ambiguity: String? = null,
-    val category: String = "official_work"
+    val category: String = "official_work",
+    val ownerText: String? = null,
+    val referenceNumber: String? = null,
+    val recurrenceRule: String? = null
 ) {
-    fun toEntity(sourceId: Long) = ActionPointEntity(sourceId = sourceId, action = action, category = category, dateText = dateText, timeText = timeText, locationText = locationText, peopleText = peopleText, evidence = evidence, confidence = confidence, ambiguity = ambiguity)
+    fun toEntity(sourceId: Long) = ActionPointEntity(sourceId = sourceId, action = action, category = category, dateText = dateText, timeText = timeText, locationText = locationText, peopleText = peopleText, evidence = evidence, confidence = confidence, status = if (ambiguity.isNullOrBlank()) "needs_review" else "needs_confirmation", ambiguity = ambiguity, ownerText = ownerText, referenceNumber = referenceNumber, recurrenceRule = recurrenceRule)
 }

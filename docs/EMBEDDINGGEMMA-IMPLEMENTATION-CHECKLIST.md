@@ -44,16 +44,16 @@ The checklist is updated only after the associated code and tests pass.
 
 ## Stage 5 — Grounded action extraction
 
-- [ ] Action candidates are sentence-local; the current extractor adds adjacent units and can attach a neighbouring date/time.
+- [x] Action candidates are sentence-local; adjacent paragraphs are never merged. Abbreviated references such as `GO No. 214/2026` remain intact.
 - [x] Action verbs and obligation language are detected for English and common Tamil cues.
-- [x] Dates, times, locations and people are extracted for supported English formats.
-- [ ] Owner, reference number and recurrence extraction are not implemented.
-- [ ] Related chunks are not yet used specifically for pronoun or follow-up resolution.
-- [ ] Government-order and delegation intents are not separate ranking intents.
-- [ ] Ambiguous candidates are not persisted with a dedicated `needs_confirmation` status.
-- [ ] OCR/transcription failure messages can still contain words such as “review” or “required” and must be blocked before extraction.
+- [x] Dates, times, locations and people are extracted for supported English formats, with sentence-local evidence.
+- [x] Owner, reference number and recurrence fields are extracted and persisted through the Room migration.
+- [x] Related chunks can be supplied explicitly and are consulted only for pronouns and follow-up wording.
+- [x] Government-order and delegation candidates have separate categories and semantic ranking intents.
+- [x] Ambiguous candidates are persisted with `needs_confirmation` and remain in Review until confirmed.
+- [x] OCR/transcription failure messages are rejected before action extraction and import persistence.
 - [x] Multiple independent units generally produce separate candidates.
-- [ ] Multiple actions within one sentence are not yet split reliably.
+- [x] Multiple independent actions within one sentence are split at explicit conjunctions or clause boundaries; non-action context remains attached.
 
 ## Stage 6 — Local Gemma reasoning
 

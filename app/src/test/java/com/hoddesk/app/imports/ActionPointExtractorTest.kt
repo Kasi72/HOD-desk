@@ -1,6 +1,7 @@
 package com.hoddesk.app.imports
 
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ActionPointExtractorTest {
@@ -21,5 +22,24 @@ class ActionPointExtractorTest {
         assertTrue(result.contains("Action candidate:"))
         assertTrue(result.contains("Zoom meeting at 2 PM"))
         assertTrue(result.contains("duty roster due by Friday"))
+    }
+
+    @Test fun fields_are_sentence_local_and_extended_fields_are_captured() {
+        val drafts = ActionPointExtractor().extract("Attend the DME review at 2 PM in Erode Collectorate. Submit GO No. 214/2026 weekly; owner: Dr Raman.")
+        assertEquals(2, drafts.size)
+        assertTrue(drafts[0].timeText == "2 PM")
+        assertTrue(drafts[0].locationText?.contains("Erode Collectorate") == true)
+        assertTrue(drafts.any { it.referenceNumber?.contains("214/2026") == true })
+        assertTrue(drafts.any { it.recurrenceRule?.contains("weekly", ignoreCase = true) == true })
+    }
+
+    @Test fun processing_error_text_never_becomes_an_action() {
+        assertTrue(ActionPointExtractor().extract("OCR could not read this image; manual review required.").isEmpty())
+        assertTrue(ActionPointExtractor().extract("Audio is queued for the approved offline transcription runtime.").isEmpty())
+    }
+
+    @Test fun independent_actions_split_on_explicit_clause_boundary() {
+        val drafts = ActionPointExtractor().extract("Attend the review and then submit the report by Friday.")
+        assertEquals(2, drafts.size)
     }
 }

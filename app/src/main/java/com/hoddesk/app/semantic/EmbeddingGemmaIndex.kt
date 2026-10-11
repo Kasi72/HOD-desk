@@ -41,6 +41,8 @@ class EmbeddingGemmaActionRanker(private val embedder: EmbeddingGemmaService) {
             "meeting appointment conference attend join schedule",
             "deadline due date submit before within",
             "teaching lecture class resident training duty roster",
+            "government order circular proceedings reference number comply",
+            "delegation assign owner forward to responsible officer",
             "follow up pending reminder obtain confirmation"
         ).map { embedder.embed(EmbeddingPromptRegistry.classify(it)) }
         return candidates.map { candidate ->

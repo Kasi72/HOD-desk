@@ -80,19 +80,28 @@ class ActionPointExtractor {
     private val date = Regex("(?iu)\\b(?:today|tomorrow|this week|next week|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|\\d{1,2}(?:st|nd|rd|th)?[ -](?:January|February|March|April|May|June|July|August|September|October|November|December)(?:[ -]\\d{4})?|\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4})\\b")
     private val time = Regex("(?iu)\\b(?:at\\s*)?([01]?\\d|2[0-3])(?::([0-5]\\d))?\\s*(AM|PM)\\b")
     private val location = Regex("(?iu)\\b(?:at|in|venue[: ]|location[: ])\\s+([A-Z][A-Za-z .'-]{2,80}(?:college|hospital|office|collectorate|DME|room|campus|centre|center)?)")
+    private val owner = Regex("(?iu)\\b(?:owner|responsible(?: officer)?|assigned|delegate(?:d)?|depute(?:d)?)\\s*(?:to|:)?\\s+([A-Z][A-Za-z .'-]{2,60})")
+    private val reference = Regex("(?iu)\\b(?:G\\.?O\\.?|GO|PRGI|Ref(?:erence)?|Proceedings|Order)\\s*(?:No\\.?|number|#)?\\s*[:./-]?\\s*([A-Z0-9][A-Z0-9./-]{2,40})")
+    private val recurrence = Regex("(?iu)\\b(?:every\\s+(?:day|week|month|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)|daily|weekly|monthly|fortnightly|each\\s+(?:day|week|month))\\b")
+    private val processingFailure = Regex("(?iu)^(?:audio is queued|transcription (?:pending|unavailable|failed)|ocr (?:could not|failed)|no readable text|no speech detected|image pending ocr|document pending processing|recording saved; transcription unavailable)")
 
-    private fun units(text: String): List<String> = text.split(Regex("(?<=[.!?])\\s+|\\r?\\n+|(?<=;)\\s+"))
+    private fun units(text: String): List<String> = text.split(Regex("(?<=[.!?])\\s+(?!\\d)|\\r?\\n+"))
         .map { it.replace(Regex("\\s+"), " ").trim() }.filter { it.length >= 8 }
     private fun candidateUnits(text: String): List<String> {
-        val all = units(text)
-        return all.mapIndexedNotNull { index, unit ->
-            if (!action.containsMatchIn(unit) && !obligation.containsMatchIn(unit) && !schedule.containsMatchIn(unit) && !deadline.containsMatchIn(unit)) return@mapIndexedNotNull null
-            // OCR frequently puts the action, date and venue on adjacent lines. Keep that local context together.
-            (maxOf(0, index - 1)..minOf(all.lastIndex, index + 1)).map { all[it] }.joinToString(" ").take(420)
+        if (text.isBlank() || processingFailure.containsMatchIn(text.trim())) return emptyList()
+        return units(text).flatMap { unit ->
+            if (!action.containsMatchIn(unit) && !obligation.containsMatchIn(unit) && !schedule.containsMatchIn(unit) && !deadline.containsMatchIn(unit)) emptyList()
+            else splitIndependentActions(unit)
         }.distinctBy { it.lowercase() }
     }
     private fun people(text: String): List<String> = Regex("(?iu)\\b(?:with|to|from|for|by|official|officer|chair)\\s+([A-Z][A-Za-z .'-]{2,60})").findAll(text)
         .map { it.groupValues[1].trim().trimEnd('.', ',', ';') }.filter { it.split(' ').size <= 8 }.distinct().take(10).toList()
+
+    private fun splitIndependentActions(unit: String): List<String> {
+        val clauses = unit.split(Regex("(?iu)\\s+(?:and then|also|then|and)\\s+|(?<=;)\\s+"))
+            .map { it.trim() }.filter { it.length >= 8 }
+        return if (clauses.size > 1 && clauses.count { action.containsMatchIn(it) || obligation.containsMatchIn(it) } > 1) clauses else listOf(unit.take(420))
+    }
 
     fun annotate(text: String): String {
         if (text.isBlank()) return "No readable text was extracted. Keep this document for manual review."
@@ -114,13 +123,25 @@ class ActionPointExtractor {
         }
     }
 
-    fun extract(text: String): List<ActionPointDraft> {
+    fun extract(text: String, relatedContext: List<String> = emptyList()): List<ActionPointDraft> {
         return candidateUnits(text).map { evidence ->
-            val dateText = date.findAll(evidence).map { it.value }.distinct().joinToString(", ").ifBlank { null }
-            val timeText = time.findAll(evidence).map { it.value.trim() }.distinct().joinToString(", ").ifBlank { null }
-            val locationText = location.findAll(evidence).map { it.groupValues[1].trim() }.distinct().joinToString(", ").ifBlank { null }
-            val peopleText = people(evidence).joinToString(", ").ifBlank { null }
+            // Related chunks are consulted only for pronouns and explicit follow-up references.
+            // They never broaden ordinary sentence extraction, preventing unrelated dates from leaking in.
+            val needsContext = Regex("(?iu)\\b(it|this|that|these|those|same|follow[- ]?up|pending|as discussed|above)\\b").containsMatchIn(evidence)
+            val extractionEvidence = if (needsContext && relatedContext.isNotEmpty()) {
+                evidence + " " + relatedContext.take(3).joinToString(" ").take(600)
+            } else evidence
+            val dateText = date.findAll(extractionEvidence).map { it.value }.distinct().joinToString(", ").ifBlank { null }
+            val timeText = time.findAll(extractionEvidence).map { it.value.trim().replace(Regex("(?iu)^at\\s+"), "") }.distinct().joinToString(", ").ifBlank { null }
+            val locationText = location.findAll(extractionEvidence).map { it.groupValues[1].trim() }.distinct().joinToString(", ").ifBlank { null }
+            val peopleText = people(extractionEvidence).joinToString(", ").ifBlank { null }
+            val ownerText = owner.find(extractionEvidence)?.groupValues?.getOrNull(1)?.trim()?.trimEnd('.', ',', ';')
+            val referenceNumber = reference.find(extractionEvidence)?.value?.trim()
+                ?: Regex("\\b\\d{2,}[A-Z0-9./-]*\\b", RegexOption.IGNORE_CASE).find(extractionEvidence)?.value
+            val recurrenceRule = recurrence.find(extractionEvidence)?.value?.trim()
             val category = when {
+                Regex("(?iu)\\b(G\\.?O\\.?|government order|proceedings|official order|circular)\\b").containsMatchIn(evidence) -> "government_order"
+                Regex("(?iu)\\b(delegate|deputed|assigned to|responsible for|forward to)\\b").containsMatchIn(evidence) -> "delegation"
                 Regex("(?iu)\\b(teach|lecture|class|resident|rotation|academic|exam)\\b|கற்பி|வகுப்பு").containsMatchIn(evidence) -> "teaching_or_training"
                 Regex("(?iu)\\b(duty|roster|shift|on[- ]?call|ward round)\\b").containsMatchIn(evidence) -> "duty_or_roster"
                 Regex("(?iu)\\b(follow[- ]?up|remind|await|pending)\\b").containsMatchIn(evidence) -> "follow_up"
@@ -135,13 +156,16 @@ class ActionPointExtractor {
                 else -> .74f
             }
             val ambiguity = when {
-                date.findAll(evidence).count() > 1 || time.findAll(evidence).count() > 1 -> "Multiple date/time values require confirmation."
+                date.findAll(extractionEvidence).count() > 1 || time.findAll(extractionEvidence).count() > 1 -> "Multiple date/time values require confirmation."
                 dateText == null && timeText == null -> "Date and time were not explicit in this evidence."
+                ownerText == null && Regex("(?iu)\\b(delegate|assigned|responsible)\\b").containsMatchIn(evidence) -> "Owner requires confirmation."
                 else -> null
             }
-            ActionPointDraft(evidence, dateText, timeText, locationText, peopleText, evidence, if (ambiguity?.startsWith("Multiple") == true) minOf(confidence, .68f) else confidence, ambiguity, category)
+            ActionPointDraft(evidence, dateText, timeText, locationText, peopleText, evidence, if (ambiguity != null) minOf(confidence, .68f) else confidence, ambiguity, category, ownerText, referenceNumber, recurrenceRule)
         }.distinctBy { it.action.lowercase().replace(Regex("\\W+"), " ").trim() }
     }
+
+    fun isProcessingFailure(text: String): Boolean = text.trim().let { it.isBlank() || processingFailure.containsMatchIn(it) }
 }
 
 
