@@ -61,6 +61,15 @@ The checklist is updated only after the associated code and tests pass.
 - [x] Matter timelines connect sources, tasks, events and unresolved questions.
 - [x] Unit tests pass.
 
+## Stage 8 — Personalised learning
+
+- [x] User edits are stored as field-level corrections.
+- [x] Repeated corrections influence live semantic retrieval ranking.
+- [x] Corrections decay over time and are capped to a bounded boost.
+- [x] Sensitive and clinical identifiers are excluded from the learning profile.
+- [x] Reset control removes learned preferences and records an audit entry.
+- [x] Unit tests pass.
+
 ## Release verification
 
 - [ ] Full unit and instrumentation tests pass.
