@@ -321,14 +321,27 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         val mime = context.contentResolver.getType(uri).orEmpty()
         runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         val extension = uri.toString().substringBefore('?').substringAfterLast('.').lowercase()
+        val audioSelection = mime.startsWith("audio/") || extension in setOf("wav", "wave", "m4a", "mp4", "aac", "mp3", "flac", "ogg", "opus", "amr") || runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                val header = ByteArray(12)
+                val count = input.read(header)
+                count >= 4 && (
+                    String(header, 0, 4, Charsets.US_ASCII) == "RIFF" ||
+                    String(header, 0, 4, Charsets.US_ASCII) == "fLaC" ||
+                    String(header, 0, 3, Charsets.US_ASCII) == "ID3" ||
+                    (count >= 8 && String(header, 4, 4, Charsets.US_ASCII) == "ftyp")
+                )
+            } ?: false
+        }.getOrDefault(false)
+        Log.i("HOD_AUDIO", "audio_selection_mime=$mime,extension=$extension,detected=$audioSelection")
         when {
+            audioSelection -> transcribe(uri, "Call recording · ${timeLabel(System.currentTimeMillis())}", "Audio transcript")
             mime.startsWith("image/") -> {
                 status = "Reading screenshot…"
                 ScreenshotImportAdapter().recognize(context, uri)
                     .addOnSuccessListener { item -> saveImported(item, uri); status = "Screenshot added for review" }
                     .addOnFailureListener { status = "Couldn't read text; screenshot saved for manual review"; saveImported(ScreenshotImportAdapter().create(uri), uri) }
             }
-            mime.startsWith("audio/") -> transcribe(uri, "Call recording · ${timeLabel(System.currentTimeMillis())}", "Audio transcript")
             mime.contains("pdf") || mime.contains("word") || mime.contains("officedocument") || extension in setOf("pdf", "doc", "docx") ->
                 runCatching { OfficialDocumentImportAdapter(context).import(uri) }
                     .onSuccess { item -> saveImported(item, uri); status = "Document added for review" }

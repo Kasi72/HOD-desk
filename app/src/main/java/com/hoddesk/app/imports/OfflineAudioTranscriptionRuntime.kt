@@ -97,9 +97,17 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
                 source.outputStream().use { output -> input.copyTo(output) }
             }
             require(source.length() > 44L) { "Selected recording is empty or incomplete" }
-            if (mime.contains("mp4") || mime.contains("m4a") || mime.contains("aac")) {
+            // Some Android document providers report recordings as
+            // application/octet-stream (and omit the extension).  MIME-only
+            // routing then sends an M4A/AAC file to the WAV parser, which is
+            // why audio could appear to import successfully but never
+            // produce a transcript.  Inspect the copied bytes as a second
+            // source of truth before choosing the decoder.
+            val compressed = isCompressedAudio(source, mime)
+            Log.i("HOD_AUDIO", "audio_input_format=${if (compressed) "compressed" else "wav"}")
+            if (compressed) {
                 decodeCompressedToWav(uri, audio)
-                Log.i("HOD_AUDIO", "m4a_decoded_to_wav_bytes=${audio.length()}")
+                Log.i("HOD_AUDIO", "compressed_decoded_to_wav_bytes=${audio.length()}")
             } else {
                 canonicalizeWav(source, audio)
             }
@@ -124,6 +132,27 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
             source.delete()
             audio.delete()
         }
+    }
+
+    /** Detect compressed containers when a picker supplies no useful MIME. */
+    private fun isCompressedAudio(source: File, mime: String): Boolean {
+        if (mime.contains("mp4") || mime.contains("m4a") || mime.contains("aac") ||
+            mime.contains("mpeg") || mime.contains("mp3") || mime.contains("flac") ||
+            mime.contains("ogg") || mime.contains("opus") || mime.contains("amr")) return true
+        val header = ByteArray(12)
+        RandomAccessFile(source, "r").use { file ->
+            val count = file.read(header)
+            if (count < 4) return false
+            val first = String(header, 0, 4, Charsets.US_ASCII)
+            if (first == "RIFF" && count >= 12 && String(header, 8, 4, Charsets.US_ASCII) == "WAVE") return false
+            if (first == "fLaC" || first == "ID3") return true
+            // ISO-BMFF audio (M4A/AAC) stores an `ftyp` box at byte 4.
+            if (count >= 8 && String(header, 4, 4, Charsets.US_ASCII) == "ftyp") return true
+            // ADTS AAC and MPEG audio commonly begin with a sync word.
+            if ((header[0].toInt() and 0xff) == 0xff &&
+                ((header[1].toInt() and 0xe0) == 0xe0)) return true
+        }
+        return false
     }
 
     private fun decodeCompressedToWav(uri: Uri, outputFile: File) {
