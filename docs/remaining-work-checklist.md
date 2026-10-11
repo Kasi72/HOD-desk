@@ -35,3 +35,10 @@ This is the single progress ledger. A box is checked only after the implementati
 - [ ] Signed release APK and checksum.
 - [ ] ADB installation and connected-device regression.
 - [ ] Tamil/Tanglish transcription and clinical-quarantine verification.
+
+## Latest verification
+
+- [x] Fixed the JVM-only reasoning validator regression by removing Android `JSONObject` calls from the unit-tested parser while retaining malformed-output, citation and grounding checks.
+- [x] Fixed stale follow-up test data handling without weakening real epoch-time staleness checks.
+- [x] Fixed capacity reporting so overlapping calendar events are merged and queue capacity is capped to the current request.
+- [ ] Full test execution is pending: the local Gradle daemon is repeatedly terminated by Windows native-memory exhaustion during Kotlin compilation (`hs_err_pid*.log`), so no green test result is claimed yet.
