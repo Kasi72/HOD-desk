@@ -663,6 +663,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                         onRestoreSnapshot = latestSnapshot?.let { snapshot -> { scope.launch {
                             if (IndexSnapshotManager.restore(context, dao, snapshot)) { status = "Search index restored from snapshot."; settingsVersion++ } else status = "Snapshot restore rejected; current index is unchanged."
                         } } },
+                        onResetLearning = { scope.launch { repository.resetLearningProfile(); status = "Learned preferences reset." } },
                         onInstallReasoning = {
                             scope.launch {
                                 reasoningProgress = 0

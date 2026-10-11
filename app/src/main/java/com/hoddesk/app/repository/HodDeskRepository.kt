@@ -112,6 +112,11 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         audit("action_point", point.id, "edited", normalized.action)
     }
 
+    suspend fun resetLearningProfile() {
+        dao.deleteAllLearningCorrections()
+        audit("app", 0, "learning_profile_reset")
+    }
+
     suspend fun proposeSchedule(title: String, startsAt: Long, endsAt: Long, taskId: Long? = null): ScheduleProposal {
         require(endsAt > startsAt) { "Event must end after it starts" }
         val event = EventEntity(taskId = taskId, title = title, startsAt = startsAt, endsAt = endsAt)

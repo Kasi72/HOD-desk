@@ -248,9 +248,10 @@ data class AiStatus(
 )
 
 @Composable
-fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebuild: () -> Unit, onInstallReasoning: () -> Unit, snapshotSummary: String? = null, onCreateSnapshot: (() -> Unit)? = null, onRestoreSnapshot: (() -> Unit)? = null) {
+fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebuild: () -> Unit, onInstallReasoning: () -> Unit, snapshotSummary: String? = null, onCreateSnapshot: (() -> Unit)? = null, onRestoreSnapshot: (() -> Unit)? = null, onResetLearning: (() -> Unit)? = null) {
     val c = Hod.colors
     var showTech by remember { mutableStateOf(false) }
+    var confirmReset by remember { mutableStateOf(false) }
     SettingsPage("On-Device AI", "Settings", onBack) {
         Row(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             IconTile(if (status.healthy) Icons.Rounded.Check else Icons.Rounded.PriorityHigh, if (status.healthy) c.green else c.orange, size = 52.dp)
@@ -290,6 +291,10 @@ fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebu
             RowDivider(58.dp)
             ListRow("Corrections learned", subtitle = "Your approved edits improve future extraction and ranking on this phone.", icon = Icons.Rounded.Check, iconColor = c.indigo, value = status.correctionCount.toString(), valueColor = c.secondaryLabel)
             RowDivider()
+            if (onResetLearning != null) {
+                ListRow("Reset learned preferences", subtitle = "Remove local ranking corrections", titleColor = c.orangeText, onClick = { confirmReset = true })
+                RowDivider()
+            }
             ListRow("Technical Details", value = if (showTech) "Hide" else null, chevron = !showTech, onClick = { showTech = !showTech })
             if (showTech) status.technical.forEach { (k, v) ->
                 RowDivider()
@@ -299,6 +304,9 @@ fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebu
                 }
             }
         }
+    }
+    if (confirmReset) TextPromptDialog("Reset learned preferences?", "Type RESET to confirm", "", "Reset", onDismiss = { confirmReset = false }, message = "This removes only local correction history. Imported sources and tasks remain unchanged.") {
+        if (it.trim().equals("RESET", ignoreCase = true)) { onResetLearning?.invoke(); confirmReset = false }
     }
 }
 

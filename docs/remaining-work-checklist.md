@@ -9,6 +9,7 @@ This is the single progress ledger. A box is checked only after the implementati
 - [x] Matter timeline and related-source grouping.
 - [x] Learning corrections applied to live retrieval ranking.
 - [x] Privacy-safe learning decay and sensitive-token filtering.
+- [x] Learning profile inspection count and confirmed reset control.
 - [x] Editable follow-up drafts, audited sharing and persisted dismissal.
 - [x] Whisper transcript connected to Secretary intent parsing.
 - [x] Venue travel buffers in replanning.
