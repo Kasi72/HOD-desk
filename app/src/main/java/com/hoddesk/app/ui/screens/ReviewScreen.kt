@@ -49,6 +49,7 @@ import com.hoddesk.app.data.ActionPointEntity
 import com.hoddesk.app.data.SourceEntity
 import com.hoddesk.app.imports.ActionPointExtractor
 import com.hoddesk.app.reasoning.ActionReasoningOutput
+import com.hoddesk.app.reasoning.EvidenceBundleBuilder
 import com.hoddesk.app.reasoning.FieldGrounding
 import com.hoddesk.app.reasoning.OnDeviceActionReasoner
 import com.hoddesk.app.semantic.SourceSemanticHit
@@ -183,16 +184,10 @@ private fun SourceReview(
     }
     LaunchedEffect(source.id, instructionModelPath, related) {
         if (instructionModelPath == null) return@LaunchedEffect
-        reasoningStatus = "Reading the whole letter on this phone…"
-        val bundle = buildString {
-            append("PRIMARY SOURCE [").append(source.sourceType).append("]\n").append(source.body).append("\n")
-            append("EXTRACTED ACTION CANDIDATES\n"); actions.forEach { append("- ").append(it).append("\n") }
-            if (related.isNotEmpty()) {
-                append("RELATED SOURCES RETRIEVED BY EMBEDDINGGEMMA\n")
-                related.forEach { hit -> append("[").append(hit.source.sourceType).append("] ").append(hit.source.title).append("\n").append(hit.source.body.take(2200)).append("\n") }
-            }
-        }
-        runCatching { OnDeviceActionReasoner(instructionModelPath).reason(bundle.take(24000)) }
+        reasoningStatus = "Reading cited evidence on this phone…"
+        val conflictHints = possibleUpdates.map { hit -> "Newer source '${hit.source.title}' may revise the current instruction; compare date, time, venue and owner." }
+        val bundle = EvidenceBundleBuilder.build(source, actions, related, conflictHints)
+        runCatching { OnDeviceActionReasoner(instructionModelPath).reason(bundle) }
             .onSuccess { reasoning = it; onReasoning(source.id, it); reasoningStatus = null }
             .onFailure { reasoningStatus = "Deeper understanding unavailable for this item. Review manually." }
     }
@@ -202,7 +197,10 @@ private fun SourceReview(
         if (!approvedAny && remaining.size <= 1) onDismissSource(source.id, "no_action")
     }
 
-    val fields = remember(point, evidence) { fieldRows(point, evidence) }
+    val groundedPoint = point ?: reasoning?.takeIf { it.action.isNotBlank() }?.let { r ->
+        ActionPointEntity(sourceId = source.id, action = r.action, category = r.category, dateText = r.date, timeText = r.time, locationText = r.location, peopleText = r.people.joinToString(", "), evidence = r.sourceQuotes.joinToString(" "), confidence = r.confidence, ambiguity = (r.ambiguities + r.conflicts).joinToString("; ").ifBlank { null })
+    }
+    val fields = remember(groundedPoint, evidence, reasoning) { fieldRows(groundedPoint, evidence) }
     val highlights = fields.mapNotNull { f -> f.value.takeIf { f.state == FieldState.Verified } }.flatMap { v -> v.split(",").map(String::trim) }
     val look = sourceLook(source.sourceType)
 
@@ -298,8 +296,10 @@ private fun SourceReview(
                     Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(r.action, style = Hod.type.headline, color = c.label)
                         Text("${r.citations.size} quote(s) from the source support this", style = Hod.type.footnote, color = c.secondaryLabel)
+                        if (r.sourceIds.isNotEmpty()) Text("Sources: ${r.sourceIds.joinToString()}", style = Hod.type.footnote, color = c.secondaryLabel)
                         r.citations.take(3).forEach { Text("“$it”", style = Hod.type.subheadline, color = c.secondaryLabel) }
                         if (r.ambiguities.isNotEmpty()) Text("Check: " + r.ambiguities.joinToString("; "), style = Hod.type.footnote, color = c.orangeText)
+                        if (r.conflicts.isNotEmpty()) Text("Conflict review required: " + r.conflicts.joinToString("; "), style = Hod.type.footnote.copy(fontWeight = FontWeight.SemiBold), color = c.redText)
                         if (action != null && r.action.isNotBlank() && r.action != action) Text("Use this wording", style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.tint, modifier = Modifier.pressable { edited = r.action; editing = true })
                     }
                 }

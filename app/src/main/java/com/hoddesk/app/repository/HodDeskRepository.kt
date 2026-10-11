@@ -215,11 +215,11 @@ class HodDeskRepository(private val dao: HodDeskDao) {
             timeText = output.time,
             locationText = output.location,
             peopleJson = JSONArray(output.people).toString(),
-            ambiguitiesJson = JSONArray(output.ambiguities).toString(),
+            ambiguitiesJson = JSONArray((output.ambiguities + output.conflicts.map { "CONFLICT: $it" }).distinct()).toString(),
             citationsJson = JSONArray(output.citations).toString(),
             confidence = output.confidence
         ))
-        audit("source", sourceId, "gemma_reasoning_recorded", "model=$modelVersion;citations=${output.citations.size};confidence=${output.confidence}")
+        audit("source", sourceId, "gemma_reasoning_recorded", "model=$modelVersion;sourceIds=${output.sourceIds.joinToString(",")};citations=${output.citations.size};conflicts=${output.conflicts.size};confidence=${output.confidence}")
     }
     suspend fun deleteSource(id: Long) { audit("source", id, "deleted"); dao.deleteSourceCascade(id) }
     suspend fun deleteTask(id: Long) { audit("task", id, "deleted"); dao.deleteTaskCascade(id) }
