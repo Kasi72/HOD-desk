@@ -11,10 +11,9 @@ object FieldGrounding {
         val issues = ambiguities.toMutableList()
         fun supported(label: String, value: String?): String? {
             if (value.isNullOrBlank()) return null
-            val tokens = tokens(value)
-            val evidenceTokens = tokens(evidence)
-            val meaningful = tokens.filter { it.length >= 2 }
-            if (meaningful.isEmpty() || meaningful.any { it !in evidenceTokens }) {
+            // Require the complete field phrase in the cited evidence. Token
+            // subset matching could combine unrelated dates, places or people.
+            if (!containsPhrase(evidence, value)) {
                 issues += "$label requires confirmation: '$value' is not present in the cited evidence"
                 return null
             }
@@ -27,6 +26,27 @@ object FieldGrounding {
         return Result(groundedDate, groundedTime, groundedLocation, groundedPeople, issues, issues.isEmpty())
     }
 
-    private fun tokens(text: String): Set<String> = Regex("[\\p{L}\\p{N}]+").findAll(text.lowercase())
-        .map { it.value }.toSet()
+    private fun containsPhrase(evidence: String, value: String): Boolean {
+        val normalizedEvidence = normalize(evidence)
+        val normalizedValue = normalize(value)
+        if (normalizedValue.isBlank()) return false
+        if (normalizedEvidence.contains(normalizedValue)) return true
+        // Permit punctuation differences such as "2 p.m." versus "2 PM"
+        // while preserving phrase order and adjacency.
+        val evidenceTokens = tokens(normalizedEvidence)
+        val valueTokens = tokens(normalizedValue)
+        return valueTokens.isNotEmpty() && evidenceTokens.windowed(valueTokens.size, 1, partialWindows = false)
+            .any { it == valueTokens }
+    }
+
+    private fun normalize(text: String): String = text.lowercase()
+        .replace(Regex("[\\u00A0\\t\\r\\n]+"), " ")
+        .replace(Regex("[,;:()\\[\\]{}]+"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
+    private fun tokens(text: String): List<String> = Regex("[\\p{L}\\p{N}]+|[.!?]")
+        .findAll(text)
+        .map { it.value }
+        .toList()
 }

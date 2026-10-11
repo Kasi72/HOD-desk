@@ -37,6 +37,7 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
     private val modelFile get() = File(context.filesDir, MODEL_NAME)
     private val engineMutex = Mutex()
     private val inferenceMutex = Mutex()
+    private val installMutex = Mutex()
     @Volatile private var embedder: UniversalEmbedder? = null
     @Volatile private var mappedModel: ByteBuffer? = null
     @Volatile private var nativeLoadFailure: Throwable? = null
@@ -57,10 +58,15 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
         }
     }
 
-    suspend fun ensureInstalled(onProgress: (Int) -> Unit = {}) = withContext(Dispatchers.IO) {
+    suspend fun ensureInstalled(onProgress: (Int) -> Unit = {}) = installMutex.withLock {
+      withContext(Dispatchers.IO) {
         if (modelFile.length() >= MIN_MODEL_BYTES) {
-            verifyModelIntegrity(modelFile)
-            return@withContext
+            runCatching { verifyModelIntegrity(modelFile) }.onFailure {
+                // A failed or interrupted install must not poison every future
+                // startup. Remove it and atomically fetch a clean replacement.
+                Log.w("HOD_SEMANTIC", "invalid_model_removed", it)
+                modelFile.delete()
+            }.getOrNull()?.let { return@withContext }
         }
         val temp = File(context.cacheDir, "$MODEL_NAME.part")
         if (temp.exists()) temp.delete()
@@ -98,6 +104,7 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
             connection.disconnect()
             if (temp.exists()) temp.delete()
         }
+      }
     }
 
     private fun verifyModelIntegrity(file: File) {

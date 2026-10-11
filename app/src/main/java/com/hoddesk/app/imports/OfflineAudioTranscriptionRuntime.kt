@@ -8,6 +8,8 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import java.nio.ByteBuffer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.vosk.Model
 import org.vosk.Recognizer
@@ -34,9 +36,11 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
 
     private val whisperModelFile get() = File(context.filesDir, WHISPER_MODEL_NAME)
     private val modelDirectory get() = File(context.filesDir, MODEL_DIR)
+    private val whisperInstallMutex = Mutex()
+    private val voskInstallMutex = Mutex()
 
     /** Downloads the multilingual Whisper base model used for Tamil-first transcription. */
-    suspend fun ensureTamilModel(onProgress: (Int) -> Unit = {}) = withContext(Dispatchers.IO) {
+    suspend fun ensureTamilModel(onProgress: (Int) -> Unit = {}) = whisperInstallMutex.withLock { withContext(Dispatchers.IO) {
         if (whisperModelFile.length() >= MIN_WHISPER_MODEL_BYTES) return@withContext
         val temp = File(context.cacheDir, "$WHISPER_MODEL_NAME.part")
         if (temp.exists()) temp.delete()
@@ -63,12 +67,12 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
             check(temp.length() >= MIN_WHISPER_MODEL_BYTES) { "Tamil transcription model is incomplete" }
             if (whisperModelFile.exists()) whisperModelFile.delete()
             check(temp.renameTo(whisperModelFile)) { "Unable to install Tamil transcription model" }
-            Log.i("HOD_AUDIO", "tamil_model=small,bytes=${whisperModelFile.length()}")
+            Log.i("HOD_AUDIO", "tamil_model=medium,bytes=${whisperModelFile.length()}")
         } finally {
             connection.disconnect()
             if (temp.exists()) temp.delete()
         }
-    }
+    } }
 
     /** Tamil-first multilingual transcription. English remains available through [transcribeEnglish]. */
     suspend fun transcribeWav(uri: Uri): String = transcribeTamil(uri)
@@ -143,21 +147,31 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
                 out.write(ByteArray(44))
                 val resampler = PcmResampler(sourceRate, sourceChannels)
                 var inputEnded = false; var outputEnded = false
+                var stalledPolls = 0
                 while (!outputEnded) {
                     if (!inputEnded) {
                         val inputIndex = codec.dequeueInputBuffer(10_000)
                         if (inputIndex >= 0) {
-                            val input = codec.getInputBuffer(inputIndex)!!
+                            val input = codec.getInputBuffer(inputIndex)
+                                ?: error("Audio decoder returned no input buffer")
                             val size = extractor.readSampleData(input, 0)
                             if (size < 0) { codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM); inputEnded = true }
                             else { codec.queueInputBuffer(inputIndex, 0, size, extractor.sampleTime, 0); extractor.advance() }
                         }
                     }
                     when (val index = codec.dequeueOutputBuffer(info, 10_000)) {
-                        MediaCodec.INFO_OUTPUT_FORMAT_CHANGED, MediaCodec.INFO_TRY_AGAIN_LATER -> if (inputEnded && index == MediaCodec.INFO_TRY_AGAIN_LATER) outputEnded = true
+                        MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> Unit
+                        MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                            // A decoder may have delayed frames after EOS. Do not
+                            // truncate the tail merely because one poll is empty.
+                            stalledPolls++
+                            check(stalledPolls < 120) { "Audio decoder stalled before end of stream" }
+                        }
                         else -> {
+                            stalledPolls = 0
                             if (info.size > 0) {
-                                val buffer = codec.getOutputBuffer(index)!!
+                                val buffer = codec.getOutputBuffer(index)
+                                    ?: error("Audio decoder returned no output buffer")
                                 buffer.position(info.offset); buffer.limit(info.offset + info.size)
                                 val bytes = ByteArray(info.size); buffer.get(bytes)
                                 val pcm = resampler.process(bytes, bytes.size)
@@ -252,7 +266,7 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
 
     suspend fun transcribeEnglish(uri: Uri): String = transcribeVosk(uri)
 
-    suspend fun ensureModel(onProgress: (Int) -> Unit = {}) = withContext(Dispatchers.IO) {
+    suspend fun ensureModel(onProgress: (Int) -> Unit = {}) = voskInstallMutex.withLock { withContext(Dispatchers.IO) {
         val started = System.currentTimeMillis()
         if (File(modelDirectory, "am/final.mdl").exists()) return@withContext
         val zip = File(context.cacheDir, "$MODEL_DIR.zip")
@@ -277,7 +291,7 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
         zip.delete()
         check(File(modelDirectory, "am/final.mdl").exists()) { "Transcription model is incomplete" }
         Log.i("HOD_AUDIO", "model_ready_ms=${System.currentTimeMillis() - started}")
-    }
+    } }
 
     private suspend fun transcribeVosk(uri: Uri): String = withContext(Dispatchers.IO) {
         val started = System.currentTimeMillis()
@@ -329,12 +343,14 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
             codec.start()
             var inputEnded = false
             var outputEnded = false
+            var stalledPolls = 0
             val resampler = PcmResampler(sourceRate, channels)
             while (!outputEnded) {
                 if (!inputEnded) {
                     val inputIndex = codec.dequeueInputBuffer(10_000)
                     if (inputIndex >= 0) {
-                        val input = codec.getInputBuffer(inputIndex)!!
+                        val input = codec.getInputBuffer(inputIndex)
+                            ?: error("Audio decoder returned no input buffer")
                         val size = extractor.readSampleData(input, 0)
                         if (size < 0) { codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM); inputEnded = true }
                         else { codec.queueInputBuffer(inputIndex, 0, size, extractor.sampleTime, 0); extractor.advance() }
@@ -342,10 +358,15 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
                 }
                 when (val outputIndex = codec.dequeueOutputBuffer(info, 10_000)) {
                     MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> Unit
-                    MediaCodec.INFO_TRY_AGAIN_LATER -> if (inputEnded) outputEnded = true
+                    MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                        stalledPolls++
+                        check(stalledPolls < 120) { "Audio decoder stalled before end of stream" }
+                    }
                     else -> {
+                        stalledPolls = 0
                         if (info.size > 0) {
-                            val output = codec.getOutputBuffer(outputIndex)!!
+                            val output = codec.getOutputBuffer(outputIndex)
+                                ?: error("Audio decoder returned no output buffer")
                             output.position(info.offset); output.limit(info.offset + info.size)
                             val bytes = ByteArray(info.size); output.get(bytes)
                             val pcm = resampler.process(bytes, bytes.size)
@@ -382,17 +403,24 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
      * at every MediaCodec boundary. */
     private class PcmResampler(private val sourceRate: Int, private val channels: Int) {
         private val pending = ArrayList<Short>()
+        private var carry = ByteArray(0)
         private var phase = 0.0
         private val step = if (sourceRate > 0) sourceRate.toDouble() / 16_000.0 else 1.0
 
         fun process(input: ByteArray, length: Int): ByteArray {
-            val complete = (length.coerceAtMost(input.size) / (2 * channels)) * (2 * channels)
+            require(channels > 0) { "Audio channel count must be positive" }
+            val safeLength = length.coerceIn(0, input.size)
+            val combined = ByteArray(carry.size + safeLength)
+            carry.copyInto(combined)
+            input.copyInto(combined, carry.size, 0, safeLength)
+            val complete = (combined.size / (2 * channels)) * (2 * channels)
+            carry = combined.copyOfRange(complete, combined.size)
             var offset = 0
             while (offset < complete) {
                 var mixed = 0
                 for (channel in 0 until channels) {
                     val i = offset + channel * 2
-                    mixed += ((input[i].toInt() and 0xff) or (input[i + 1].toInt() shl 8)).toShort().toInt()
+                    mixed += ((combined[i].toInt() and 0xff) or (combined[i + 1].toInt() shl 8)).toShort().toInt()
                 }
                 pending += (mixed / channels).coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
                 offset += 2 * channels

@@ -87,7 +87,10 @@ class ScreenshotImportAdapter {
             InputImage.fromBitmap(preprocess(bitmap), 0)
         }.getOrElse { InputImage.fromFilePath(context, uri) }
         return TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS).process(image).continueWith(Executors.newSingleThreadExecutor()) { task ->
-            val text = normalizeOcr(task.result?.text.orEmpty())
+            // Latin ML Kit is optional and may fail offline or on a device
+            // without its model. Never dereference task.result on failure;
+            // continue with the bundled Tamil OCR fallback instead.
+            val text = normalizeOcr(if (task.isSuccessful) task.result?.text.orEmpty() else "")
             val tamil = if (text.any { it in '\u0B80'..'\u0BFF' }) "" else runCatching { recognizeTamil(context, uri) }.getOrDefault("")
             val merged = listOf(text, tamil).filter { it.isNotBlank() }.distinct().joinToString("\n")
             val title = merged.lineSequence().map { it.trim() }.firstOrNull { it.length >= 8 }?.take(72) ?: "Screenshot capture"

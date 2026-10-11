@@ -94,7 +94,9 @@ fun DateTimePickerDialog(initial: Long?, onDismiss: () -> Unit, onPicked: (Long)
         ) { DatePicker(state = dateState, colors = DatePickerDefaults.colors(selectedDayContainerColor = c.tint, todayDateBorderColor = c.tint, todayContentColor = c.tint)) }
     } else {
         TimeDialog(title = "Time", initialMinute = start?.toLocalTime()?.let { it.hour * 60 + it.minute } ?: (10 * 60), onDismiss = onDismiss) { minute ->
-            onPicked(pickedDate!!.atTime(LocalTime.of(minute / 60, minute % 60)).atZone(zone).toInstant().toEpochMilli())
+            pickedDate?.let { date ->
+                onPicked(date.atTime(LocalTime.of(minute / 60, minute % 60)).atZone(zone).toInstant().toEpochMilli())
+            }
         }
     }
 }
