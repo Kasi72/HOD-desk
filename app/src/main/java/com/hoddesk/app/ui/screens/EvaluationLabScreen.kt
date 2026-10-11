@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.hoddesk.app.data.SourceEntity
+import com.hoddesk.app.evaluation.EvaluationCorpus
 import com.hoddesk.app.evaluation.EvaluationStore
 import com.hoddesk.app.ui.components.GroupedSection
 import com.hoddesk.app.ui.components.ListRow
@@ -21,10 +22,13 @@ import com.hoddesk.app.ui.theme.Hod
 fun EvaluationLabPage(sources: List<SourceEntity>, onBack: () -> Unit) {
     val c = Hod.colors
     val latest = EvaluationStore.latest(LocalContext.current)
+    val baseline = EvaluationCorpus.baseline
     val anonymized = sources.count { EvaluationStore.anonymize(it.body) != it.body }
     SettingsPage("Evaluation lab", "Settings", onBack) {
         Text("Measure retrieval and extraction changes before promoting a new model or prompt. Only anonymised text is used in this view.", style = Hod.type.subheadline, color = c.secondaryLabel)
         GroupedSection(header = "Current corpus") {
+            ListRow("Fixed baseline cases", value = baseline.size.toString())
+            RowDivider(58.dp)
             ListRow("Imported examples", value = sources.size.toString())
             RowDivider(58.dp)
             ListRow("Examples requiring redaction", value = anonymized.toString(), valueColor = if (anonymized > 0) c.orangeText else c.greenText)
@@ -35,6 +39,7 @@ fun EvaluationLabPage(sources: List<SourceEntity>, onBack: () -> Unit) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("A model or prompt change is ready only when action recall improves without increasing false verified fields.", style = Hod.type.body, color = c.label)
                 Text("Run the fixed Tamil, Tanglish and English cases on a desktop reference model, then compare the report before switching the index snapshot.", style = Hod.type.footnote, color = c.secondaryLabel)
+                Text("The baseline is synthetic and contains no patient data. Accepted actions must retain a source citation.", style = Hod.type.footnote, color = c.secondaryLabel)
             }
         }
         latest?.let { run ->
@@ -45,6 +50,10 @@ fun EvaluationLabPage(sources: List<SourceEntity>, onBack: () -> Unit) {
                 ListRow("Action recall", value = "${(run.current.recallAt10 * 100).toInt()}%")
                 RowDivider(58.dp)
                 ListRow("False verified", value = "${(run.falseVerifiedRate * 100).toInt()}%", valueColor = if (run.falseVerifiedRate <= .02) c.greenText else c.redText)
+                RowDivider(58.dp)
+                ListRow("Field accuracy", value = "${(run.current.fieldAccuracy * 100).toInt()}%", valueColor = if (run.current.fieldAccuracy >= .95) c.greenText else c.redText)
+                RowDivider(58.dp)
+                ListRow("Citation coverage", value = "${(run.current.citationCoverage * 100).toInt()}%", valueColor = if (run.current.citationCoverage >= .98) c.greenText else c.redText)
             }
         }
     }

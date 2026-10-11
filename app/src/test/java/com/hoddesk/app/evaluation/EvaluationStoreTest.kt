@@ -24,4 +24,20 @@ class EvaluationStoreTest {
         assertTrue(!gate.passed)
         assertTrue(gate.reasons.any { it.contains("false verified") })
     }
+
+    @Test fun reportMeasuresStructuredFieldsAndCitations() {
+        val expected = EvaluationExample("1", "text", "Attend at Erode", "Attend", "19 Sep 2026", "2 PM", "Erode", true)
+        val actual = expected.copy(sourceQuote = "Attend at Erode on 19 Sep 2026 at 2 PM")
+        val report = EvaluationStore.report(listOf(expected), listOf(actual))
+        assertEquals(1.0, report.fieldAccuracy, 0.001)
+        assertEquals(1.0, report.citationCoverage, 0.001)
+    }
+
+    @Test fun baselineIsPrivacySafeAndCoversTamilAndTanglish() {
+        assertTrue(EvaluationCorpus.baseline.size >= 10)
+        assertTrue(EvaluationCorpus.baseline.any { it.inputType == "audio" })
+        assertTrue(EvaluationCorpus.baseline.any { it.source.contains("செப்டம்பர்") })
+        assertTrue(EvaluationCorpus.baseline.any { it.source.contains("pannunga") })
+        assertTrue(EvaluationCorpus.baseline.none { it.source.contains("patient", ignoreCase = true) })
+    }
 }
