@@ -9,6 +9,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.hoddesk.app.secretary.SecretaryIntent
@@ -23,6 +25,7 @@ fun SecretaryPage(initialTranscript: String = "", onBack: () -> Unit, onRecord: 
     val c = Hod.colors
     val transcript = remember(initialTranscript) { mutableStateOf(initialTranscript) }
     val intent = remember(transcript.value) { VoiceSecretary.parse(transcript.value) }
+    var confirmedTranscript by remember { mutableStateOf<String?>(null) }
     SettingsPage("Secretary", "Settings", onBack) {
         Text("Ask about meetings, waiting items or search. Actions that change work always require confirmation.", style = Hod.type.subheadline, color = c.secondaryLabel)
         GroupedSection {
@@ -31,7 +34,16 @@ fun SecretaryPage(initialTranscript: String = "", onBack: () -> Unit, onRecord: 
                 HodButton("Speak to secretary", onRecord, style = HodButtonStyle.Gray, modifier = Modifier.fillMaxWidth())
                 Text("Intent: " + intent.kind.name.replace('_', ' '), style = Hod.type.subheadline, color = c.tint)
                 Text(if (intent.requiresConfirmation) "Confirmation required before any change." else "Read-only request.", style = Hod.type.footnote, color = c.secondaryLabel)
-                HodButton("Run secretary request", { onRun(intent) }, style = HodButtonStyle.Tinted, modifier = Modifier.fillMaxWidth(), enabled = transcript.value.isNotBlank())
+                if (intent.requiresConfirmation) {
+                    Text("This request can change tasks or schedules. Review it before continuing.", style = Hod.type.footnote, color = c.orangeText)
+                    HodButton("Review request", { confirmedTranscript = transcript.value }, style = HodButtonStyle.Gray, modifier = Modifier.fillMaxWidth(), enabled = transcript.value.isNotBlank())
+                    if (confirmedTranscript == transcript.value) {
+                        Text("Ready to apply: ${intent.kind.name.replace('_', ' ').lowercase()}", style = Hod.type.subheadline, color = c.tint)
+                        HodButton("Confirm and run", { onRun(intent); confirmedTranscript = null }, style = HodButtonStyle.Tinted, modifier = Modifier.fillMaxWidth())
+                    }
+                } else {
+                    HodButton("Run secretary request", { onRun(intent) }, style = HodButtonStyle.Tinted, modifier = Modifier.fillMaxWidth(), enabled = transcript.value.isNotBlank())
+                }
             }
         }
     }
