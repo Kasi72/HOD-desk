@@ -2,8 +2,13 @@ package com.hoddesk.app.workers
 
 import android.app.job.JobParameters
 import android.app.job.JobService
+import android.Manifest
+import android.content.pm.PackageManager
 import android.util.Log
 import com.hoddesk.app.data.HodDeskDatabase
+import com.hoddesk.app.privacy.PrivacyStore
+import com.hoddesk.app.repository.HodDeskRepository
+import com.hoddesk.app.calendar.CalendarProviderScheduler
 import com.hoddesk.app.privacy.ProcessingPolicy
 import com.hoddesk.app.privacy.WorkType
 import com.hoddesk.app.semantic.EmbeddingGemmaLiteRtRuntime
@@ -26,6 +31,12 @@ class IndexMaintenanceJobService : JobService() {
                 val percent = if (scale > 0) level * 100 / scale else 0
                 if (ProcessingPolicy.canRun(percent, charging, WorkType.HEAVY_INDEX)) {
                     val db = HodDeskDatabase.get(this@IndexMaintenanceJobService)
+                    val repository = HodDeskRepository(db.dao())
+                    repository.purgeExpiredSources(PrivacyStore(this@IndexMaintenanceJobService).retentionCutoff())
+                    if (checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+                        val scheduler = CalendarProviderScheduler.fromResolver(contentResolver) { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+                        repository.reconcilePendingCalendarEvents { event -> scheduler.findMatchingEventId(event.title, event.startsAt, event.endsAt) }
+                    }
                     val sources = db.dao().sourcesOnce().filter { it.sensitivity != "T3" && it.sensitivity != "T4" }
                     SourceSemanticIndexer(db.dao(), runtime).indexAll(sources)
                 }
