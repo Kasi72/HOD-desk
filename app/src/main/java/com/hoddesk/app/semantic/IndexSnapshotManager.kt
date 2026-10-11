@@ -23,6 +23,7 @@ data class IndexSnapshot(
 
 object IndexSnapshotManager {
     private const val FORMAT_VERSION = 1
+    private const val ACTIVE_FILE = "active-snapshot"
     fun checksum(modelVersion: String, promptVersion: Int, sourceIds: List<Long>, chunkCount: Int): String {
         val payload = modelVersion + "|" + promptVersion + "|" + sourceIds.sorted().joinToString(",") + "|" + chunkCount
         return MessageDigest.getInstance("SHA-256").digest(payload.toByteArray()).joinToString("") { "%02x".format(it) }
@@ -80,9 +81,16 @@ object IndexSnapshotManager {
             require(model == snapshot.modelVersion && prompt == snapshot.promptVersion)
             require(embeddings.size == snapshot.sourceCount && chunks.size == snapshot.chunkCount)
             dao.replaceSemanticIndex(embeddings, chunks)
+            activate(context, snapshot)
             true
         }.getOrDefault(false)
     }
+
+    fun activate(context: Context, snapshot: IndexSnapshot) {
+        File(context.filesDir, ACTIVE_FILE).writeText(snapshot.id)
+    }
+
+    fun active(context: Context): String? = File(context.filesDir, ACTIVE_FILE).takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotBlank() }
 
     fun snapshots(context: Context): List<IndexSnapshot> = File(context.filesDir, "index-snapshots")
         .listFiles { file -> file.extension == "bin" }

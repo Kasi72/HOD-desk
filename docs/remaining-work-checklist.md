@@ -16,6 +16,7 @@ This is the single progress ledger. A box is checked only after the implementati
 - [x] Secretary Control Centre screen.
 - [x] Evaluation Lab screen and release safety gate.
 - [x] Persisted vector snapshots and atomic restore.
+- [x] Active snapshot tracking and rollback-version display.
 - [x] Charging-only scheduled indexing, retention purge and calendar reconciliation.
 
 ## Remaining implementation work

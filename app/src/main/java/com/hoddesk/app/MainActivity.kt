@@ -627,6 +627,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     LaunchedEffect(Unit) { indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull() }
                     val h = indexHealth
                     val latestSnapshot = IndexSnapshotManager.snapshots(context).firstOrNull()
+                    val activeSnapshot = IndexSnapshotManager.active(context)
                     AiPage(
                         status = AiStatus(
                             healthy = aiHealthy,
@@ -652,12 +653,13 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                         onBack = ::pop,
                         onSelfCheck = { scope.launch { aiBusy = "Checking…"; indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull(); aiBusy = indexHealth?.let { if (it.healthy) "Self-check passed." else "Self-check found ${it.staleSourceIds.size} stale and ${it.invalidSourceIds.size} invalid item(s). Rebuild the index." } ?: "Self-check could not run." } },
                         onRebuild = { scope.launch { aiBusy = "Rebuilding search index…"; runCatching { semanticIndexer.indexAll(searchable) }.onSuccess { embeddingReady = true; aiBusy = "Search index rebuilt." }.onFailure { aiBusy = "Rebuild failed: ${it.message}" }; indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull() } },
-                        snapshotSummary = latestSnapshot?.let { "${it.modelVersion} · ${it.sourceCount} sources" },
+                        snapshotSummary = latestSnapshot?.let { "${if (it.id == activeSnapshot) "Active · " else "Rollback · "}${it.modelVersion} · ${it.sourceCount} sources" },
                         onCreateSnapshot = { scope.launch {
                             val embeddings = dao.allSemanticEmbeddings()
                             val chunks = dao.allSourceChunks(SourceSemanticIndexer.MODEL_VERSION)
                             val snapshot = IndexSnapshotManager.create(SourceSemanticIndexer.MODEL_VERSION, EmbeddingPromptRegistry.VERSION, embeddings.map { it.sourceId }, chunks.size)
                             IndexSnapshotManager.save(context, dao, snapshot)
+                            IndexSnapshotManager.activate(context, snapshot)
                             status = "Search index snapshot saved."; settingsVersion++
                         } },
                         onRestoreSnapshot = latestSnapshot?.let { snapshot -> { scope.launch {
