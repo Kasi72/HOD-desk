@@ -245,25 +245,41 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val selectedDayBlocks = remember(settingsVersion, selectedDayEpoch) { settings.blocksOn(selectedDay.dayOfWeek) }
 
     // --- Semantic index (EmbeddingGemma); clinical tiers are never indexed. ---
+    // Do not construct the heavyweight multimodal runtime during app startup.
+    // UniversalEmbedder maps the text, vision and audio encoders together; doing
+    // that from the first composition caused Android's low-memory killer to take
+    // down the entire activity while the user was simply switching tabs.
     val searchable = allSources.filter { !it.isClinical() }
     var embeddingReady by remember { mutableStateOf(false) }
     var embeddingLine by remember { mutableStateOf("Preparing search on this phone") }
     var indexHealth by remember { mutableStateOf<IndexHealth?>(null) }
     var aiBusy by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(allSources) {
-        if (searchable.isEmpty()) { embeddingLine = "Search ready"; return@LaunchedEffect }
-        embeddingLine = "Indexing ${searchable.size} item(s) on this phone…"
-        runCatching { semanticIndexer.indexAll(searchable) }
-            .onSuccess { embeddingReady = true; embeddingLine = "${searchable.size} items searchable on this phone"; Log.i("HOD_SEMANTIC", "index_ready_sources=${searchable.size}") }
-            .onFailure { embeddingReady = false; embeddingLine = "Smart search paused · keyword search still works"; Log.e("HOD_SEMANTIC", "index_failed", it) }
+        embeddingReady = false
+        embeddingLine = if (searchable.isEmpty()) "Search ready" else "Search ready · semantic search starts when you search"
         indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull()
     }
 
     var libraryQuery by rememberSaveable { mutableStateOf("") }
     var libraryMatches by remember { mutableStateOf<List<HybridMatch>>(emptyList()) }
-    LaunchedEffect(libraryQuery, allSources, embeddingReady) {
-        if (libraryQuery.isBlank()) { libraryMatches = emptyList(); return@LaunchedEffect }
+    LaunchedEffect(tab, libraryQuery, allSources, embeddingReady) {
+        if (tab != TAB_LIBRARY || libraryQuery.isBlank()) { libraryMatches = emptyList(); return@LaunchedEffect }
         delay(250)
+        if (!embeddingReady && searchable.isNotEmpty()) {
+            embeddingLine = "Preparing semantic search…"
+            runCatching { semanticIndexer.indexAll(searchable) }
+                .onSuccess {
+                    embeddingReady = true
+                    embeddingLine = "${searchable.size} items searchable on this phone"
+                    Log.i("HOD_SEMANTIC", "index_ready_sources=${searchable.size}")
+                }
+                .onFailure {
+                    embeddingReady = false
+                    embeddingLine = "Smart search paused · keyword search still works"
+                    Log.e("HOD_SEMANTIC", "index_failed", it)
+                }
+            indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull()
+        }
         val hits = if (embeddingReady) runCatching { semanticIndexer.search(libraryQuery, searchable, limit = 20) }.onFailure { Log.e("HOD_SEMANTIC", "search_failed", it) }.getOrDefault(emptyList()) else emptyList()
         libraryMatches = HybridRetriever.rank(libraryQuery, searchable, hits, limit = 20)
     }
