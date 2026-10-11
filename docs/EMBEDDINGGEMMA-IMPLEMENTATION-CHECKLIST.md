@@ -44,6 +44,7 @@ The checklist is updated only after the associated code and tests pass.
 
 ## Stage 5 — Grounded action extraction
 
+- Implementation in progress; final checkmark is withheld until the post-change unit suite completes.
 - [ ] Action fields are extracted only from the cited local passage.
 - [ ] Dates, times, places and people are independently validated.
 - [ ] Conflicting or missing fields remain editable and unverified.
