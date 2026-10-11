@@ -45,18 +45,25 @@ object IndexSnapshotManager {
     suspend fun save(context: Context, dao: HodDeskDao, snapshot: IndexSnapshot): File {
         val dir = File(context.filesDir, "index-snapshots").apply { mkdirs() }
         val file = File(dir, "${snapshot.id}.bin")
+        val temp = File(dir, ".${snapshot.id}.tmp")
         val embeddings = dao.allSemanticEmbeddings()
         val chunks = dao.allSourceChunks(snapshot.modelVersion)
-        DataOutputStream(FileOutputStream(file)).use { out ->
-            out.writeInt(FORMAT_VERSION)
-            out.writeUTF(snapshot.modelVersion)
-            out.writeInt(snapshot.promptVersion)
-            out.writeLong(snapshot.createdAt)
-            out.writeUTF(snapshot.checksum)
-            out.writeInt(embeddings.size)
-            embeddings.forEach { writeEmbedding(out, it) }
-            out.writeInt(chunks.size)
-            chunks.forEach { writeChunk(out, it) }
+        try {
+            DataOutputStream(FileOutputStream(temp)).use { out ->
+                out.writeInt(FORMAT_VERSION)
+                out.writeUTF(snapshot.modelVersion)
+                out.writeInt(snapshot.promptVersion)
+                out.writeLong(snapshot.createdAt)
+                out.writeUTF(snapshot.checksum)
+                out.writeInt(embeddings.size)
+                embeddings.forEach { writeEmbedding(out, it) }
+                out.writeInt(chunks.size)
+                chunks.forEach { writeChunk(out, it) }
+                out.flush()
+            }
+            check(temp.renameTo(file)) { "Unable to atomically publish index snapshot" }
+        } finally {
+            if (temp.exists()) temp.delete()
         }
         return file
     }
