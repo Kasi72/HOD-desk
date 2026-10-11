@@ -125,7 +125,10 @@ private fun Timeline(day: LocalDate, events: List<EventEntity>, fixedBlocks: Lis
     fun minuteOf(epoch: Long): Int = Instant.ofEpochMilli(epoch).atZone(zone).toLocalTime().let { it.hour * 60 + it.minute }
     fun top(minute: Int): Dp = HourHeight * ((minute - FirstHour * 60).coerceAtLeast(0) / 60f)
     fun height(start: Int, end: Int): Dp = HourHeight * (((end - start).coerceAtLeast(20)) / 60f)
-    val gutter = 58.dp
+    // The live clock includes a meridiem (for example "4:54 pm"). The legacy
+    // 58dp gutter was wide enough for hour labels but caused the live label to
+    // collide with them at the right edge. Reserve a dedicated clock gutter.
+    val gutter = 78.dp
     Box(modifier.fillMaxWidth().height(HourHeight * (LastHour - FirstHour + 1) + 140.dp).padding(top = 10.dp)) {
         (FirstHour..LastHour).forEach { hour ->
             Row(Modifier.offset(y = HourHeight * (hour - FirstHour)).fillMaxWidth(), verticalAlignment = Alignment.Top) {

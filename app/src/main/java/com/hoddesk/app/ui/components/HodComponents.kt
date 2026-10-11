@@ -435,7 +435,10 @@ fun GroupedPage(modifier: Modifier = Modifier, content: @Composable BoxScope.() 
     Box(modifier.fillMaxSize().background(Hod.colors.groupedBackground), content = content)
 }
 
-val PageContentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 24.dp, bottom = 124.dp)
+// The floating tab bar is taller than the legacy iOS bar and its shadows
+// extend beyond the capsule. Keep a generous scroll tail so the last card is
+// never hidden behind it on gesture- and three-button-navigation devices.
+val PageContentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 24.dp, bottom = 168.dp)
 
 @Composable
 fun CheckCircle(checked: Boolean, onToggle: () -> Unit, label: String) {
