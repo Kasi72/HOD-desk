@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -129,19 +130,21 @@ val DarkHodColors = HodColors(
 val LocalHodColors = staticCompositionLocalOf { LightHodColors }
 
 /** iOS text styles, mapped to sp. The system font carries Tamil through Noto Sans Tamil. */
+private val NoFontPadding = PlatformTextStyle(includeFontPadding = false)
+
 @Immutable
 data class HodType(
-    val largeTitle: TextStyle = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em, lineHeight = 41.sp),
-    val title1: TextStyle = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em, lineHeight = 34.sp),
-    val title2: TextStyle = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.01).em, lineHeight = 28.sp),
-    val title3: TextStyle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, lineHeight = 25.sp),
-    val headline: TextStyle = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, lineHeight = 22.sp),
-    val body: TextStyle = TextStyle(fontSize = 17.sp, lineHeight = 24.sp),
-    val callout: TextStyle = TextStyle(fontSize = 16.sp, lineHeight = 24.sp),
-    val subheadline: TextStyle = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
-    val footnote: TextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp),
-    val caption: TextStyle = TextStyle(fontSize = 12.sp, lineHeight = 16.sp),
-    val tabLabel: TextStyle = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Medium),
+    val largeTitle: TextStyle = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em, lineHeight = 40.sp, platformStyle = NoFontPadding),
+    val title1: TextStyle = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em, lineHeight = 34.sp, platformStyle = NoFontPadding),
+    val title2: TextStyle = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.01).em, lineHeight = 27.sp, platformStyle = NoFontPadding),
+    val title3: TextStyle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, lineHeight = 25.sp, platformStyle = NoFontPadding),
+    val headline: TextStyle = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, lineHeight = 22.sp, platformStyle = NoFontPadding),
+    val body: TextStyle = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, platformStyle = NoFontPadding),
+    val callout: TextStyle = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, platformStyle = NoFontPadding),
+    val subheadline: TextStyle = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, platformStyle = NoFontPadding),
+    val footnote: TextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, platformStyle = NoFontPadding),
+    val caption: TextStyle = TextStyle(fontSize = 12.sp, lineHeight = 15.sp, platformStyle = NoFontPadding),
+    val tabLabel: TextStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, lineHeight = 14.sp, platformStyle = NoFontPadding),
 )
 
 val LocalHodType = staticCompositionLocalOf { HodType() }

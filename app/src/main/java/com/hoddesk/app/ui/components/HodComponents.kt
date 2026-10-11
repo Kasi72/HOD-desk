@@ -311,13 +311,13 @@ fun Banner(title: String, message: String, tone: BannerTone = BannerTone.Info, a
         BannerTone.Attention -> c.orange.copy(alpha = 0.14f) to c.label
         BannerTone.Blocked -> c.red.copy(alpha = 0.10f) to c.label
     }
-    Row(Modifier.fillMaxWidth().clip(Squircles.card).background(bg).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = fg)
-            Text(message, style = Hod.type.footnote, color = c.secondaryLabel)
+    Row(Modifier.fillMaxWidth().clip(Squircles.card).background(bg).padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.Top) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = Hod.type.headline, color = fg, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(message, style = Hod.type.subheadline, color = c.secondaryLabel, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
-        if (actionLabel != null && onAction != null) Text(actionLabel, style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.tint, modifier = Modifier.padding(start = 10.dp).pressable(onClick = onAction))
-        if (onDismiss != null) Text("OK", style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.tint, modifier = Modifier.padding(start = 12.dp).pressable(onClick = onDismiss))
+        if (actionLabel != null && onAction != null) Text(actionLabel, style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.tint, modifier = Modifier.padding(start = 12.dp, top = 1.dp).pressable(onClick = onAction))
+        if (onDismiss != null) Text("OK", style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.tint, modifier = Modifier.padding(start = 12.dp, top = 1.dp).pressable(onClick = onDismiss))
     }
 }
 
