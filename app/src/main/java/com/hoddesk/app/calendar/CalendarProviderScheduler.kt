@@ -27,16 +27,23 @@ class CalendarProviderScheduler(private val resolver: ContentResolver, private v
             put(CalendarContract.Events.DTEND, proposal.event.endsAt)
             put(CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
         }
-        val uri = resolver.insert(CalendarContract.Events.CONTENT_URI, values)
-            ?: return CalendarWriteResult.Denied("Calendar provider rejected the event")
-        return CalendarWriteResult.Written(uri.lastPathSegment?.toLongOrNull() ?: -1L)
+        val uri = try {
+            resolver.insert(CalendarContract.Events.CONTENT_URI, values)
+        } catch (security: SecurityException) {
+            return CalendarWriteResult.Denied("Calendar permission was revoked")
+        } catch (provider: RuntimeException) {
+            return CalendarWriteResult.Denied("Calendar provider rejected the event: ${provider.message ?: "unknown error"}")
+        } ?: return CalendarWriteResult.Denied("Calendar provider rejected the event")
+        val id = uri.lastPathSegment?.toLongOrNull()
+            ?: return CalendarWriteResult.Denied("Calendar provider returned an invalid event id")
+        return CalendarWriteResult.Written(id)
     }
 
     fun findConflicts(startsAt: Long, endsAt: Long): List<String> {
         if (!permissionChecker(Manifest.permission.READ_CALENDAR)) return emptyList()
         val rangeUri = CalendarContract.Instances.CONTENT_URI.buildUpon().appendPath(startsAt.toString()).appendPath(endsAt.toString()).build()
         val titles = mutableListOf<String>()
-        resolver.query(rangeUri, arrayOf(CalendarContract.Instances.TITLE), null, null, null)?.use { cursor ->
+        runCatching { resolver.query(rangeUri, arrayOf(CalendarContract.Instances.TITLE), null, null, null) }.getOrNull()?.use { cursor ->
             val titleColumn = cursor.getColumnIndex(CalendarContract.Instances.TITLE)
             while (cursor.moveToNext() && titleColumn >= 0) titles += cursor.getString(titleColumn).orEmpty()
         }
@@ -47,7 +54,7 @@ class CalendarProviderScheduler(private val resolver: ContentResolver, private v
     fun findMatchingEventId(title: String, startsAt: Long, endsAt: Long): Long? {
         if (!permissionChecker(Manifest.permission.READ_CALENDAR)) return null
         val rangeUri = CalendarContract.Instances.CONTENT_URI.buildUpon().appendPath(startsAt.toString()).appendPath(endsAt.toString()).build()
-        resolver.query(rangeUri, arrayOf(CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.TITLE, CalendarContract.Instances.BEGIN, CalendarContract.Instances.END), null, null, null)?.use { cursor ->
+        runCatching { resolver.query(rangeUri, arrayOf(CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.TITLE, CalendarContract.Instances.BEGIN, CalendarContract.Instances.END), null, null, null) }.getOrNull()?.use { cursor ->
             val id = cursor.getColumnIndex(CalendarContract.Instances.EVENT_ID)
             val titleColumn = cursor.getColumnIndex(CalendarContract.Instances.TITLE)
             val begin = cursor.getColumnIndex(CalendarContract.Instances.BEGIN)

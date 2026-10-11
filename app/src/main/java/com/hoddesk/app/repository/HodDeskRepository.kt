@@ -43,12 +43,8 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     }
 
     suspend fun approveSource(sourceId: Long, project: String, dueAt: Long? = null): Long {
-        val source = requireNotNull(dao.source(sourceId)) { "Source $sourceId does not exist" }
-        dao.approvedTask(sourceId, source.title.trim())?.let { return it.id }
-        val taskId = dao.insertTask(TaskEntity(sourceId = source.id, title = source.title, project = project, dueAt = dueAt))
-        ensureLocalTaskEvent(taskId, source.title, dueAt)
+        val taskId = dao.approveSourceAtomic(sourceId, project, dueAt)
         syncCommitment(taskId)
-        dao.updateSource(source.copy(reviewed = true))
         return taskId
     }
 

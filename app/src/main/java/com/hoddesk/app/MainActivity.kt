@@ -186,15 +186,16 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val learningCorrectionCount by remember { dao.observeLearningCorrectionCount() }.collectAsState(0)
     val commitments by remember { dao.observeCommitments() }.collectAsState(emptyList())
     LaunchedEffect(Unit) {
-        IndexMaintenanceScheduler.schedule(context)
-        // Enforce the configured retention policy after every process start.
-        // Sources backing approved tasks are deliberately retained by the DAO.
-        repository.purgeExpiredSources(privacyStore.retentionCutoff())
-        // Older builds could turn the fallback diagnostic into a real task.
-        // Remove only those synthetic, still-open tasks during migration.
-        repository.removePendingAudioPlaceholders()
-        // Populate the in-app itinerary for tasks created by earlier builds.
-        repository.backfillTaskEvents()
+        // Maintenance is best-effort. A revoked permission, a damaged legacy
+        // row, or a scheduler refusal must never prevent the UI from opening.
+        runCatching { IndexMaintenanceScheduler.schedule(context) }
+            .onFailure { Log.e("HOD_DESK", "maintenance_schedule_failed", it) }
+        runCatching { repository.purgeExpiredSources(privacyStore.retentionCutoff()) }
+            .onFailure { Log.e("HOD_DB", "retention_purge_failed", it) }
+        runCatching { repository.removePendingAudioPlaceholders() }
+            .onFailure { Log.e("HOD_DB", "audio_placeholder_cleanup_failed", it) }
+        runCatching { repository.backfillTaskEvents() }
+            .onFailure { Log.e("HOD_DB", "event_backfill_failed", it) }
     }
 
     // --- Undo-able deletes: hidden immediately, committed after the Undo window. ---
@@ -441,9 +442,11 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     fun hasCalendarPermission() = listOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR).all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
     fun loadCalendars() {
         val list = mutableListOf<Pair<Long, String>>()
-        context.contentResolver.query(CalendarContract.Calendars.CONTENT_URI, arrayOf(CalendarContract.Calendars._ID, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, CalendarContract.Calendars.ACCOUNT_NAME, CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL), null, null, null)?.use { c ->
-            while (c.moveToNext()) if (c.getInt(3) >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) list += c.getLong(0) to "${c.getString(1)} · ${c.getString(2)}"
-        }
+        runCatching {
+            context.contentResolver.query(CalendarContract.Calendars.CONTENT_URI, arrayOf(CalendarContract.Calendars._ID, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, CalendarContract.Calendars.ACCOUNT_NAME, CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL), null, null, null)?.use { c ->
+                while (c.moveToNext()) if (c.getInt(3) >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) list += c.getLong(0) to "${c.getString(1)} · ${c.getString(2)}"
+            }
+        }.onFailure { status = "Calendars are unavailable. Check Calendar permission in Settings."; Log.e("HOD_CALENDAR", "calendar_query_failed", it) }
         calendarChoices = list
     }
     val calendarPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -451,7 +454,9 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     }
     val scheduler = remember { CalendarProviderScheduler.fromResolver(context.contentResolver) { p -> context.checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED } }
     LaunchedEffect(scheduler) {
-        repository.reconcilePendingCalendarEvents { event -> scheduler.findMatchingEventId(event.title, event.startsAt, event.endsAt) }
+        runCatching {
+            repository.reconcilePendingCalendarEvents { event -> scheduler.findMatchingEventId(event.title, event.startsAt, event.endsAt) }
+        }.onFailure { Log.e("HOD_CALENDAR", "calendar_reconcile_failed", it) }
     }
     fun clashesFor(start: Long, end: Long, events: List<EventEntity>): List<String> {
         val day = java.time.Instant.ofEpochMilli(start).atZone(zone)

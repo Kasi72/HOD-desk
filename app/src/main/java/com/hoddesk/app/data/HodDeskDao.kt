@@ -114,6 +114,26 @@ interface HodDeskDao {
         return taskId
     }
 
+    /**
+     * Promotes a source itself when the reviewer chooses "approve source".
+     * Keeping this transition in Room makes a repeated tap idempotent and
+     * prevents a task being created while the source remains in Review after
+     * a process death.
+     */
+    @Transaction
+    suspend fun approveSourceAtomic(sourceId: Long, project: String, dueAt: Long?): Long {
+        val source = requireNotNull(source(sourceId)) { "Source $sourceId does not exist" }
+        val title = source.title.trim()
+        require(title.isNotBlank()) { "Approved source cannot have a blank title" }
+        approvedTask(sourceId, title)?.let { return it.id }
+        val taskId = insertTask(TaskEntity(sourceId = sourceId, title = title, project = project, dueAt = dueAt))
+        if (dueAt != null) insertEvent(EventEntity(taskId = taskId, title = title, startsAt = dueAt, endsAt = dueAt + 60 * 60 * 1000L, confirmed = true))
+        updateSource(source.copy(reviewed = true))
+        insertAudit(AuditEntryEntity(entityType = "source", entityId = sourceId, action = "source_approved", detail = title))
+        insertAudit(AuditEntryEntity(entityType = "task", entityId = taskId, action = "created_from_source", detail = "source=$sourceId"))
+        return taskId
+    }
+
     @Transaction
     suspend fun deleteSourceCascade(sourceId: Long) {
         deleteEvidenceForSource(sourceId)

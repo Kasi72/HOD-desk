@@ -10,6 +10,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.sqrt
 import com.hoddesk.app.learning.SecretaryLearning
+import android.util.Log
 
 data class SourceSemanticHit(val source: SourceEntity, val score: Float, val confidence: Float)
 
@@ -27,7 +28,15 @@ class SourceSemanticIndexer(
         // they must never enter semantic retrieval, relations or model calls.
         if (source.sensitivity == "T3" || source.sensitivity == "T4") return
         val existing = dao.semanticEmbedding(source.id)
-        if (existing?.modelVersion == MODEL_VERSION && existing.dimension == 768) return
+        // An earlier process can die after writing the document vector but
+        // before writing chunks. Also, edited action candidates must become
+        // searchable. Only skip when the complete, current chunk set exists.
+        if (existing?.modelVersion == MODEL_VERSION && existing.dimension == 768) {
+            val chunks = dao.sourceChunks(source.id)
+            val expectedActions = dao.actionPoints(source.id).size
+            val indexedActions = chunks.count { it.modality == "action" }
+            if (chunks.isNotEmpty() && indexedActions == expectedActions) return
+        }
         val directModality: String
         val vector = if (embedder is EmbeddingGemmaLiteRtRuntime && source.sourceUri != null &&
             (source.sourceType.contains("Screenshot", true) || source.sourceType.contains("Camera", true))) {
@@ -81,7 +90,10 @@ class SourceSemanticIndexer(
     }
 
     suspend fun indexAll(sources: List<SourceEntity>) {
-        sources.forEach { index(it) }
+        sources.forEach { source ->
+            runCatching { index(source) }
+                .onFailure { Log.e("HOD_SEMANTIC", "source_index_failed id=${source.id}", it) }
+        }
         buildRelations(sources)
     }
 
