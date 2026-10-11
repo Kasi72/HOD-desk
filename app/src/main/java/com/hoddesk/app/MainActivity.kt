@@ -108,6 +108,7 @@ import com.hoddesk.app.ui.screens.HowToPage
 import com.hoddesk.app.ui.screens.LibraryScreen
 import com.hoddesk.app.ui.screens.MatterPage
 import com.hoddesk.app.ui.screens.FollowUpPage
+import com.hoddesk.app.ui.screens.SecretaryPage
 import com.hoddesk.app.followup.FollowUpEngine
 import com.hoddesk.app.ui.screens.NoteDialog
 import com.hoddesk.app.ui.screens.PrivacyPage
@@ -668,6 +669,14 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     onCopy = { candidate -> status = "Draft copied for review."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_copied", detail = candidate.evidence)) } },
                     onShare = { candidate -> status = "Review the draft in your sharing app before sending."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_share_started", detail = candidate.evidence)) } },
                 )
+                "secretary" -> SecretaryPage(onBack = ::pop, onRun = { intent ->
+                    status = when (intent.kind) {
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SHOW_WAITING -> "Open Tasks › Delegated to see waiting items."
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SHOW_MEETINGS -> "Open Calendar to review upcoming meetings."
+                        com.hoddesk.app.secretary.SecretaryIntent.Kind.SEARCH -> "Search request ready: " + intent.query
+                        else -> if (intent.requiresConfirmation) "Proposal ready; review and confirm before applying." else "Secretary request received."
+                    }
+                })
                 "howto" -> HowToPage(onBack = ::pop)
                 "vault" -> VaultPage(allSources.filter { it.isClinical() }, onBack = ::pop)
                 "department" -> DepartmentPage(settings, onBack = ::pop, onChanged = { settingsVersion++ })
