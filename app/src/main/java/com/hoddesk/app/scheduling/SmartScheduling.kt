@@ -4,11 +4,24 @@ import com.hoddesk.app.data.EventEntity
 import com.hoddesk.app.data.TaskEntity
 
 data class PlannedBlock(val task: TaskEntity, val start: Long, val end: Long, val rationale: String)
+data class CapacityReport(val requestedMinutes: Long, val availableMinutes: Long, val overcommittedMinutes: Long, val overcommitted: Boolean)
 
 /** Deterministic, review-first scheduler. It proposes blocks; the caller must confirm writes. */
 object SmartScheduling {
+    private const val DEFAULT_TASK_MINUTES = 30L
+
+    fun capacity(tasks: List<TaskEntity>, events: List<EventEntity>, dayStart: Long, dayEnd: Long): CapacityReport {
+        require(dayEnd >= dayStart) { "Day end must be after day start" }
+        val requested = tasks.count { it.status == "open" && it.assignee.isNullOrBlank() } * DEFAULT_TASK_MINUTES
+        val busy = mergeBusy(events.map { it.startsAt.coerceAtLeast(dayStart) to it.endsAt.coerceAtMost(dayEnd) }.filter { it.second > it.first })
+        val total = (dayEnd - dayStart) / 60_000L
+        val occupied = busy.sumOf { (it.second - it.first) / 60_000L }
+        val available = (total - occupied).coerceAtLeast(0L)
+        return CapacityReport(requested, available, (requested - available).coerceAtLeast(0L), requested > available)
+    }
+
     fun propose(tasks: List<TaskEntity>, events: List<EventEntity>, dayStart: Long, dayEnd: Long): List<PlannedBlock> {
-        val open = tasks.filter { it.status == "open" && it.dueAt == null || it.status == "open" && (it.dueAt ?: Long.MAX_VALUE) <= dayEnd }
+        val open = tasks.filter { (it.status == "open" || it.status == "needs_clarification") && it.assignee.isNullOrBlank() && (it.dueAt == null || it.dueAt <= dayEnd) }
             .sortedWith(compareByDescending<TaskEntity> { priority(it.priority) }.thenBy { it.dueAt ?: Long.MAX_VALUE }.thenBy { it.createdAt })
         val protectedStart = dayStart + 4 * 60 * 60 * 1000L
         val protectedEnd = protectedStart + 60 * 60 * 1000L
@@ -26,6 +39,14 @@ object SmartScheduling {
             cursor = end + 10 * 60 * 1000L
         }
         return result
+    }
+
+    private fun mergeBusy(blocks: List<Pair<Long, Long>>): List<Pair<Long, Long>> = blocks.sortedBy { it.first }.fold(mutableListOf()) { merged, block ->
+        val previous = merged.lastOrNull()
+        if (previous != null && block.first <= previous.second) {
+            merged[merged.lastIndex] = previous.first to maxOf(previous.second, block.second)
+        } else merged += block
+        merged
     }
 
     private fun nextFree(from: Long, duration: Long, busy: List<Pair<Long, Long>>, limit: Long): Long {
