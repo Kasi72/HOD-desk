@@ -43,6 +43,7 @@ interface HodDeskDao {
     @Update suspend fun updateActionPoint(point: ActionPointEntity)
     @Query("SELECT * FROM action_points WHERE sourceId = :sourceId ORDER BY confidence DESC") fun observeActionPoints(sourceId: Long): Flow<List<ActionPointEntity>>
     @Query("SELECT * FROM action_points WHERE sourceId = :sourceId ORDER BY confidence DESC") suspend fun actionPoints(sourceId: Long): List<ActionPointEntity>
+    @Query("SELECT * FROM action_points WHERE id = :id LIMIT 1") suspend fun actionPoint(id: Long): ActionPointEntity?
     @Query("UPDATE action_points SET status = :status WHERE sourceId = :sourceId AND action = :action") suspend fun setActionPointStatus(sourceId: Long, action: String, status: String)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertReasoningRun(run: ReasoningRunEntity): Long
     @Insert suspend fun insertAudit(entry: AuditEntryEntity): Long
@@ -50,6 +51,8 @@ interface HodDeskDao {
     @Query("DELETE FROM audit_entries WHERE createdAt < :before") suspend fun deleteAuditBefore(before: Long): Int
     @Query("SELECT * FROM audit_entries ORDER BY createdAt DESC LIMIT :limit") fun observeAllAudit(limit: Int): Flow<List<AuditEntryEntity>>
     @Query("SELECT * FROM audit_entries ORDER BY createdAt ASC") suspend fun allAudit(): List<AuditEntryEntity>
+    @Insert suspend fun insertLearningCorrection(correction: LearningCorrectionEntity): Long
+    @Query("SELECT * FROM learning_corrections WHERE actionPointId = :actionPointId ORDER BY createdAt DESC") suspend fun learningCorrections(actionPointId: Long): List<LearningCorrectionEntity>
     @Query("SELECT * FROM events WHERE startsAt >= :start AND startsAt < :end ORDER BY startsAt") suspend fun eventsBetween(start: Long, end: Long): List<EventEntity>
     @Query("SELECT * FROM events WHERE confirmed = 0 ORDER BY id") suspend fun pendingCalendarEvents(): List<EventEntity>
     @Query("SELECT * FROM reasoning_runs WHERE sourceId = :sourceId ORDER BY createdAt DESC") fun observeReasoningRuns(sourceId: Long): Flow<List<ReasoningRunEntity>>

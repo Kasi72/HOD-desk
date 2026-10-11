@@ -140,3 +140,13 @@ data class AuditEntryEntity(
     val detail: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
+
+@Entity(tableName = "learning_corrections", indices = [Index("actionPointId"), Index("createdAt")])
+data class LearningCorrectionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val actionPointId: Long,
+    val field: String,
+    val before: String?,
+    val after: String?,
+    val createdAt: Long = System.currentTimeMillis(),
+)

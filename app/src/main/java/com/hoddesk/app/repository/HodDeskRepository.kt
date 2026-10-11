@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.Flow
 import com.hoddesk.app.reasoning.ActionReasoningOutput
 import org.json.JSONArray
 import com.hoddesk.app.data.AuditEntryEntity
+import com.hoddesk.app.data.LearningCorrectionEntity
 import com.hoddesk.app.triage.TriageScorer
 import com.hoddesk.app.privacy.SensitivityClassifier
 
@@ -76,6 +77,7 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     suspend fun deleteAllWorkData() { dao.deleteAllWorkData(); audit("app", 0, "all_data_deleted") }
     suspend fun setActionPointStatus(sourceId: Long, action: String, status: String) { dao.setActionPointStatus(sourceId, action, status); audit("source", sourceId, "action_status_$status", action) }
     suspend fun updateActionPoint(point: ActionPointEntity) {
+        val previous = dao.actionPoint(point.id)
         dao.updateActionPoint(point.copy(
             action = point.action.trim(),
             dateText = point.dateText?.trim()?.takeIf { it.isNotBlank() },
@@ -83,6 +85,18 @@ class HodDeskRepository(private val dao: HodDeskDao) {
             locationText = point.locationText?.trim()?.takeIf { it.isNotBlank() },
             peopleText = point.peopleText?.trim()?.takeIf { it.isNotBlank() },
         ))
+        if (previous != null) {
+            val fields = listOf(
+                "action" to (previous.action to point.action),
+                "date" to (previous.dateText to point.dateText),
+                "time" to (previous.timeText to point.timeText),
+                "location" to (previous.locationText to point.locationText),
+                "people" to (previous.peopleText to point.peopleText),
+            )
+            fields.filter { (value) -> value.first != value.second }.forEach { (field, value) ->
+                dao.insertLearningCorrection(LearningCorrectionEntity(actionPointId = point.id, field = field, before = value.first, after = value.second))
+            }
+        }
         audit("action_point", point.id, "edited", point.action.trim())
     }
 

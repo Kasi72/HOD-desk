@@ -11,7 +11,7 @@ import com.hoddesk.app.privacy.DatabasePassphraseProvider
 import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SupportFactory
 
-@Database(entities = [SourceEntity::class, TaskEntity::class, EventEntity::class, EvidenceEntity::class, SemanticEmbeddingEntity::class, SourceChunkEntity::class, SourceRelationEntity::class, ActionPointEntity::class, ReasoningRunEntity::class, AuditEntryEntity::class], version = 10, exportSchema = false)
+@Database(entities = [SourceEntity::class, TaskEntity::class, EventEntity::class, EvidenceEntity::class, SemanticEmbeddingEntity::class, SourceChunkEntity::class, SourceRelationEntity::class, ActionPointEntity::class, ReasoningRunEntity::class, AuditEntryEntity::class, LearningCorrectionEntity::class], version = 11, exportSchema = false)
 abstract class HodDeskDatabase : RoomDatabase() {
     abstract fun dao(): HodDeskDao
 
@@ -21,7 +21,7 @@ abstract class HodDeskDatabase : RoomDatabase() {
             SQLiteDatabase.loadLibs(context.applicationContext)
             instance ?: Room.databaseBuilder(context.applicationContext, HodDeskDatabase::class.java, "hod-desk.db")
                 .openHelperFactory(SupportFactory(DatabasePassphraseProvider(context).get()))
-                .addMigrations(MIGRATION_1_3, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).build().also { Log.i("HOD_DB", "encrypted_database_opened"); instance = it }
+                .addMigrations(MIGRATION_1_3, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11).build().also { Log.i("HOD_DB", "encrypted_database_opened"); instance = it }
         }
 
         /** Preserves existing sources/tasks while adding workflow and import processing fields. */
@@ -84,6 +84,13 @@ abstract class HodDeskDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE sources ADD COLUMN triageBucket TEXT NOT NULL DEFAULT 'FYI'")
                 db.execSQL("ALTER TABLE sources ADD COLUMN priorityScore INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE sources ADD COLUMN priorityReasons TEXT")
+            }
+        }
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS learning_corrections (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, actionPointId INTEGER NOT NULL, field TEXT NOT NULL, before TEXT, after TEXT, createdAt INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_learning_corrections_actionPointId ON learning_corrections(actionPointId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_learning_corrections_createdAt ON learning_corrections(createdAt)")
             }
         }
     }
