@@ -428,8 +428,15 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         if (captured && uri != null) {
             status = "Reading the photo…"
             ScreenshotImportAdapter().recognize(context, uri)
-                .addOnSuccessListener { item -> saveImported(item.copy(title = "Photo · ${item.title}", type = "Camera document"), uri); status = "Photo text added for review" }
-                .addOnFailureListener { saveImported(ImportedSource("Camera document", "OCR could not read this image; manual review required.", "Camera document", uri), uri); status = "Photo saved for manual review" }
+                .addOnSuccessListener { item ->
+                    runCatching { saveImported(item.copy(title = "Photo · ${item.title}", type = "Camera document"), uri); status = "Photo text added for review" }
+                        .onFailure { error -> Log.e("HOD_IMPORT", "camera_result_save_failed", error); status = "Photo was read but could not be saved safely." }
+                }
+                .addOnFailureListener {
+                    runCatching { saveImported(ImportedSource("Camera document", "OCR could not read this image; manual review required.", "Camera document", uri), uri) }
+                        .onFailure { error -> Log.e("HOD_IMPORT", "camera_fallback_save_failed", error) }
+                    status = "Photo saved for manual review"
+                }
         }
         cameraUri = null
     }
@@ -464,8 +471,15 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
             mime.startsWith("image/") -> {
                 status = "Reading screenshot…"
                 ScreenshotImportAdapter().recognize(context, uri)
-                    .addOnSuccessListener { item -> saveImported(item, uri); status = "Screenshot added for review" }
-                    .addOnFailureListener { status = "Couldn't read text; screenshot saved for manual review"; saveImported(ScreenshotImportAdapter().create(uri), uri) }
+                    .addOnSuccessListener { item ->
+                        runCatching { saveImported(item, uri); status = "Screenshot added for review" }
+                            .onFailure { error -> Log.e("HOD_IMPORT", "screenshot_result_save_failed", error); status = "Screenshot was read but could not be saved safely." }
+                    }
+                    .addOnFailureListener {
+                        status = "Couldn't read text; screenshot saved for manual review"
+                        runCatching { saveImported(ScreenshotImportAdapter().create(uri), uri) }
+                            .onFailure { error -> Log.e("HOD_IMPORT", "screenshot_fallback_save_failed", error) }
+                    }
             }
             mime.contains("pdf") || mime.contains("word") || mime.contains("officedocument") || extension in setOf("pdf", "doc", "docx") ->
                 runCatching { OfficialDocumentImportAdapter(context).import(uri) }
@@ -495,8 +509,11 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     }
     LaunchedEffect(initialSharedUri) {
         initialSharedUri?.let { uri ->
-            runCatching { OfficialDocumentImportAdapter(context).import(uri, "Gmail attachment") }
-                .onSuccess { item -> saveImported(item, uri); status = "Shared attachment added for review" }
+            runCatching {
+                val item = OfficialDocumentImportAdapter(context).import(uri, "Gmail attachment")
+                saveImported(item, uri)
+                status = "Shared attachment added for review"
+            }
                 .onFailure { status = "Shared attachment could not be read: ${it.message ?: it.javaClass.simpleName}" }
         }
     }
