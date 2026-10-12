@@ -171,7 +171,6 @@ private const val TAB_LIBRARY = 4
 @Composable
 fun HODDeskApp(initialSharedUri: Uri? = null) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val privacyStore = remember { PrivacyStore(context) }
     val settings = remember { DeskSettingsStore(context) }
     val database = remember { HodDeskDatabase.get(context) }
@@ -230,6 +229,15 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     var showCapture by remember { mutableStateOf(false) }
     var showNote by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
+    // UI actions launch database/provider/model work from this scope.  A single
+    // bad URI, revoked permission or provider failure must be reported in the
+    // UI rather than escaping the composition and terminating the process.
+    val scope = rememberCoroutineScope {
+        kotlinx.coroutines.CoroutineExceptionHandler { _, error ->
+            Log.e("HOD_DESK", "uncaught_ui_coroutine_failure", error)
+            status = "That operation failed safely: ${error.message ?: error.javaClass.simpleName}"
+        }
+    }
     var secretaryTranscript by rememberSaveable { mutableStateOf("") }
     var secretaryEvidence by remember { mutableStateOf<List<SourceEntity>>(emptyList()) }
     var secretaryProposalDiff by remember { mutableStateOf<String?>(null) }
@@ -380,14 +388,37 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         processing += item
         scope.launch {
             val started = System.currentTimeMillis()
-            runCatching { audioRuntime.transcribeWav(uri) }
-                .onSuccess { text -> onTranscript?.invoke(text); saveImported(ImportedSource(title, text.ifBlank { "No speech detected" }, type, uri), uri); status = "$title added for review"; PerformanceMetrics.record(dao, "audio_transcription_latency_ms", System.currentTimeMillis() - started, "type=$type") }
-                .onFailure { error ->
-                    Log.e("HOD_AUDIO", "transcription_failed", error)
-                    saveImported(AudioTranscriptImportAdapter(context.contentResolver).importAudio(uri), uri)
-                    status = "Recording saved; transcription unavailable: ${error.message ?: error.javaClass.simpleName}"; PerformanceMetrics.record(dao, "audio_transcription_failure", 1, error.javaClass.simpleName)
-                }
-            processing.remove(item)
+            try {
+                runCatching { audioRuntime.transcribeWav(uri) }
+                    .onSuccess { text ->
+                        runCatching {
+                            onTranscript?.invoke(text)
+                            saveImported(ImportedSource(title, text.ifBlank { "No speech detected" }, type, uri), uri)
+                            status = "$title added for review"
+                            PerformanceMetrics.record(dao, "audio_transcription_latency_ms", System.currentTimeMillis() - started, "type=$type")
+                        }.onFailure { error ->
+                            Log.e("HOD_AUDIO", "transcription_result_save_failed", error)
+                            status = "Recording transcribed but could not be saved: ${error.message ?: error.javaClass.simpleName}"
+                            PerformanceMetrics.record(dao, "audio_transcription_save_failure", 1, error.javaClass.simpleName)
+                        }
+                    }
+                    .onFailure { error ->
+                        Log.e("HOD_AUDIO", "transcription_failed", error)
+                        runCatching { AudioTranscriptImportAdapter(context.contentResolver).importAudio(uri) }
+                            .onSuccess { fallback ->
+                                runCatching { saveImported(fallback, uri) }
+                                    .onFailure { saveError -> Log.e("HOD_AUDIO", "fallback_save_failed", saveError) }
+                            }
+                            .onFailure { fallbackError -> Log.e("HOD_AUDIO", "fallback_import_failed", fallbackError) }
+                        status = "Recording saved; transcription unavailable: ${error.message ?: error.javaClass.simpleName}"
+                        PerformanceMetrics.record(dao, "audio_transcription_failure", 1, error.javaClass.simpleName)
+                    }
+            } catch (error: Throwable) {
+                Log.e("HOD_AUDIO", "transcription_unexpected_failure", error)
+                status = "Recording could not be processed: ${error.message ?: error.javaClass.simpleName}"
+            } finally {
+                processing.remove(item)
+            }
         }
     }
 
@@ -427,7 +458,8 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
             } ?: false
         }.getOrDefault(false)
         Log.i("HOD_AUDIO", "audio_selection_mime=$mime,extension=$extension,detected=$audioSelection")
-        when {
+        runCatching {
+            when {
             audioSelection -> transcribe(uri, "Call recording · ${timeLabel(System.currentTimeMillis())}", "Audio transcript")
             mime.startsWith("image/") -> {
                 status = "Reading screenshot…"
@@ -450,11 +482,15 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                 saveImportedBatch(items, uri)
                 status = if (items.isEmpty()) "No WhatsApp chat text found in that ZIP" else "${items.size} WhatsApp messages added for review"
             }
-            else -> context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
+                else -> context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
                 val items = WhatsAppExportAdapter().parse(reader.readText())
                 saveImportedBatch(items, uri)
                 status = if (items.isEmpty()) "No WhatsApp messages found" else "${items.size} WhatsApp messages added for review"
             }
+            }
+        }.onFailure { error ->
+            Log.e("HOD_IMPORT", "content_import_failed", error)
+            status = "This file could not be imported safely: ${error.message ?: error.javaClass.simpleName}"
         }
     }
     LaunchedEffect(initialSharedUri) {
@@ -565,35 +601,40 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
             return
         }
         scope.launch {
-            var written = 0
-            val denied = mutableListOf<String>()
-            toWrite.forEach { p ->
-                val taskId = p.taskId
-                if (taskId != null && dao.eventsForTask(taskId).any { it.startsAt == p.start && it.endsAt == p.end && it.confirmed }) return@forEach
-                if (scheduler.findMatchingEventId(p.title, p.start, p.end) != null) return@forEach
-                val proposal = ScheduleProposal(EventEntity(taskId = p.taskId, title = p.title, startsAt = p.start, endsAt = p.end), emptyList())
-                // Persist first. If the process dies after the provider insert,
-                // the pending row is available for reconciliation on next start.
-                val localId = repository.beginCalendarWrite(proposal.event)
-                when (val r = scheduler.writeConfirmed(proposal, calendarId, confirmed = true)) {
-                    is CalendarWriteResult.Written -> {
-                        repository.finishCalendarWrite(localId, r.calendarEventId)
-                        written++
-                    }
-                    is CalendarWriteResult.Denied -> {
-                        repository.cancelCalendarWrite(localId)
-                        denied += "${p.title}: ${r.reason}"
-                    }
-                    is CalendarWriteResult.NeedsConfirmation -> {
-                        repository.cancelCalendarWrite(localId)
-                        denied += p.title
+            try {
+                var written = 0
+                val denied = mutableListOf<String>()
+                toWrite.forEach { p ->
+                    val taskId = p.taskId
+                    if (taskId != null && dao.eventsForTask(taskId).any { it.startsAt == p.start && it.endsAt == p.end && it.confirmed }) return@forEach
+                    if (scheduler.findMatchingEventId(p.title, p.start, p.end) != null) return@forEach
+                    val proposal = ScheduleProposal(EventEntity(taskId = p.taskId, title = p.title, startsAt = p.start, endsAt = p.end), emptyList())
+                    // Persist first. If the process dies after the provider insert,
+                    // the pending row is available for reconciliation on next start.
+                    val localId = repository.beginCalendarWrite(proposal.event)
+                    when (val r = scheduler.writeConfirmed(proposal, calendarId, confirmed = true)) {
+                        is CalendarWriteResult.Written -> {
+                            repository.finishCalendarWrite(localId, r.calendarEventId)
+                            written++
+                        }
+                        is CalendarWriteResult.Denied -> {
+                            repository.cancelCalendarWrite(localId)
+                            denied += "${p.title}: ${r.reason}"
+                        }
+                        is CalendarWriteResult.NeedsConfirmation -> {
+                            repository.cancelCalendarWrite(localId)
+                            denied += p.title
+                        }
                     }
                 }
-            }
-            proposals = proposals.filterNot { it in chosen }
-            status = buildString {
-                append("$written block(s) added to ${settings.calendarName ?: "your calendar"}.")
-                if (denied.isNotEmpty()) append(" Skipped: ").append(denied.joinToString("; "))
+                proposals = proposals.filterNot { it in chosen }
+                status = buildString {
+                    append("$written block(s) added to ${settings.calendarName ?: "your calendar"}.")
+                    if (denied.isNotEmpty()) append(" Skipped: ").append(denied.joinToString("; "))
+                }
+            } catch (error: Throwable) {
+                Log.e("HOD_CALENDAR", "calendar_write_failed", error)
+                status = "Calendar update failed safely: ${error.message ?: error.javaClass.simpleName}. Nothing else was changed."
             }
         }
     }

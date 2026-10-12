@@ -55,8 +55,20 @@ fun LibraryScreen(
     var selecting by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable { mutableStateOf(setOf<Long>()) }
     val searchable = sources.filter { !it.isClinical() }
+    // A source can have a summary vector, passage vectors and action vectors.
+    // Semantic search may therefore return the same source more than once.
+    // Compose LazyColumn keys must be unique; merge those hits before rendering
+    // while retaining all match explanations.
     val base: List<Pair<SourceEntity, List<String>>> = if (query.isBlank()) searchable.map { it to emptyList() }
-        else if (matches.isNotEmpty()) matches.map { it.source to it.reasons }
+        else if (matches.isNotEmpty()) matches.asSequence()
+            .filter { !it.source.isClinical() }
+            .groupBy { it.source.id }
+            .values
+            .map { hits ->
+                val source = hits.first().source
+                source to hits.flatMap { it.reasons }.distinct()
+            }
+            .toList()
         else searchable.filter { "${it.title} ${it.body}".contains(query, ignoreCase = true) }.map { it to listOf("Exact words") }
     val results = base.filter { scope == 0 || sourceScope(it.first.sourceType) == Scopes[scope] }
     val terms = query.split(Regex("\\s+")).filter { it.length >= 2 }
