@@ -57,7 +57,11 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
     /** Cheap foreground-safe check; it never initializes the native runtime. */
     fun verifyInstalledModel(): Result<Unit> = runCatching {
         require(modelFile.length() >= MIN_MODEL_BYTES) { "EmbeddingGemma model is not installed" }
-        verifyModelIntegrity(modelFile)
+        // Do not emit a warning on every foreground launch when a development
+        // build intentionally has no pinned SHA-256 configured. The check still
+        // runs; the AI diagnostics and maintenance worker report unverified
+        // integrity where it can be acted on without polluting startup logs.
+        verifyModelIntegrity(modelFile, reportUnverified = false)
     }
 
     private fun ensureNativeLibraries() {
@@ -79,7 +83,7 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
     suspend fun ensureInstalled(onProgress: (Int) -> Unit = {}) = installMutex.withLock {
       withContext(Dispatchers.IO) {
         if (modelFile.length() >= MIN_MODEL_BYTES) {
-            runCatching { verifyModelIntegrity(modelFile) }.onFailure {
+                runCatching { verifyModelIntegrity(modelFile) }.onFailure {
                 // A failed or interrupted install must not poison every future
                 // startup. Remove it and atomically fetch a clean replacement.
                 Log.w("HOD_SEMANTIC", "invalid_model_removed", it)
@@ -125,10 +129,10 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
       }
     }
 
-    private fun verifyModelIntegrity(file: File) {
+    private fun verifyModelIntegrity(file: File, reportUnverified: Boolean = true) {
         val expected = BuildConfig.EMBEDDING_MODEL_SHA256.trim().lowercase()
         if (expected.isBlank()) {
-            Log.w("HOD_SEMANTIC", "model_integrity_unverified; configure hoddeskEmbeddingModelSha256 for production")
+            if (reportUnverified) Log.w("HOD_SEMANTIC", "model_integrity_unverified; configure hoddeskEmbeddingModelSha256 for production")
             return
         }
         require(expected.matches(Regex("[0-9a-f]{64}"))) {
