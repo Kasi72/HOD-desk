@@ -84,17 +84,25 @@ object FieldGrounding {
         .toList()
 
     private val timePattern = Regex("\\b\\d{1,2}(?::\\d{2})?\\s*(?:a\\.?m\\.?|p\\.?m\\.?)\\b", RegexOption.IGNORE_CASE)
-    private val datePattern = Regex("\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{4}\\b|\\b\\d{1,2}[/-]\\d{1,2}(?:[/-]\\d{2,4})?\\b", RegexOption.IGNORE_CASE)
+    private val datePattern = Regex("\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{4}\\b|\\b\\d{1,2}[./-]\\d{1,2}(?:[./-]\\d{2,4})?\\b", RegexOption.IGNORE_CASE)
     private val locationPattern = Regex("(?:\\bat\\b|\\bin\\b|\\bvenue\\b|\\blocation\\b|@|இல்|இடம்)\\s+([\\p{L}\\p{N}][\\p{L}\\p{N} .'-]{1,80})", RegexOption.IGNORE_CASE)
 
     private fun deterministicDate(value: String, evidence: String): Boolean = datePattern.findAll(evidence).any { containsPhrase(it.value, value) } && parseDate(value) != null
     private fun deterministicTime(value: String, evidence: String): Boolean = timePattern.findAll(evidence).any { containsPhrase(it.value, value) }
-    private fun deterministicLocation(value: String, evidence: String): Boolean = locationPattern.findAll(evidence).any { containsPhrase(it.groupValues[1].trim().trimEnd('.', ',', ';'), value) }
+    private fun deterministicLocation(value: String, evidence: String): Boolean {
+        // Virtual venues are locations too, but do not have an "at/in" prefix.
+        // Accept only the explicit platform phrase present in the cited quote.
+        val online = Regex("(?i)\\b(Google Meet|Zoom|Microsoft Teams|video call|online meeting)\\b")
+        if (online.findAll(evidence).any { containsPhrase(it.groupValues[1], value) }) return true
+        return locationPattern.findAll(evidence).any {
+            containsPhrase(it.groupValues[1].trim().trimEnd('.', ',', ';'), value)
+        }
+    }
     private fun parseDate(value: String): LocalDate? {
         val clean = value.lowercase(Locale.ROOT).replace(Regex("(st|nd|rd|th)\\b"), "").trim()
         val month = DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("d MMMM uuuu").toFormatter(Locale.ENGLISH).withResolverStyle(ResolverStyle.STRICT)
         return runCatching { LocalDate.parse(clean, month) }.getOrElse {
-            val parts = Regex("(\\d{1,2})[/-](\\d{1,2})(?:[/-](\\d{2,4}))?").find(clean) ?: return null
+            val parts = Regex("(\\d{1,2})[./-](\\d{1,2})(?:[./-](\\d{2,4}))?").find(clean) ?: return null
             val year = parts.groupValues[3].ifBlank { "2026" }.let { if (it.length == 2) "20$it" else it }.toInt()
             runCatching { LocalDate.of(year, parts.groupValues[2].toInt(), parts.groupValues[1].toInt()) }.getOrNull()
         }

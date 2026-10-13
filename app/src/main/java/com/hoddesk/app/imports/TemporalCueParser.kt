@@ -11,7 +11,7 @@ data class TemporalCue(val raw: String, val date: LocalDate?, val status: String
 
 /** Indian DD/MM ordering and message-time anchoring for relative date cues. */
 object TemporalCueParser {
-    private val numeric = Regex("\\b(\\d{1,2})[/-](\\d{1,2})(?:[/-](\\d{2,4}))?\\b")
+    private val numeric = Regex("\\b(\\d{1,2})[./-](\\d{1,2})(?:[./-](\\d{2,4}))?\\b")
     private val weekday = mapOf("monday" to DayOfWeek.MONDAY, "tuesday" to DayOfWeek.TUESDAY, "wednesday" to DayOfWeek.WEDNESDAY, "thursday" to DayOfWeek.THURSDAY, "friday" to DayOfWeek.FRIDAY, "saturday" to DayOfWeek.SATURDAY, "sunday" to DayOfWeek.SUNDAY)
 
     fun resolve(raw: String, messageTimeMs: Long, nowMs: Long = System.currentTimeMillis()): TemporalCue {

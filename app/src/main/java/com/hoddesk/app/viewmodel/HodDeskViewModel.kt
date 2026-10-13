@@ -8,6 +8,7 @@ import com.hoddesk.app.data.ActionPointEntity
 import com.hoddesk.app.repository.HodDeskRepository
 import com.hoddesk.app.repository.ActionPointDraft
 import com.hoddesk.app.reasoning.ActionReasoningOutput
+import com.hoddesk.app.imports.ActionDueParser
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -45,7 +46,8 @@ class HodDeskViewModel(private val repository: HodDeskRepository) : ViewModel() 
     fun updateActionPoint(point: ActionPointEntity) = launchSafe("update_action_point_failed") { repository.updateActionPoint(point) }
     fun approveEditedAction(point: ActionPointEntity?, sourceId: Long, project: String, action: String, assignee: String? = null) = launchSafe("approve_edited_action_failed") {
         point?.let { repository.updateActionPoint(it) }
-        repository.approveAction(sourceId, action, project, assignee = assignee)
+        repository.approveAction(sourceId, action, project,
+            dueAt = point?.let { ActionDueParser.parse(it.dateText, it.timeText) }, assignee = assignee)
     }
     fun complete(taskId: Long) = launchSafe("complete_task_failed") { repository.completeTask(taskId) }
     fun setDone(taskId: Long, done: Boolean) = launchSafe("set_done_failed") { repository.setTaskDone(taskId, done) }

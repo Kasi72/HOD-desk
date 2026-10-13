@@ -727,7 +727,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     onReasoning = { id, output -> viewModel.saveReasoning(id, output) },
                     onUpdateActionPoint = { point -> viewModel.updateActionPoint(point) },
                     onApproveEdited = { source, point, action, assignee -> viewModel.approveEditedAction(point, source.id, source.sourceType, action, assignee) },
-                    onApprove = { source, action, assignee -> viewModel.approveAction(source.id, action, source.sourceType, assignee = assignee) },
+                    onApprove = { source, action, assignee, dueAt -> viewModel.approveAction(source.id, action, source.sourceType, dueAt = dueAt, assignee = assignee) },
                     onActionStatus = { id, action, s -> viewModel.setActionPointStatus(id, action, s) },
                     onDismissSource = { id, reason -> viewModel.dismissSource(id, reason) },
                     onBack = { tab = TAB_TODAY },

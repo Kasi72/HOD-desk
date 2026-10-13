@@ -42,4 +42,24 @@ class ActionPointExtractorTest {
         val drafts = ActionPointExtractor().extract("Attend the review and then submit the report by Friday.")
         assertEquals(2, drafts.size)
     }
+
+    @Test fun government_notice_keeps_dotted_date_time_and_numbered_officials() {
+        val body = "A demo meeting has been scheduled on 13.10.2026 at 03:00 PM to discuss Drug Return. " +
+            "Hence, kindly instruct the following officials to attend:\n" +
+            "1. HMIS Nodal Officer from the Directorate\n" +
+            "2. HMIS Nodal Officer from the pilot location\n" +
+            "3. IT Coordinators from the Directorate\n" +
+            "Google Meet joining info."
+        val drafts = ActionPointExtractor().extract(body)
+        assertTrue(drafts.isNotEmpty())
+        assertTrue(drafts.any { it.dateText?.contains("13.10.2026") == true })
+        assertTrue(drafts.any { it.timeText?.contains("03:00 PM") == true })
+        assertTrue(drafts.any { it.peopleText?.contains("HMIS Nodal Officer") == true })
+        assertTrue(drafts.any { it.locationText?.contains("Google Meet") == true })
+        val instruction = drafts.first { it.action.startsWith("Instruct the listed officials") }
+        assertTrue(instruction.dateText?.contains("13.10.2026") == true)
+        assertTrue(instruction.timeText?.contains("03:00 PM") == true)
+        assertTrue(instruction.peopleText?.contains("IT Coordinators") == true)
+        assertTrue(drafts.none { it.action.contains("joining info", ignoreCase = true) })
+    }
 }

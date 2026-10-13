@@ -48,6 +48,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.hoddesk.app.data.ActionPointEntity
 import com.hoddesk.app.data.SourceEntity
 import com.hoddesk.app.imports.ActionPointExtractor
+import com.hoddesk.app.imports.ActionDueParser
 import com.hoddesk.app.reasoning.ActionReasoningOutput
 import com.hoddesk.app.reasoning.EvidenceBundleBuilder
 import com.hoddesk.app.reasoning.FieldGrounding
@@ -86,7 +87,7 @@ fun ReviewScreen(
     onReasoning: (Long, ActionReasoningOutput) -> Unit,
     onUpdateActionPoint: (ActionPointEntity) -> Unit,
     onApproveEdited: (SourceEntity, ActionPointEntity?, String, String?) -> Unit,
-    onApprove: (source: SourceEntity, action: String, assignee: String?) -> Unit,
+    onApprove: (source: SourceEntity, action: String, assignee: String?, dueAt: Long?) -> Unit,
     onActionStatus: (sourceId: Long, action: String, status: String) -> Unit,
     onDismissSource: (sourceId: Long, reason: String) -> Unit,
     onBack: () -> Unit,
@@ -137,7 +138,7 @@ private fun SourceReview(
     onReasoning: (Long, ActionReasoningOutput) -> Unit,
     onUpdateActionPoint: (ActionPointEntity) -> Unit,
     onApproveEdited: (SourceEntity, ActionPointEntity?, String, String?) -> Unit,
-    onApprove: (SourceEntity, String, String?) -> Unit,
+    onApprove: (SourceEntity, String, String?, Long?) -> Unit,
     onActionStatus: (Long, String, String) -> Unit,
     onDismissSource: (Long, String) -> Unit,
 ) {
@@ -319,7 +320,7 @@ private fun SourceReview(
             HodButton(if (editing) "Save fields and approve" else "Approve", onClick = {
                 if (editing && point != null) onUpdateActionPoint(point.copy(action = finalAction, dateText = editedDate, timeText = editedTime, locationText = editedLocation, peopleText = editedPeople))
                 if (editing) onApproveEdited(source, point?.copy(action = finalAction, dateText = editedDate, timeText = editedTime, locationText = editedLocation, peopleText = editedPeople), finalAction, null)
-                else onApprove(source, finalAction, null)
+                else onApprove(source, finalAction, null, ActionDueParser.parse(point?.dateText, point?.timeText))
                 finish(true, action)
             }, modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -354,7 +355,7 @@ private fun SourceReview(
         val finalAction = if (editing && edited.isNotBlank()) edited.trim() else action
         ActionSheetContent(
             title = "Delegate to", message = if (team.isEmpty()) "Add your team in Settings › Department to pick people here." else "A task is created with this person as owner. You send the message yourself.",
-            actions = team.map { m -> SheetAction("${m.name}${m.role.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}") { onApprove(source, finalAction, m.name); showDelegate = false; finish(true, action) } } +
+            actions = team.map { m -> SheetAction("${m.name}${m.role.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}") { onApprove(source, finalAction, m.name, ActionDueParser.parse(point?.dateText, point?.timeText)); showDelegate = false; finish(true, action) } } +
                 SheetAction("Someone else…") { showDelegate = false; customDelegate = "" },
             onCancel = { showDelegate = false },
         )
@@ -362,7 +363,7 @@ private fun SourceReview(
     customDelegate?.let { name ->
         val finalAction = if (editing && edited.isNotBlank()) edited.trim() else action.orEmpty()
         TextPromptDialog(title = "Delegate to", label = "Name", initial = name, confirm = "Delegate", onDismiss = { customDelegate = null }) { entered ->
-            if (entered.isNotBlank() && action != null) { onApprove(source, finalAction, entered.trim()); finish(true, action) }
+            if (entered.isNotBlank() && action != null) { onApprove(source, finalAction, entered.trim(), ActionDueParser.parse(point?.dateText, point?.timeText)); finish(true, action) }
             customDelegate = null
         }
     }
