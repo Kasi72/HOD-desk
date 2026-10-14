@@ -11,11 +11,15 @@ import com.hoddesk.app.reasoning.ActionReasoningOutput
 import com.hoddesk.app.imports.ActionDueParser
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import android.util.Log
 
 class HodDeskViewModel(private val repository: HodDeskRepository) : ViewModel() {
+    private val failures = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    val operationErrors = failures.asSharedFlow()
     /** Database/provider failures must be surfaced as a logged operation
      * failure, never as an uncaught exception that takes down the activity. */
     private fun launchSafe(operation: String, block: suspend () -> Unit) = viewModelScope.launch {
@@ -25,6 +29,7 @@ class HodDeskViewModel(private val repository: HodDeskRepository) : ViewModel() 
             throw cancelled
         } catch (failure: Throwable) {
             Log.e("HOD_DB", operation, failure)
+            failures.emit("${operation.removeSuffix("_failed").replace('_', ' ')} could not be saved. Please retry.")
         }
     }
     val sources = repository.sources.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -45,9 +50,23 @@ class HodDeskViewModel(private val repository: HodDeskRepository) : ViewModel() 
     fun setActionPointStatus(sourceId: Long, action: String, status: String) = launchSafe("action_status_failed") { repository.setActionPointStatus(sourceId, action, status) }
     fun updateActionPoint(point: ActionPointEntity) = launchSafe("update_action_point_failed") { repository.updateActionPoint(point) }
     fun approveEditedAction(point: ActionPointEntity?, sourceId: Long, project: String, action: String, assignee: String? = null) = launchSafe("approve_edited_action_failed") {
-        point?.let { repository.updateActionPoint(it) }
-        repository.approveAction(sourceId, action, project,
-            dueAt = point?.let { ActionDueParser.parse(it.dateText, it.timeText) }, assignee = assignee)
+        repository.approveEditedAction(point, sourceId, project, action,
+            dueAt = point?.let { ActionDueParser.parseIfUnambiguous(it.dateText, it.timeText, it.ambiguity) }, assignee = assignee)
+    }
+    // Review awaits the durable transition. Failures stay visible instead of optimistically
+    // dismissing a candidate while a fire-and-forget Job is still pending.
+    suspend fun saveReviewPoint(point: ActionPointEntity) { repository.updateActionPoint(point) }
+    suspend fun approveReviewPoint(point: ActionPointEntity?, sourceId: Long, project: String, action: String, assignee: String? = null) {
+        repository.approveEditedAction(point, sourceId, project, action,
+            dueAt = com.hoddesk.app.reasoning.ReviewApprovalPolicy.dueAt(point), assignee = assignee)
+    }
+    suspend fun approveReviewAction(sourceId: Long, action: String, project: String, dueAt: Long?, assignee: String?) {
+        repository.approveAction(sourceId, action, project, dueAt, assignee)
+    }
+    suspend fun statusReviewAction(sourceId: Long, action: String, status: String) { repository.setActionPointStatus(sourceId, action, status) }
+    suspend fun dismissReviewSource(sourceId: Long, reason: String) { repository.dismissSource(sourceId, reason) }
+    fun refreshGeneratedCandidates(sources: List<SourceEntity>) = launchSafe("refresh_candidates_failed") {
+        sources.forEach { repository.refreshGeneratedCandidates(it) }
     }
     fun complete(taskId: Long) = launchSafe("complete_task_failed") { repository.completeTask(taskId) }
     fun setDone(taskId: Long, done: Boolean) = launchSafe("set_done_failed") { repository.setTaskDone(taskId, done) }

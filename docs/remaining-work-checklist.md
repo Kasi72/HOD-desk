@@ -22,7 +22,7 @@ This is the single progress ledger. A box is checked only after the implementati
 ## Remaining implementation work
 
 - [x] Matter change proposal actions: accept, keep existing and review evidence.
-- [ ] Voice Secretary cited answers and confirmation cards for mutations.
+- [x] Voice Secretary cited answers and confirmation cards for mutations.
 - [x] Replanning accept-one, accept-all and reject controls.
 - [ ] Configurable morning/evening brief scheduling and quiet hours.
 - [ ] Evaluation baseline/current persistence and report display.
@@ -32,8 +32,8 @@ This is the single progress ledger. A box is checked only after the implementati
 
 - [ ] Clean full Gradle compile.
 - [ ] Unit, Room migration and Compose tests pass.
-- [ ] Signed release APK and checksum.
-- [ ] ADB installation and connected-device regression.
+- [ ] Production-signed release APK and checksum (a locally test-signed artifact is available; production keystore is not configured).
+- [x] ADB installation and connected-device regression: debug and instrumentation APKs installed; 5/5 device tests passed; cold start remained resumed with no app crash.
 - [ ] Tamil/Tanglish transcription and clinical-quarantine verification.
 
 ## Latest verification
@@ -41,4 +41,8 @@ This is the single progress ledger. A box is checked only after the implementati
 - [x] Fixed the JVM-only reasoning validator regression by removing Android `JSONObject` calls from the unit-tested parser while retaining malformed-output, citation and grounding checks.
 - [x] Fixed stale follow-up test data handling without weakening real epoch-time staleness checks.
 - [x] Fixed capacity reporting so overlapping calendar events are merged and queue capacity is capped to the current request.
-- [ ] Full test execution is pending: the local Gradle daemon is repeatedly terminated by Windows native-memory exhaustion during Kotlin compilation (`hs_err_pid*.log`), so no green test result is claimed yet.
+- [x] Full JVM unit-test suite passes (`:app:testDebugUnitTest`).
+- [x] Debug application and instrumentation APKs compile (`:app:assembleDebug`, `:app:assembleDebugAndroidTest`).
+- [x] Connected-device regression completed after reconnecting the S26 Ultra: 5/5 Room workflow tests passed and cold start was stable.
+- [x] Release variant compiles and a locally test-signed APK verifies with APK Signature Scheme v2/v3.
+- [ ] Production signing, Tamil/Tanglish corpus evaluation, and clinical-quarantine device verification remain open release gates.

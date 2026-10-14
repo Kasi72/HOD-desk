@@ -116,4 +116,5 @@ fun initials(name: String): String = name.split(' ', '.').filter { it.isNotBlank
     .let { parts -> (parts.firstOrNull()?.take(1).orEmpty() + (parts.drop(1).lastOrNull()?.take(1).orEmpty())).uppercase() }
     .ifBlank { "?" }
 
-fun SourceEntity.isClinical(): Boolean = sensitivity == "T3" || sensitivity == "T4"
+fun SourceEntity.isClinical(): Boolean = sensitivity in setOf("T3", "T4", "T3_CLINICAL", "T4_SPECIAL", "clinical", "special") ||
+    com.hoddesk.app.privacy.SensitivityClassifier.classify(title, com.hoddesk.app.reasoning.EvidenceBundleBuilder.originalText(body)).tier.code in setOf("T3", "T4")

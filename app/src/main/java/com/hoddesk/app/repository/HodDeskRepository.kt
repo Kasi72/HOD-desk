@@ -55,23 +55,18 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         dao.sourcesOnce().firstOrNull { it.id != source.id && SourceFingerprint.of(it) == SourceFingerprint.of(source) }
 
     suspend fun approveSource(sourceId: Long, project: String, dueAt: Long? = null): Long {
-        val taskId = dao.approveSourceAtomic(sourceId, project, dueAt)
-        syncCommitment(taskId)
-        return taskId
+        return dao.approveSourceAtomic(sourceId, project, dueAt)
     }
 
     /** Promotes the exact user-approved action candidate, never the generic source title. */
     private suspend fun audit(type: String, id: Long, action: String, detail: String? = null) = dao.insertAudit(AuditEntryEntity(entityType = type, entityId = id, action = action, detail = detail))
 
     suspend fun approveAction(sourceId: Long, action: String, project: String, dueAt: Long? = null, assignee: String? = null): Long {
-        val taskId = dao.approveActionAtomic(sourceId, action, project, dueAt, assignee)
-        val point = dao.actionPointBySourceAndAction(sourceId, action)
-        if (point != null && !assignee.isNullOrBlank()) {
-            dao.insertLearningCorrection(LearningCorrectionEntity(actionPointId = point.id, field = "delegation", before = null, after = assignee))
-        }
-        syncCommitment(taskId)
-        return taskId
+        return dao.approveActionAtomic(sourceId, action, project, dueAt, assignee)
     }
+
+    suspend fun approveEditedAction(point: ActionPointEntity?, sourceId: Long, project: String, action: String, dueAt: Long? = null, assignee: String? = null): Long =
+        dao.approveEditedActionAtomic(point, sourceId, project, action, dueAt, assignee)
 
     /** Marks a source handled without creating a task ("Not mine" / "Not an action"). Nothing is deleted. */
     suspend fun dismissSource(sourceId: Long, reason: String) {
@@ -80,55 +75,35 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         audit("source", sourceId, "dismissed_$reason")
     }
 
-    suspend fun setTaskDue(taskId: Long, dueAt: Long?) {
-        val task = dao.task(taskId) ?: return
-        dao.updateTask(task.copy(dueAt = dueAt))
-        if (dueAt == null) dao.deleteEventsForTask(taskId) else ensureLocalTaskEvent(taskId, task.title, dueAt)
-        syncCommitment(taskId)
-        audit("task", taskId, if (dueAt == null) "due_cleared" else "rescheduled", dueAt?.let { java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it)) })
+    suspend fun setTaskDue(taskId: Long, dueAt: Long?, providerAlreadyUpdated: Boolean = false) {
+        dao.setTaskDueAtomic(taskId, dueAt, providerAlreadyUpdated)
     }
 
     suspend fun setAssignee(taskId: Long, assignee: String?) {
-        val task = dao.task(taskId) ?: return
-        dao.updateTask(task.copy(assignee = assignee?.takeIf { it.isNotBlank() }))
-        syncCommitment(taskId)
-        audit("task", taskId, if (assignee.isNullOrBlank()) "taken_back" else "delegated", assignee)
+        dao.setAssigneeAtomic(taskId, assignee)
     }
+
+    suspend fun createSecretaryTask(title: String, detail: String): Long = dao.createSecretaryTaskAtomic(title, detail)
+    suspend fun delegateSecretaryTask(expected: TaskEntity, assignee: String, detail: String) = dao.delegateSecretaryTaskAtomic(expected, assignee, detail)
+    suspend fun moveSecretaryEvent(expected: EventEntity, startsAt: Long, detail: String): Long = dao.moveSecretaryEventAtomic(expected, startsAt, detail)
+    suspend fun scheduleSecretaryTask(expected: TaskEntity, startsAt: Long, detail: String): Long = dao.scheduleSecretaryTaskAtomic(expected, startsAt, detail)
 
     fun observeAllAudit(limit: Int = 500): Flow<List<AuditEntryEntity>> = dao.observeAllAudit(limit)
 
     suspend fun deleteAllWorkData() { dao.deleteAllWorkData(); audit("app", 0, "all_data_deleted") }
     suspend fun setActionPointStatus(sourceId: Long, action: String, status: String) {
-        dao.setActionPointStatus(sourceId, action, status)
-        val point = dao.actionPointBySourceAndAction(sourceId, action)
-        if (point != null && status in setOf("rejected", "approved")) {
-            dao.insertLearningCorrection(LearningCorrectionEntity(actionPointId = point.id, field = "decision", before = null, after = status))
-        }
-        audit("source", sourceId, "action_status_$status", action)
+        dao.setActionPointStatusAtomic(sourceId, action, status)
     }
     suspend fun updateActionPoint(point: ActionPointEntity) {
-        val previous = dao.actionPoint(point.id)
-        val normalized = point.copy(
-            action = point.action.trim(),
-            dateText = point.dateText?.trim()?.takeIf { it.isNotBlank() },
-            timeText = point.timeText?.trim()?.takeIf { it.isNotBlank() },
-            locationText = point.locationText?.trim()?.takeIf { it.isNotBlank() },
-            peopleText = point.peopleText?.trim()?.takeIf { it.isNotBlank() },
-        )
-        dao.updateActionPoint(normalized)
-        if (previous != null) {
-            val fields = listOf(
-                "action" to (previous.action to normalized.action),
-                "date" to (previous.dateText to normalized.dateText),
-                "time" to (previous.timeText to normalized.timeText),
-                "location" to (previous.locationText to normalized.locationText),
-                "people" to (previous.peopleText to normalized.peopleText),
-            )
-            fields.filter { it.second.first != it.second.second }.forEach { (field, value) ->
-                dao.insertLearningCorrection(LearningCorrectionEntity(actionPointId = point.id, field = field, before = value.first, after = value.second))
-            }
-        }
-        audit("action_point", point.id, "edited", normalized.action)
+        dao.updateActionPointAtomic(point)
+    }
+    suspend fun refreshGeneratedCandidates(source: SourceEntity) {
+        if (source.reviewed || !com.hoddesk.app.semantic.SourceIndexPolicy.searchable(source)) return
+        val evidence = com.hoddesk.app.reasoning.EvidenceBundleBuilder.originalText(source.body)
+        val revision = "conservative-extraction-v3:" + com.hoddesk.app.semantic.SourceFingerprint.of(source)
+        if (dao.extractionRevision(source.id) == revision) return
+        val proposed = com.hoddesk.app.imports.ActionPointExtractor().extract(evidence).map { it.toEntity(source.id) }
+        dao.refreshGeneratedCandidates(source.id, source.body, revision, proposed)
     }
 
     suspend fun resetLearningProfile() {
@@ -144,9 +119,7 @@ class HodDeskRepository(private val dao: HodDeskDao) {
 
     suspend fun confirmSchedule(proposal: ScheduleProposal): Long {
         require(proposal.conflicts.isEmpty()) { "Conflicting events require explicit rescheduling before confirmation" }
-        val eventId = dao.insertEvent(proposal.event.copy(confirmed = true))
-        audit("event", eventId, "scheduled_confirmed", proposal.event.title)
-        return eventId
+        return dao.confirmLocalScheduleAtomic(proposal.event)
     }
 
     suspend fun returnSourceToInbox(sourceId: Long) {
@@ -156,12 +129,10 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     }
 
     /** Creates a durable local pending record before an external calendar write. */
-    suspend fun beginCalendarWrite(event: EventEntity): Long = dao.insertEvent(event.copy(confirmed = false, calendarEventId = null))
+    suspend fun beginCalendarWrite(event: EventEntity): Long = dao.beginCalendarWriteAtomic(event)
 
     suspend fun finishCalendarWrite(localEventId: Long, providerEventId: Long) {
-        val event = requireNotNull(dao.event(localEventId)) { "Pending calendar event $localEventId does not exist" }
-        dao.updateEvent(event.copy(confirmed = true, calendarEventId = providerEventId))
-        audit("event", localEventId, "scheduled_confirmed", event.title)
+        dao.finishCalendarWriteAtomic(localEventId, providerEventId)
     }
 
     suspend fun cancelCalendarWrite(localEventId: Long) { dao.deleteEvent(localEventId) }
@@ -173,25 +144,15 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         }
     }
     suspend fun schedulePlannedTask(taskId: Long, title: String, startsAt: Long, endsAt: Long): Long {
-        require(endsAt > startsAt) { "Event must end after it starts" }
-        require(dao.overlappingEvents(startsAt, endsAt).isEmpty()) { "A local calendar conflict appeared before confirmation" }
-        val eventId = dao.insertEvent(EventEntity(taskId = taskId, title = title, startsAt = startsAt, endsAt = endsAt, confirmed = true))
-        audit("event", eventId, "scheduled_confirmed", title)
-        return eventId
+        return dao.confirmLocalScheduleAtomic(EventEntity(taskId = taskId, title = title, startsAt = startsAt, endsAt = endsAt))
     }
 
     suspend fun completeTask(taskId: Long) {
-        val task = requireNotNull(dao.task(taskId)) { "Task $taskId does not exist" }
-        dao.updateTask(task.copy(status = "completed", completedAt = System.currentTimeMillis()))
-        dao.setCommitmentStatus(taskId, "completed")
-        audit("task", taskId, "completed")
+        dao.setTaskDoneAtomic(taskId, true)
     }
 
     suspend fun setTaskDone(taskId: Long, done: Boolean) {
-        requireNotNull(dao.task(taskId)) { "Task $taskId does not exist" }
-        dao.setTaskStatus(taskId, if (done) "completed" else "open", if (done) System.currentTimeMillis() else null)
-        if (done) dao.setCommitmentStatus(taskId, "completed") else syncCommitment(taskId)
-        audit("task", taskId, if (done) "completed" else "reopened")
+        dao.setTaskDoneAtomic(taskId, done)
     }
 
     suspend fun addEvidence(taskId: Long, evidenceUri: String, type: String, note: String? = null): Long = dao.insertEvidence(EvidenceEntity(taskId = taskId, uri = evidenceUri, type = type, note = note))
@@ -250,36 +211,10 @@ class HodDeskRepository(private val dao: HodDeskDao) {
      */
     private suspend fun ensureLocalTaskEvent(taskId: Long, title: String, dueAt: Long?) {
         if (dueAt == null) return
-        if (dao.eventsForTask(taskId).any { it.startsAt == dueAt && it.endsAt > dueAt }) return
-        dao.deleteEventsForTask(taskId)
+        // Backfill repairs a missing representation only. It must never move an
+        // explicitly planned event or erase its external calendar identity.
+        if (dao.eventsForTask(taskId).isNotEmpty()) return
         dao.insertEvent(EventEntity(taskId = taskId, title = title, startsAt = dueAt, endsAt = dueAt + 60 * 60 * 1000L, confirmed = true))
-    }
-
-    /** Keeps the commitment ledger in lockstep with the task's current owner and due state. */
-    private suspend fun syncCommitment(taskId: Long) {
-        val task = dao.task(taskId) ?: return
-        val existing = dao.commitmentForTask(taskId)
-        val status = when (task.status) {
-            "completed" -> "completed"
-            "deleted", "archived" -> task.status
-            else -> "open"
-        }
-        dao.insertCommitment(
-            CommitmentEntity(
-                id = existing?.id ?: 0,
-                sourceId = task.sourceId,
-                taskId = task.id,
-                direction = if (task.assignee.isNullOrBlank()) OWED_BY_ME else OWED_TO_ME,
-                owner = if (task.assignee.isNullOrBlank()) "me" else task.assignee,
-                counterparty = if (task.assignee.isNullOrBlank()) null else "me",
-                summary = task.title,
-                dueAt = task.dueAt,
-                status = status,
-                evidence = "Task #" + task.id + " · " + task.project,
-                confidence = 1f,
-                createdAt = existing?.createdAt ?: task.createdAt,
-            )
-        )
     }
 
     suspend fun removePendingAudioPlaceholders(): Int = dao.deletePendingAudioPlaceholderTasks()

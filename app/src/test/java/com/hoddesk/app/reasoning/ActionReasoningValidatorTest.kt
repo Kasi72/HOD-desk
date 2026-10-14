@@ -5,6 +5,34 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class ActionReasoningValidatorTest {
+    private val valid = """{"action":"Attend meeting","category":"meeting","date":null,"time":"2 PM","location":null,"people":[],"owner":null,"source_quotes":["Attend meeting at 2 PM"],"source_ids":[1],"confidence":0.9,"ambiguities":[],"conflicts":[]}"""
+
+    @Test fun rejects_broken_json_and_wrong_field_types() {
+        listOf(valid.replace(",\"category\"", " \"category\""),
+            valid.replace("\"people\":[]", "\"people\":42"),
+            valid.replace("\"source_ids\":[1]", "\"source_ids\":[\"1\"]"),
+            valid.replace("\"confidence\":0.9", "\"confidence\":0.9oops"),
+            valid.replace("\"category\":\"meeting\"", "\"category\":\"meeting\",\"category\":\"other\"")
+        ).forEach { payload ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ActionReasoningValidator.parse(payload, "[SOURCE_ID:1] Attend meeting at 2 PM")
+            }
+        }
+    }
+
+    @Test fun rejects_quote_attributed_to_the_wrong_source() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ActionReasoningValidator.parse(valid.replace("\"source_ids\":[1]", "\"source_ids\":[2]"),
+                "[SOURCE_ID:1] Attend meeting at 2 PM\n\n[SOURCE_ID:2] Submit the roster")
+        }
+    }
+
+    @Test fun rejects_quote_that_exists_only_in_generated_review_cues() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ActionReasoningValidator.parse(valid,
+                "[SOURCE_ID:1] No response required\n--- HOD Desk review cues ---\nAction candidate: Attend meeting at 2 PM")
+        }
+    }
     @Test
     fun buildsCitationFirstPrompt() {
         val evidence = "Attend online Zoom meeting with DME at 2 PM at Erode Collectorate."

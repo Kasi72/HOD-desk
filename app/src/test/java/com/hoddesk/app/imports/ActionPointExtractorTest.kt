@@ -2,9 +2,92 @@ package com.hoddesk.app.imports
 
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ActionPointExtractorTest {
+    private val notice = """
+        10/12/26, 6:36 PM
+        Tamil Nadu Government Email Services :: e Nalam - Demo Meeting on Drug Condemnation and Drug Return – 13.10.2026 at 03:00 PM- reg
+        e Nalam - Demo Meeting on Drug Condemnation and Drug Return – 13.10.2026 at 03:00 PM- reg
+        From HMIS NHM <hmis.nhm@gmail.com>
+        To Dr. Unrelated Recipient <recipient@example.org>
+        Cc Dr. Copied Recipient <copied@example.org>
+        Date 2026-10-12 15:22
+        Respected Sir / Madam,
+        It is hereby informed that a demo meeting has been scheduled on 13.10.2026 at 03:00 PM to discuss the Drug Condemnation and Drug Return processes in HMIS 3.0.
+        Hence, you are requested to kindly instruct the following officials to attend the demo meeting without fail:
+        1. HMIS Nodal Officer from the Directorate
+        2. HMIS Nodal Officer from the pilot location
+        3. IT Coordinators from the Directorate
+        e Nalam - Demo- reg
+        Tuesday, October 13 · 3:30 – 4:30pm
+        Time zone: Asia/Kolkata
+        Google Meet joining info
+        Video call link: https://meet.google.com/yvn-zjmb-cpo
+        Thanking you,
+        HMIS Help Desk,
+        National Health Mission,
+        Chennai - 600 006.
+    """.trimIndent()
+
+    @Test fun government_notice_extracts_only_the_recipients_actual_obligation() {
+        val drafts = ActionPointExtractor().extract(notice)
+        assertEquals(1, drafts.size)
+        val instruction = drafts.single()
+        assertTrue(instruction.action.startsWith("Instruct"))
+        assertTrue(instruction.action.contains("Drug Condemnation and Drug Return"))
+        assertEquals("13.10.2026", instruction.dateText)
+        assertEquals("Google Meet", instruction.locationText)
+        assertEquals(3, instruction.peopleText.orEmpty().split(";").size)
+        assertTrue(instruction.peopleText.orEmpty().contains("IT Coordinators from the Directorate"))
+        assertTrue(!instruction.peopleText.orEmpty().contains("Recipient"))
+        assertNull(instruction.referenceNumber)
+    }
+
+    @Test fun conflicting_body_and_invite_times_remain_in_the_cited_evidence() {
+        val instruction = ActionPointExtractor().extract(notice).single()
+        assertTrue(instruction.ambiguity.orEmpty().contains("conflict", true))
+        assertTrue(instruction.timeText.orEmpty().contains("03:00 PM"))
+        assertTrue(instruction.timeText.orEmpty().contains("3:30"))
+        assertTrue(instruction.evidence.contains("13.10.2026"))
+        assertTrue(instruction.evidence.contains("3:30 – 4:30pm"))
+        assertTrue(instruction.evidence.contains("Google Meet"))
+    }
+
+    @Test fun an_informational_schedule_does_not_invent_hod_attendance() {
+        assertTrue(ActionPointExtractor().extract("A demo meeting has been scheduled on 13.10.2026 at 03:00 PM to discuss Drug Return.").isEmpty())
+    }
+
+    @Test fun repeated_equal_dates_and_equivalent_times_are_not_conflicts() {
+        val drafts = ActionPointExtractor().extract("Attend the DME meeting on 13.10.2026 at 03:00 PM (13.10.2026, 3 PM).")
+        assertEquals(1, drafts.size)
+        assertEquals("13.10.2026", drafts.single().dateText)
+        assertTrue(!drafts.single().ambiguity.orEmpty().contains("Multiple date/time"))
+        assertTrue(!drafts.single().ambiguity.orEmpty().contains("conflict", true))
+    }
+
+    @Test fun first_meeting_context_cannot_leak_into_an_unrelated_later_obligation() {
+        val drafts = ActionPointExtractor().extract("""
+            A DME meeting has been scheduled on 13.10.2026 at 3 PM.
+            Please send the purchase report by Friday.
+            Please join another meeting with the supplier.
+        """.trimIndent())
+        val supplier = drafts.first { it.action.contains("supplier") }
+        assertNull(supplier.dateText)
+        assertNull(supplier.timeText)
+        assertNull(supplier.referenceNumber)
+    }
+
+    @Test fun numbered_non_people_are_never_added_to_the_people_field() {
+        val draft = ActionPointExtractor().extract("Please submit the following items:\n1. Purchase report\n2. Drug return summary").single()
+        assertNull(draft.peopleText)
+    }
+
+    @Test fun nearby_dates_are_not_treated_as_document_reference_numbers() {
+        val draft = ActionPointExtractor().extract("Please submit the report on 13.10.2026 at 3 PM.").single()
+        assertNull(draft.referenceNumber)
+    }
     @Test
     fun extractsMeetingDateTimeAndLocationCues() {
         val body = "Attend online Zoom meeting with DME at 2 PM at Erode Collectorate on 19th September 2026."

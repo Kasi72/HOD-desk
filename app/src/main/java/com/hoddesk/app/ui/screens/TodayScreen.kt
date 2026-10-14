@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -31,6 +33,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -270,7 +273,7 @@ private fun SecretaryBriefPanel(brief: SecretaryIntelligence.Brief, citedCount: 
         Text(brief.headline, style = Hod.type.title3.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Serif), color = MeridianColors.onPanel)
         Text(brief.detail, style = Hod.type.subheadline, color = MeridianColors.onPanel2, maxLines = 2)
         Text("${citedCount} evidence-backed item${if (citedCount == 1) "" else "s"} · review before acting", style = Hod.type.footnote, color = MeridianColors.onPanel3)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BriefStat("${brief.toReview}", "TO REVIEW")
             BriefStat("${brief.dueSoon}", "DUE SOON")
             BriefStat("${brief.waiting}", "WAITING")
@@ -308,12 +311,20 @@ private fun ExecutiveBriefRow(brief: SecretaryIntelligence.ExecutiveBrief) {
 }
 
 @Composable
-private fun BriefStat(value: String, label: String) {
+private fun RowScope.BriefStat(value: String, label: String) {
     Column(
-        Modifier.fillMaxWidth(0.333f).clip(Squircles.small).background(MeridianColors.panelWell).padding(horizontal = 10.dp, vertical = 8.dp),
+        Modifier.weight(1f).heightIn(min = 76.dp).clip(Squircles.small).background(MeridianColors.panelWell)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(value, style = Hod.type.title3, color = MeridianColors.onPanel)
-        Text(label, style = Hod.type.label.copy(fontSize = 9.sp, letterSpacing = 0.08.em), color = MeridianColors.onPanel3)
+        Text(
+            label,
+            style = Hod.type.label.copy(fontSize = 9.sp, letterSpacing = 0.04.em),
+            color = MeridianColors.onPanel3,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

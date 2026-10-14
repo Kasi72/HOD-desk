@@ -6,6 +6,7 @@ import com.hoddesk.app.data.SourceChunkEntity
 import com.hoddesk.app.data.SemanticEmbeddingStagingEntity
 import com.hoddesk.app.data.SourceChunkStagingEntity
 import com.hoddesk.app.data.SourceRelationEntity
+import com.hoddesk.app.data.AuditEntryEntity
 import android.net.Uri
 import com.hoddesk.app.data.SourceEntity
 import java.nio.ByteBuffer
@@ -13,6 +14,11 @@ import java.nio.ByteOrder
 import kotlin.math.sqrt
 import com.hoddesk.app.learning.SecretaryLearning
 import android.util.Log
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class SourceSemanticHit(
     val source: SourceEntity,
@@ -28,47 +34,56 @@ class SourceSemanticIndexer(
     private val embedder: EmbeddingGemmaService,
     private val minConfidence: Float = .62f
 ) {
-    companion object { const val MODEL_VERSION = "embeddinggemma-2-740m-litertlm-v5-actions-tamil" }
+    companion object {
+        const val MODEL_VERSION = "embeddinggemma-2-740m-litertlm-v6-validated-evidence"
+        // UI imports, a manual rebuild and WorkManager must not overwrite one another.
+        private val indexWriteMutex = Mutex()
+    }
 
-    suspend fun index(source: SourceEntity) = index(source, staged = false)
+    suspend fun index(source: SourceEntity) = indexWriteMutex.withLock { index(source, staged = false) }
 
     private suspend fun index(source: SourceEntity, staged: Boolean) {
-        if (source.id <= 0L || source.body.isBlank()) return
+        currentCoroutineContext().ensureActive()
+        if (!SourceIndexPolicy.searchable(source)) return
         // Clinical and special-category sources stay in the encrypted vault;
         // they must never enter semantic retrieval, relations or model calls.
-        if (source.sensitivity == "T3" || source.sensitivity == "T4") return
         val fingerprint = SourceFingerprint.of(source)
-        val existing = if (staged) null else dao.semanticEmbedding(source.id)
+        val actionPoints = dao.actionPoints(source.id).filter { it.status != "rejected" }
+        val existing = if (staged) dao.allStagedEmbeddings().firstOrNull { it.sourceId == source.id }?.let {
+            SemanticEmbeddingEntity(it.sourceId, it.modelVersion, it.dimension, it.vector, it.modality, it.evidenceLocator, it.indexedAt, it.sourceFingerprint, it.promptVersion, it.chunkNumber)
+        } else dao.semanticEmbedding(source.id)
         // An earlier process can die after writing the document vector but
         // before writing chunks. Also, edited action candidates must become
         // searchable. Only skip when the complete, current chunk set exists.
-        if (existing?.modelVersion == MODEL_VERSION && existing.dimension == 768 &&
-            existing.sourceFingerprint == fingerprint && existing.promptVersion == EmbeddingPromptRegistry.VERSION) {
-            val chunks = dao.sourceChunks(source.id)
-            val expectedActions = dao.actionPoints(source.id).size
-            val indexedActions = chunks.count { it.modality == "action" }
-            if (chunks.isNotEmpty() && indexedActions == expectedActions &&
-                chunks.all { it.sourceFingerprint == fingerprint && it.promptVersion == EmbeddingPromptRegistry.VERSION && it.dimension == 768 }) return
+        if (existing != null) {
+            val chunks = if (staged) dao.stagedSourceChunks(source.id).map { c ->
+                SourceChunkEntity(c.id, c.sourceId, c.ordinal, c.modality, c.text, c.citation, c.page, c.paragraphIndex, c.messageIndex, c.startMs, c.endMs, c.modelVersion, c.dimension, c.vector, c.indexedAt, c.sourceFingerprint, c.promptVersion, c.chunkNumber)
+            } else dao.sourceChunks(source.id)
+            if (SourceIndexPolicy.current(source, existing, chunks, actionPoints)) return
         }
-        val directModality: String
+        var directModality = "text"
         var directEmbedding = false
+        var cachedAudioSegments: List<AudioEmbeddingSegment>? = null
         val vector = if (embedder is EmbeddingGemmaLiteRtRuntime && source.sourceUri != null &&
             (source.sourceType.contains("Screenshot", true) || source.sourceType.contains("Camera", true))) {
-            directModality = "image"
             val multimodal = embedder as EmbeddingGemmaLiteRtRuntime
-            runCatching { multimodal.embedImage(Uri.parse(source.sourceUri)).also { directEmbedding = true } }.getOrElse {
+            recoverable { multimodal.embedImage(Uri.parse(source.sourceUri)).also { directEmbedding = true; directModality = "image" } }.getOrElse {
                 Log.w("HOD_SEMANTIC", "direct_image_embedding_failed source=${source.id}; using OCR text", it)
                 embedder.embed(EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source), source.body))
             }
-        } else if (embedder is EmbeddingGemmaLiteRtRuntime && source.sourceUri != null && source.sourceType.contains("Audio", true)) {
-            directModality = "audio"
+        } else if (embedder is EmbeddingGemmaLiteRtRuntime && source.sourceUri != null &&
+            (source.sourceType.contains("Audio", true) || source.sourceType.contains("Call", true))) {
             val multimodal = embedder as EmbeddingGemmaLiteRtRuntime
-            runCatching { multimodal.embedWav(Uri.parse(source.sourceUri)).also { directEmbedding = true } }.getOrElse {
+            recoverable {
+                val segments = multimodal.embedWavSegments(Uri.parse(source.sourceUri))
+                MultimodalResourcePolicy.summarize(segments.map { it.vector }).also {
+                    cachedAudioSegments = segments; directEmbedding = true; directModality = "audio"
+                }
+            }.getOrElse {
                 Log.w("HOD_SEMANTIC", "direct_audio_embedding_failed source=${source.id}; using transcript text", it)
                 embedder.embed(EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source), source.body))
             }
         } else {
-            directModality = "text"
             embedder.embed(EmbeddingPromptRegistry.document(EmbeddingPromptRegistry.header(source), source.body))
         }
         Log.i("HOD_SEMANTIC", "source_modality source=${source.id},modality=$directModality,direct=$directEmbedding")
@@ -85,17 +100,9 @@ class SourceSemanticIndexer(
         // Action candidates get their own vectors.  A query such as “what do
         // I need to submit this week?” should retrieve the extracted action,
         // even when the surrounding document contains many unrelated facts.
-        val actionPoints = dao.actionPoints(source.id)
         val actionVectors = embedder.embedBatch(actionPoints.map { point -> EmbeddingPromptRegistry.action(point.action, point.evidence) })
         val actionChunks = actionPoints.mapIndexed { index, point ->
-            val actionText = listOfNotNull(
-                point.action,
-                point.dateText,
-                point.timeText,
-                point.locationText,
-                point.peopleText,
-                point.evidence,
-            ).joinToString(" · ")
+            val actionText = SourceIndexPolicy.actionText(point)
             val actionVector = actionVectors[index]
             check(EmbeddingIntegrity.validate(actionVector).valid) { "Action embedding rejected for source ${source.id}" }
             SourceChunkEntity(sourceId = source.id, ordinal = 10_000 + index, modality = "action", text = actionText, citation = "${source.title} · action ${index + 1}", modelVersion = MODEL_VERSION, dimension = actionVector.size, vector = actionVector.toBytes(), sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = 10_000 + index)
@@ -108,13 +115,13 @@ class SourceSemanticIndexer(
         val mediaChunks = if (embedder is EmbeddingGemmaLiteRtRuntime && source.sourceUri != null) {
             val multimodal = embedder as EmbeddingGemmaLiteRtRuntime
             when {
-                directModality == "audio" -> runCatching { multimodal.embedWavSegments(Uri.parse(source.sourceUri)) }.getOrDefault(emptyList()).mapIndexed { index, segment ->
+                directModality == "audio" -> (cachedAudioSegments ?: recoverable { multimodal.embedWavSegments(Uri.parse(source.sourceUri)) }.getOrDefault(emptyList())).mapIndexed { index, segment ->
                     SourceChunkEntity(sourceId = source.id, ordinal = -10_000 - index, modality = "audio_segment", text = source.title, citation = "${source.title} · ${segment.startMs / 1000}s–${segment.endMs / 1000}s", startMs = segment.startMs, endMs = segment.endMs, modelVersion = MODEL_VERSION, dimension = segment.vector.size, vector = segment.vector.toBytes(), sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = -10_000 - index)
                 }
-                directModality == "image" -> runCatching { multimodal.embedImageRegions(Uri.parse(source.sourceUri)) }.getOrDefault(emptyList()).mapIndexed { index, region ->
+                directModality == "image" -> recoverable { multimodal.embedImageRegions(Uri.parse(source.sourceUri)) }.getOrDefault(emptyList()).mapIndexed { index, region ->
                     SourceChunkEntity(sourceId = source.id, ordinal = -20_000 - index, modality = "image_region", text = source.title, citation = "${source.title} · image region ${region.region}", modelVersion = MODEL_VERSION, dimension = region.vector.size, vector = region.vector.toBytes(), sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = -20_000 - index)
                 }
-                source.sourceType.contains("PDF", true) -> runCatching { multimodal.embedPdfPagePreviews(Uri.parse(source.sourceUri)) }.getOrDefault(emptyList()).map { page ->
+                source.sourceType.contains("PDF", true) -> recoverable { multimodal.embedPdfPagePreviews(Uri.parse(source.sourceUri)) }.getOrDefault(emptyList()).map { page ->
                     SourceChunkEntity(sourceId = source.id, ordinal = -30_000 - page.page, modality = "document_page_preview", text = source.title, citation = "${source.title} · page ${page.page} preview", page = page.page, modelVersion = MODEL_VERSION, dimension = page.vector.size, vector = page.vector.toBytes(), sourceFingerprint = fingerprint, promptVersion = EmbeddingPromptRegistry.VERSION, chunkNumber = -30_000 - page.page)
                 }
                 else -> emptyList()
@@ -126,6 +133,13 @@ class SourceSemanticIndexer(
             addAll(textChunks)
             addAll(actionChunks)
         }
+        check(chunks.all { SourceIndexPolicy.decode(it.vector, it.dimension) != null }) { "Media chunk integrity check failed" }
+        currentCoroutineContext().ensureActive()
+        // Source deletion/edits during native inference must not resurrect old evidence.
+        val liveSource = dao.source(source.id) ?: return
+        if (!SourceIndexPolicy.searchable(liveSource) || SourceFingerprint.of(liveSource) != fingerprint) return
+        if (SourceIndexPolicy.eligibleActionTexts(dao.actionPoints(source.id)) !=
+            SourceIndexPolicy.eligibleActionTexts(actionPoints)) return
         if (staged) {
             dao.replaceStagedSourceIndex(
                 SemanticEmbeddingStagingEntity(embedding.sourceId, embedding.modelVersion, embedding.dimension, embedding.vector, embedding.modality, embedding.evidenceLocator, embedding.indexedAt, embedding.sourceFingerprint, embedding.promptVersion, embedding.chunkNumber),
@@ -136,35 +150,47 @@ class SourceSemanticIndexer(
         }
     }
 
-    suspend fun indexAll(sources: List<SourceEntity>) {
-        // Build with an in-process rollback guard. Every source is committed
-        // atomically, and a failed/cancelled rebuild restores the exact
-        // previous vector tables before the exception reaches the UI.
+    suspend fun indexAll(sources: List<SourceEntity>) = indexWriteMutex.withLock {
+        // Staging survives a cancellation/process kill. A restarted build reuses
+        // only complete, current records; the active index is untouched until promotion.
+        val eligible = sources.filter(SourceIndexPolicy::searchable)
+        val expectedIds = eligible.map { it.id }.toSet()
         try {
-            dao.clearStagedEmbeddings()
-            dao.clearStagedChunks()
-            sources.forEach { source -> index(source, staged = true) }
+            (dao.allStagedEmbeddings().map { it.sourceId } + dao.allStagedChunks().map { it.sourceId })
+                .toSet().filter { it !in expectedIds }.forEach { dao.clearStagedSource(it) }
+            eligible.forEach { source -> index(source, staged = true) }
             val stagedEmbeddings = dao.allStagedEmbeddings()
             val stagedChunks = dao.allStagedChunks()
-            check(stagedEmbeddings.map { it.sourceId }.toSet() == sources.filter { it.id > 0L && it.body.isNotBlank() && it.sensitivity !in setOf("T3", "T4") }.map { it.id }.toSet()) { "Staged source set is incomplete" }
-            check(stagedEmbeddings.all { it.dimension == 768 && EmbeddingIntegrity.validate(it.vector.toFloatArray()).valid }) { "Staged embedding integrity check failed" }
-            check(stagedChunks.all { it.dimension == 768 && EmbeddingIntegrity.validate(it.vector.toFloatArray()).valid }) { "Staged chunk integrity check failed" }
-            dao.promoteStagedSemanticIndex()
+            check(stagedEmbeddings.map { it.sourceId }.toSet() == expectedIds) { "Staged source set is incomplete" }
+            check(stagedEmbeddings.all { SourceIndexPolicy.decode(it.vector, it.dimension) != null }) { "Staged embedding integrity check failed" }
+            check(stagedChunks.all { SourceIndexPolicy.decode(it.vector, it.dimension) != null }) { "Staged chunk integrity check failed" }
+            val live = dao.sourcesOnce().filter(SourceIndexPolicy::searchable).associateBy { it.id }
+            check(live.keys == expectedIds && eligible.all { source ->
+                live[source.id]?.let { SourceFingerprint.of(it) == SourceFingerprint.of(source) } == true
+            }) { "Sources changed during rebuild; retry to include current evidence" }
+            currentCoroutineContext().ensureActive()
+            dao.promoteStagedSemanticIndex(eligible)
         } catch (failure: Throwable) {
-            runCatching { dao.clearStagedEmbeddings(); dao.clearStagedChunks() }
-                .onFailure { Log.e("HOD_SEMANTIC", "staging_cleanup_failed", it) }
+            // Retain complete staging rows for retry. Never mutate the active
+            // index while handling cancellation or an interrupted build.
             throw failure
         }
-        buildRelations(sources)
+        buildRelations(eligible)
     }
 
     /** Links duplicate and related official work after all current vectors are available. */
     private suspend fun buildRelations(sources: List<SourceEntity>) {
-        val byId = sources.associateBy { it.id }
-        val vectors = dao.allSemanticEmbeddings().associate { it.sourceId to it.vector.toFloatArray() }
+        val byId = sources.filter(SourceIndexPolicy::searchable).associateBy { it.id }
+        val vectors = dao.allSemanticEmbeddings().mapNotNull { row ->
+            val source = byId[row.sourceId] ?: return@mapNotNull null
+            if (row.modelVersion != MODEL_VERSION || row.promptVersion != EmbeddingPromptRegistry.VERSION ||
+                row.sourceFingerprint != SourceFingerprint.of(source)) return@mapNotNull null
+            SourceIndexPolicy.decode(row.vector, row.dimension)?.let { row.sourceId to it }
+        }.toMap()
         val relations = mutableListOf<SourceRelationEntity>()
         val ids = vectors.keys.sorted()
         for (leftIndex in 0 until ids.size) {
+            currentCoroutineContext().ensureActive()
             for (rightIndex in leftIndex + 1 until ids.size) {
                 val left = ids[leftIndex]; val right = ids[rightIndex]
                 val score = cosine(vectors.getValue(left), vectors.getValue(right))
@@ -184,8 +210,18 @@ class SourceSemanticIndexer(
                 relations += SourceRelationEntity(sourceId = from, relatedSourceId = to, relationType = decision.relationType, score = score, rationale = decision.rationale)
             }
         }
-        dao.clearSourceRelations()
-        if (relations.isNotEmpty()) dao.insertSourceRelations(relations)
+        // One Room transaction preserves the previous relations on cancellation
+        // and ensures that proposed links and their audit records agree.
+        val priorKeys = dao.allSourceRelations().map { Triple(it.sourceId, it.relatedSourceId, it.relationType) }.toSet()
+        dao.replaceSourceRelations(relations, relations.filter {
+            Triple(it.sourceId, it.relatedSourceId, it.relationType) !in priorKeys
+        }.map { relation ->
+            AuditEntryEntity(
+                entityType = "source_relation", entityId = relation.sourceId,
+                action = "relation_proposal_pending",
+                detail = "related=${relation.relatedSourceId};type=${relation.relationType};score=${relation.score};${relation.rationale}"
+            )
+        })
     }
 
     private fun sharedMatterSignals(a: SourceEntity, b: SourceEntity): Float {
@@ -201,26 +237,37 @@ class SourceSemanticIndexer(
         val dates = Regex("\\b\\d{1,2}[/-]\\d{1,2}(?:[/-]\\d{2,4})?\\b|\\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\\w*\\b").findAll(normalized).map { "d:${it.value}" }
         val cueWords = Regex("(?:at|in|venue|location|collectorate|hospital|office|இல்|இடம்)\\s+([\\p{L}][\\p{L}.-]{2,})", RegexOption.IGNORE_CASE)
             .findAll(normalized).map { "l:${it.groupValues[1]}" }
-        return (numbers + dates + cueWords).toSet()
+        return (numbers + dates + cueWords).toSet() + EntityResolver.signals(text)
     }
 
     suspend fun search(query: String, sources: List<SourceEntity>, limit: Int = 5): List<SourceSemanticHit> {
-        if (query.isBlank()) return emptyList()
-        val queryVector = embedder.embed(EmbeddingPromptRegistry.search(query))
-        val byId = sources.associateBy { it.id }
-        val chunks = dao.allSourceChunks(MODEL_VERSION)
-        val best = chunks.groupBy { it.sourceId }.mapNotNull { (sourceId, sourceChunks) ->
+        if (query.isBlank() || limit <= 0) return emptyList()
+        val allowed = sources.filter(SourceIndexPolicy::searchable)
+        val byId = allowed.associateBy { it.id }
+        val liveActions = allowed.associate { it.id to SourceIndexPolicy.eligibleActionTexts(dao.actionPoints(it.id)) }
+        val chunks = dao.allSourceChunks(MODEL_VERSION).mapNotNull { chunk ->
+            val source = byId[chunk.sourceId] ?: return@mapNotNull null
+            SourceIndexPolicy.validChunk(chunk, source, liveActions[chunk.sourceId].orEmpty())?.let { chunk to it }
+        }
+        // Keyword retrieval must remain usable with no model, failed native
+        // initialization, corrupt vectors, or a first-run index still being built.
+        val queryVector = if (chunks.isEmpty()) null else recoverable {
+            embedder.embed(EmbeddingPromptRegistry.search(query.take(4000))).also {
+                check(EmbeddingIntegrity.validate(it).valid) { "Invalid query embedding" }
+            }
+        }.getOrNull()
+        val best = if (queryVector == null) emptyList() else chunks.groupBy { it.first.sourceId }.mapNotNull { (sourceId, sourceChunks) ->
             val source = byId[sourceId] ?: return@mapNotNull null
-            val bestChunk = sourceChunks.maxByOrNull { cosine(queryVector, it.vector.toFloatArray()) } ?: return@mapNotNull null
-            val score = cosine(queryVector, bestChunk.vector.toFloatArray())
-            SourceSemanticHit(source, score, score.coerceIn(0f, 1f), bestChunk.citation, bestChunk.modality)
+            val bestChunk = sourceChunks.maxByOrNull { cosine(queryVector, it.second) } ?: return@mapNotNull null
+            val score = cosine(queryVector, bestChunk.second)
+            SourceSemanticHit(source, score, score.coerceIn(0f, 1f), bestChunk.first.citation, bestChunk.first.modality)
         }
         val semantic = best.filter { it.confidence >= minConfidence }
         val profile = SecretaryLearning.profile(dao.allLearningCorrections())
-        return HybridRetriever.rank(query, sources, semantic, limit)
+        return HybridRetriever.rank(query, allowed, semantic, allowed.size)
             .map { SecretaryLearning.rerank(it, profile) }
             .sortedByDescending { it.score }
-            .take(limit).map { match ->
+            .take(limit.coerceAtMost(100)).map { match ->
                 SourceSemanticHit(match.source, match.score, match.score.coerceIn(0f, 1f), match.evidenceCitation, match.evidenceModality)
         }
     }
@@ -228,24 +275,37 @@ class SourceSemanticIndexer(
     /** Cross-modal image query: a camera/screenshot can retrieve text and audio sources. */
     suspend fun searchImage(uri: Uri, sources: List<SourceEntity>, limit: Int = 5): List<SourceSemanticHit> {
         val multimodal = embedder as? EmbeddingGemmaLiteRtRuntime ?: return emptyList()
-        return searchVector(multimodal.embedImage(uri), sources, limit)
+        return recoverable { searchVector(multimodal.embedImage(uri), sources, limit) }.getOrDefault(emptyList())
     }
 
     /** Cross-modal audio query: each query waveform window is matched against indexed chunks. */
     suspend fun searchAudio(uri: Uri, sources: List<SourceEntity>, limit: Int = 5): List<SourceSemanticHit> {
         val multimodal = embedder as? EmbeddingGemmaLiteRtRuntime ?: return emptyList()
-        val hits = multimodal.embedWavSegments(uri).flatMap { searchVector(it.vector, sources, limit) }
-        return hits.groupBy { it.source.id }.map { (_, values) -> values.maxBy { it.score } }.sortedByDescending { it.score }.take(limit)
+        val hits = recoverable { multimodal.embedWavSegments(uri).flatMap { searchVector(it.vector, sources, limit) } }.getOrDefault(emptyList())
+        return hits.groupBy { it.source.id }.map { (_, values) -> values.maxBy { it.score } }.sortedByDescending { it.score }.take(limit.coerceIn(0, 100))
     }
 
     private suspend fun searchVector(queryVector: FloatArray, sources: List<SourceEntity>, limit: Int): List<SourceSemanticHit> {
-        val byId = sources.filter { it.sensitivity != "T3" && it.sensitivity != "T4" }.associateBy { it.id }
+        if (limit <= 0 || !EmbeddingIntegrity.validate(queryVector).valid) return emptyList()
+        val byId = sources.filter(SourceIndexPolicy::searchable).associateBy { it.id }
+        val liveActions = byId.keys.associateWith { SourceIndexPolicy.eligibleActionTexts(dao.actionPoints(it)) }
         return dao.allSourceChunks(MODEL_VERSION).groupBy { it.sourceId }.mapNotNull { (sourceId, sourceChunks) ->
             val source = byId[sourceId] ?: return@mapNotNull null
-            val best = sourceChunks.maxByOrNull { cosine(queryVector, it.vector.toFloatArray()) } ?: return@mapNotNull null
-            val score = cosine(queryVector, best.vector.toFloatArray())
-            SourceSemanticHit(source, score, score.coerceIn(0f, 1f), best.citation, best.modality)
-        }.filter { it.confidence >= minConfidence }.sortedByDescending { it.score }.take(limit)
+            val best = sourceChunks.mapNotNull { chunk -> SourceIndexPolicy.validChunk(chunk, source, liveActions[sourceId].orEmpty())?.let { chunk to it } }
+                .maxByOrNull { cosine(queryVector, it.second) } ?: return@mapNotNull null
+            val score = cosine(queryVector, best.second)
+            SourceSemanticHit(source, score, score.coerceIn(0f, 1f), best.first.citation, best.first.modality)
+        }.filter { it.confidence >= minConfidence }.sortedByDescending { it.score }.take(limit.coerceAtMost(100))
+    }
+
+    private suspend fun <T> recoverable(block: suspend () -> T): Result<T> = try {
+        Result.success(block())
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        Result.failure(failure)
+    } catch (missingRuntime: LinkageError) {
+        Result.failure(missingRuntime)
     }
 
     private data class IndexedChunk(val text: String, val citation: String, val page: Int? = null, val paragraphIndex: Int? = null, val messageIndex: Int? = null, val startMs: Long? = null, val endMs: Long? = null)

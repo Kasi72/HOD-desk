@@ -17,9 +17,7 @@ object SmartScheduling {
         val total = (dayEnd - dayStart) / 60_000L
         val occupied = busy.sumOf { (it.second - it.first) / 60_000L }
         val rawAvailable = (total - occupied).coerceAtLeast(0L)
-        // Report the portion of free capacity relevant to this queue; spare time
-        // beyond the current request is not presented as schedulable demand.
-        val available = if (requested == 0L) rawAvailable else minOf(rawAvailable, requested)
+        val available = rawAvailable
         return CapacityReport(requested, available, (requested - rawAvailable).coerceAtLeast(0L), requested > rawAvailable)
     }
 
@@ -30,7 +28,8 @@ object SmartScheduling {
     /** Proposes work blocks while treating fixed blocks as immutable busy time and
      * reserving configured venue travel before each off-site task. */
     fun propose(tasks: List<TaskEntity>, events: List<EventEntity>, dayStart: Long, dayEnd: Long, travelMinutesByVenue: Map<String, Long>, completedHistory: List<TaskEntity> = emptyList()): List<PlannedBlock> {
-        val open = tasks.filter { (it.status == "open" || it.status == "needs_clarification") && it.assignee.isNullOrBlank() && (it.dueAt == null || it.dueAt <= dayEnd) }
+        val alreadyPlanned = events.mapNotNull { it.taskId }.toSet()
+        val open = tasks.filter { it.status == "open" && it.id !in alreadyPlanned && it.assignee.isNullOrBlank() && (it.dueAt == null || it.dueAt <= dayEnd) }
             .sortedWith(compareByDescending<TaskEntity> { priority(it.priority) }.thenBy { it.dueAt ?: Long.MAX_VALUE }.thenBy { it.createdAt })
         val protectedStart = dayStart + 4 * 60 * 60 * 1000L
         val protectedEnd = protectedStart + 60 * 60 * 1000L
@@ -44,9 +43,11 @@ object SmartScheduling {
             val travelMinutes = travelMinutesByVenue.entries.firstOrNull { it.key.equals(task.project, true) }?.value?.coerceAtLeast(0L) ?: 0L
             val travel = travelMinutes * 60 * 1000L
             var start = nextFree(cursor, duration + travel, busy, dayEnd)
-            if (start < 0) break
+            // A large task must not hide a smaller one that can still fit.
+            if (start < 0) continue
             val taskStart = start + travel
             val end = taskStart + duration
+            if (task.dueAt != null && end > task.dueAt) continue
             if (travel > 0L) busy += start to taskStart
             busy += start to end
             result += PlannedBlock(task, taskStart, end, "${task.priority.replaceFirstChar(Char::uppercase)} priority; ${effortMinutes} min effort; ${travelMinutes} min travel buffer; protected focus preserved", effortMinutes, travelMinutes)
@@ -59,7 +60,10 @@ object SmartScheduling {
         val type = taskType(task)
         val matching = completedHistory.filter { it.status == "completed" && taskType(it) == type }
         val observed = matching.mapNotNull { done ->
-            done.completedAt?.let { completed -> (completed - done.createdAt).coerceIn(15 * 60_000L, 4 * 60 * 60_000L) / 60_000L }
+            done.completedAt?.let { completed ->
+                val elapsed = completed - done.createdAt
+                elapsed.takeIf { it in 15 * 60_000L..(4 * 60 * 60_000L) }?.div(60_000L)
+            }
         }
         if (observed.isNotEmpty()) return observed.average().toLong().coerceIn(15L, 180L)
         return when (task.priority.lowercase()) { "urgent" -> 60L; "high" -> 45L; "low" -> 20L; else -> DEFAULT_TASK_MINUTES }

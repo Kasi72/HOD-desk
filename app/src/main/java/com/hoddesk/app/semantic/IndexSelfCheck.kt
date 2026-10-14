@@ -1,5 +1,9 @@
 package com.hoddesk.app.semantic
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+
 /** Fixed, on-device smoke corpus used before enabling semantic retrieval. It
  * deliberately covers English, Tamil and Tanglish so a tokenizer/model drift
  * cannot silently produce an apparently healthy index. */
@@ -15,12 +19,22 @@ object IndexSelfCheck {
         "follow up with stores about the quotation"
     )
 
-    suspend fun run(embedder: EmbeddingGemmaService, expectedDimension: Int = 768): Result<Unit> = runCatching {
-        val vectors = corpus.map { embedder.embed(EmbeddingPromptRegistry.document("self-check", it)) }
+    suspend fun run(embedder: EmbeddingGemmaService, expectedDimension: Int = 768): Result<Unit> = try {
+        val vectors = corpus.map {
+            currentCoroutineContext().ensureActive()
+            embedder.embed(EmbeddingPromptRegistry.document("self-check", it))
+        }
         require(vectors.all { EmbeddingIntegrity.validate(it, expectedDimension).valid }) { "self-check vector validation failed" }
         val repeat = embedder.embed(EmbeddingPromptRegistry.document("self-check", corpus.first()))
         require(EmbeddingIntegrity.validate(repeat, expectedDimension).valid)
         require(cosine(vectors.first(), repeat) > .98f) { "self-check is not deterministic" }
+        Result.success(Unit)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        Result.failure(failure)
+    } catch (missingRuntime: LinkageError) {
+        Result.failure(missingRuntime)
     }
 
     private fun cosine(a: FloatArray, b: FloatArray): Float {

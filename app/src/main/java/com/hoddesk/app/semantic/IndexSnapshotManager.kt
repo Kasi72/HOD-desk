@@ -9,6 +9,8 @@ import java.io.DataOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
 data class IndexSnapshot(
@@ -64,7 +66,7 @@ object IndexSnapshotManager {
                 chunks.forEach { writeChunk(out, it) }
                 out.flush()
             }
-            check(temp.renameTo(file)) { "Unable to atomically publish index snapshot" }
+            Files.move(temp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         } finally {
             if (temp.exists()) temp.delete()
         }
@@ -83,10 +85,11 @@ object IndexSnapshotManager {
                 input.readLong()
                 require(input.readUTF() == snapshot.checksum) { "Snapshot checksum mismatch" }
                 val storedVectorChecksum = input.readUTF()
-                val embeddingCount = input.readInt().coerceIn(0, 100_000)
+                val embeddingCount = input.readInt().also { require(it in 0..100_000) { "Invalid snapshot embedding count" } }
                 val embeddings = List(embeddingCount) { readEmbedding(input) }
-                val chunkCount = input.readInt().coerceIn(0, 1_000_000)
+                val chunkCount = input.readInt().also { require(it in 0..1_000_000) { "Invalid snapshot chunk count" } }
                 val chunks = List(chunkCount) { readChunk(input) }
+                require(input.read() == -1) { "Snapshot contains unexpected trailing data" }
                 Quad(model, prompt, embeddings, chunks, storedVectorChecksum)
             }
             require(model == snapshot.modelVersion && prompt == snapshot.promptVersion)
@@ -104,7 +107,7 @@ object IndexSnapshotManager {
         val target = File(context.filesDir, ACTIVE_FILE)
         val temp = File(context.filesDir, ".${ACTIVE_FILE}.tmp")
         temp.writeText(snapshot.id)
-        check(temp.renameTo(target)) { "Unable to publish active index pointer" }
+        Files.move(temp.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }
 
     fun active(context: Context): String? = File(context.filesDir, ACTIVE_FILE).takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotBlank() }
@@ -137,7 +140,20 @@ object IndexSnapshotManager {
         return SemanticEmbeddingEntity(sourceId, model, dimension, vector, modality, locator, indexedAt, fingerprint, promptVersion, chunkNumber)
     }
     private fun writeChunk(out: DataOutputStream, c: SourceChunkEntity) { out.writeLong(c.id); out.writeLong(c.sourceId); out.writeInt(c.ordinal); out.writeUTF(c.modality); out.writeUTF(c.text); out.writeUTF(c.citation); out.writeBoolean(c.page != null); c.page?.let(out::writeInt); out.writeBoolean(c.paragraphIndex != null); c.paragraphIndex?.let(out::writeInt); out.writeBoolean(c.messageIndex != null); c.messageIndex?.let(out::writeInt); out.writeBoolean(c.startMs != null); c.startMs?.let(out::writeLong); out.writeBoolean(c.endMs != null); c.endMs?.let(out::writeLong); out.writeUTF(c.modelVersion); out.writeInt(c.dimension); out.writeLong(c.indexedAt); out.writeUTF(c.sourceFingerprint); out.writeInt(c.promptVersion); out.writeInt(c.chunkNumber); writeBytes(out, c.vector) }
-    private fun readChunk(input: DataInputStream) = SourceChunkEntity(input.readLong(), input.readLong(), input.readInt(), input.readUTF(), input.readUTF(), input.readUTF(), if (input.readBoolean()) input.readInt() else null, if (input.readBoolean()) input.readInt() else null, if (input.readBoolean()) input.readInt() else null, if (input.readBoolean()) input.readLong() else null, if (input.readBoolean()) input.readLong() else null, input.readUTF(), input.readInt(), readBytes(input), input.readLong(), input.readUTF(), input.readInt(), input.readInt())
+    private fun readChunk(input: DataInputStream): SourceChunkEntity {
+        val id = input.readLong(); val sourceId = input.readLong(); val ordinal = input.readInt()
+        val modality = input.readUTF(); val text = input.readUTF(); val citation = input.readUTF()
+        val page = if (input.readBoolean()) input.readInt() else null
+        val paragraph = if (input.readBoolean()) input.readInt() else null
+        val message = if (input.readBoolean()) input.readInt() else null
+        val start = if (input.readBoolean()) input.readLong() else null
+        val end = if (input.readBoolean()) input.readLong() else null
+        val model = input.readUTF(); val dimension = input.readInt(); val indexedAt = input.readLong()
+        val fingerprint = input.readUTF(); val prompt = input.readInt(); val chunkNumber = input.readInt()
+        val vector = readBytes(input)
+        return SourceChunkEntity(id, sourceId, ordinal, modality, text, citation, page, paragraph, message,
+            start, end, model, dimension, vector, indexedAt, fingerprint, prompt, chunkNumber)
+    }
     private fun readMetadata(file: File): IndexSnapshot = DataInputStream(FileInputStream(file)).use { input -> require(input.readInt() == FORMAT_VERSION); val model = input.readUTF(); val prompt = input.readInt(); val created = input.readLong(); val checksum = input.readUTF(); val vectorChecksum = input.readUTF(); val ec = input.readInt(); repeat(ec) { skipEmbedding(input) }; val cc = input.readInt(); repeat(cc) { skipChunk(input) }; IndexSnapshot(file.nameWithoutExtension, model, prompt, ec, cc, checksum, created, vectorChecksum) }
     private fun skipEmbedding(input: DataInputStream) { input.readLong(); input.readUTF(); input.readInt(); input.readUTF(); if (input.readBoolean()) input.readUTF(); input.readLong(); input.readUTF(); input.readInt(); input.readInt(); input.skipBytes(input.readInt()) }
     private fun skipChunk(input: DataInputStream) { input.readLong(); input.readLong(); input.readInt(); input.readUTF(); input.readUTF(); input.readUTF(); if (input.readBoolean()) input.readInt(); if (input.readBoolean()) input.readInt(); if (input.readBoolean()) input.readInt(); if (input.readBoolean()) input.readLong(); if (input.readBoolean()) input.readLong(); input.readUTF(); input.readInt(); input.readLong(); input.readUTF(); input.readInt(); input.readInt(); input.skipBytes(input.readInt()) }

@@ -28,7 +28,8 @@ interface HodDeskDao {
     @Query("SELECT * FROM events WHERE id = :id LIMIT 1") suspend fun event(id: Long): EventEntity?
     @Query("SELECT * FROM events WHERE taskId = :taskId ORDER BY id") suspend fun eventsForTask(taskId: Long): List<EventEntity>
     @Query("SELECT * FROM tasks WHERE sourceId = :sourceId AND title = :title AND status != 'deleted' ORDER BY id LIMIT 1") suspend fun approvedTask(sourceId: Long, title: String): TaskEntity?
-    @Query("SELECT * FROM tasks WHERE dueAt IS NOT NULL AND status != 'deleted'") suspend fun tasksWithDueTimes(): List<TaskEntity>
+    @Query("SELECT * FROM tasks WHERE dueAt IS NOT NULL AND status NOT IN ('deleted', 'archived', 'completed')") suspend fun tasksWithDueTimes(): List<TaskEntity>
+    @Query("SELECT * FROM tasks WHERE sourceId IS NULL AND project = 'Secretary' AND title = :title AND status NOT IN ('deleted', 'archived', 'completed') ORDER BY id") suspend fun activeSecretaryTasks(title: String): List<TaskEntity>
     @Query("SELECT * FROM evidence WHERE taskId = :taskId ORDER BY capturedAt DESC") fun observeEvidence(taskId: Long): Flow<List<EvidenceEntity>>
     @Query("SELECT * FROM semantic_embeddings WHERE sourceId = :sourceId LIMIT 1") suspend fun semanticEmbedding(sourceId: Long): SemanticEmbeddingEntity?
     @Query("SELECT * FROM semantic_embeddings") suspend fun allSemanticEmbeddings(): List<SemanticEmbeddingEntity>
@@ -61,6 +62,14 @@ interface HodDeskDao {
         clearStagedEmbeddings()
         clearStagedChunks()
     }
+    @Transaction
+    suspend fun promoteStagedSemanticIndex(expectedSources: List<SourceEntity>) {
+        val live = sourcesOnce().filter(com.hoddesk.app.semantic.SourceIndexPolicy::searchable).associateBy { it.id }
+        check(live.keys == expectedSources.map { it.id }.toSet() && expectedSources.all {
+            live[it.id]?.let { current -> com.hoddesk.app.semantic.SourceFingerprint.of(current) == com.hoddesk.app.semantic.SourceFingerprint.of(it) } == true
+        }) { "Sources changed during index rebuild; the active index was preserved" }
+        promoteStagedSemanticIndex()
+    }
     @Query("DELETE FROM source_chunks WHERE sourceId = :sourceId") suspend fun deleteSourceChunks(sourceId: Long)
     @Transaction
     suspend fun replaceSourceIndex(embedding: SemanticEmbeddingEntity, chunks: List<SourceChunkEntity>) {
@@ -73,7 +82,14 @@ interface HodDeskDao {
     @Query("SELECT * FROM source_chunks WHERE sourceId = :sourceId ORDER BY ordinal") suspend fun sourceChunks(sourceId: Long): List<SourceChunkEntity>
     @Query("SELECT * FROM source_chunks WHERE modelVersion = :modelVersion") suspend fun allSourceChunks(modelVersion: String): List<SourceChunkEntity>
     @Query("DELETE FROM source_relations") suspend fun clearSourceRelations()
+    @Query("SELECT * FROM source_relations") suspend fun allSourceRelations(): List<SourceRelationEntity>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSourceRelations(relations: List<SourceRelationEntity>)
+    @Transaction
+    suspend fun replaceSourceRelations(relations: List<SourceRelationEntity>, audits: List<AuditEntryEntity>) {
+        clearSourceRelations()
+        if (relations.isNotEmpty()) insertSourceRelations(relations)
+        audits.forEach { insertAudit(it) }
+    }
     @Query("SELECT * FROM source_relations WHERE sourceId = :sourceId OR relatedSourceId = :sourceId ORDER BY score DESC") fun observeRelations(sourceId: Long): Flow<List<SourceRelationEntity>>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertActionPoints(points: List<ActionPointEntity>)
     @Update suspend fun updateActionPoint(point: ActionPointEntity)
@@ -91,6 +107,9 @@ interface HodDeskDao {
     @Query("DELETE FROM audit_entries WHERE createdAt < :before") suspend fun deleteAuditBefore(before: Long): Int
     @Query("SELECT * FROM audit_entries ORDER BY createdAt DESC LIMIT :limit") fun observeAllAudit(limit: Int): Flow<List<AuditEntryEntity>>
     @Query("SELECT * FROM audit_entries ORDER BY createdAt ASC") suspend fun allAudit(): List<AuditEntryEntity>
+    @Query("SELECT COUNT(*) FROM audit_entries WHERE entityType = :type AND entityId = :id AND action = :action") suspend fun auditCount(type: String, id: Long, action: String): Int
+    @Query("SELECT detail FROM audit_entries WHERE entityType = 'source' AND entityId = :sourceId AND action = 'extraction_refreshed' ORDER BY id DESC LIMIT 1") suspend fun extractionRevision(sourceId: Long): String?
+    @Query("DELETE FROM action_points WHERE id = :id") suspend fun deleteActionPoint(id: Long)
     @Insert suspend fun insertLearningCorrection(correction: LearningCorrectionEntity): Long
     @Query("SELECT * FROM learning_corrections WHERE actionPointId = :actionPointId ORDER BY createdAt DESC") suspend fun learningCorrections(actionPointId: Long): List<LearningCorrectionEntity>
     @Query("SELECT * FROM learning_corrections ORDER BY createdAt DESC") suspend fun allLearningCorrections(): List<LearningCorrectionEntity>
@@ -142,15 +161,141 @@ interface HodDeskDao {
         val normalized = action.trim()
         require(normalized.isNotBlank()) { "Approved action cannot be blank" }
         val source = requireNotNull(source(sourceId)) { "Source $sourceId does not exist" }
-        approvedTask(sourceId, normalized)?.let { return it.id }
+        require(source.sensitivity !in setOf("T3", "T4", "clinical")) { "Clinical content must be reviewed in the Clinical Vault" }
+        val candidate = requireNotNull(actionPointBySourceAndAction(sourceId, normalized)) { "No persisted candidate matches this action; edit and confirm a manual action first" }
+        require(dueAt == null || candidate.ambiguity.isNullOrBlank()) { "Resolve the candidate's source warnings before scheduling" }
+        approvedTask(sourceId, normalized)?.let {
+            setActionPointStatus(sourceId, normalized, "approved")
+            refreshSourceReviewState(sourceId)
+            syncTaskCommitmentAtomic(it.id)
+            return it.id
+        }
         val taskId = insertTask(TaskEntity(sourceId = sourceId, title = normalized, project = project, dueAt = dueAt, assignee = assignee?.takeIf { it.isNotBlank() }))
         if (dueAt != null) insertEvent(EventEntity(taskId = taskId, title = normalized, startsAt = dueAt, endsAt = dueAt + 60 * 60 * 1000L, confirmed = true))
         setActionPointStatus(sourceId, normalized, "approved")
-        updateSource(source.copy(reviewed = true))
+        refreshSourceReviewState(sourceId)
+        syncTaskCommitmentAtomic(taskId)
+        if (!assignee.isNullOrBlank()) actionPointBySourceAndAction(sourceId, normalized)?.let {
+            insertLearningCorrection(LearningCorrectionEntity(actionPointId = it.id, field = "delegation", before = null, after = assignee))
+        }
         insertAudit(AuditEntryEntity(entityType = "source", entityId = sourceId, action = "action_approved", detail = normalized))
         insertAudit(AuditEntryEntity(entityType = "task", entityId = taskId, action = "created_from_action", detail = "source=$sourceId"))
         if (!assignee.isNullOrBlank()) insertAudit(AuditEntryEntity(entityType = "task", entityId = taskId, action = "delegated", detail = assignee))
         return taskId
+    }
+
+    /** Source completion follows all persisted candidates, never the first tap. */
+    @Transaction
+    suspend fun refreshSourceReviewState(sourceId: Long) {
+        val current = source(sourceId) ?: return
+        val remaining = actionPoints(sourceId).any { it.status !in setOf("approved", "rejected", "dismissed") }
+        updateSource(current.copy(reviewed = !remaining))
+    }
+
+    @Transaction
+    suspend fun setActionPointStatusAtomic(sourceId: Long, action: String, status: String) {
+        require(status in setOf("needs_review", "needs_confirmation", "needs_clarification", "approved", "rejected", "dismissed")) { "Invalid action status" }
+        val point = actionPointBySourceAndAction(sourceId, action) ?: return
+        if (point.status == status) return
+        setActionPointStatus(sourceId, action, status)
+        if (status in setOf("rejected", "approved")) insertLearningCorrection(LearningCorrectionEntity(actionPointId = point.id, field = "decision", before = point.status, after = status))
+        refreshSourceReviewState(sourceId)
+        insertAudit(AuditEntryEntity(entityType = "source", entityId = sourceId, action = "action_status_$status", detail = action))
+    }
+
+    /** An edit, its learning record and approval must commit or roll back together. */
+    @Transaction
+    suspend fun approveEditedActionAtomic(point: ActionPointEntity?, sourceId: Long, project: String, action: String, dueAt: Long?, assignee: String?): Long {
+        val normalizedAction = action.trim()
+        require(normalizedAction.isNotBlank()) { "Approved action cannot be blank" }
+        if (point != null && point.id != 0L) {
+            require(point.sourceId == sourceId) { "Edited candidate belongs to a different source" }
+            val previous = requireNotNull(actionPoint(point.id)) { "Action candidate no longer exists" }
+            require(previous.sourceId == sourceId) { "Edited candidate belongs to a different source" }
+            if (previous.status == "approved") {
+                return requireNotNull(approvedTask(sourceId, previous.action)) { "Approved candidate has no task" }.id
+            }
+            require(previous.status !in setOf("rejected", "dismissed")) { "Action candidate has already been dismissed" }
+            updateActionPointAtomic(point.copy(action = normalizedAction))
+        } else {
+            approvedTask(sourceId, normalizedAction)?.let { return it.id }
+            val draft = point?.copy(sourceId = sourceId, action = normalizedAction) ?: ActionPointEntity(sourceId = sourceId, action = normalizedAction, evidence = requireNotNull(source(sourceId)).body, confidence = 1f)
+            updateActionPointAtomic(draft)
+        }
+        return approveActionAtomic(sourceId, normalizedAction, project, dueAt, assignee)
+    }
+
+    @Transaction
+    suspend fun updateActionPointAtomic(point: ActionPointEntity) {
+        require(point.action.isNotBlank()) { "Action cannot be blank" }
+        require(point.confidence.isFinite() && point.confidence in 0f..1f) { "Action confidence is invalid" }
+        requireNotNull(source(point.sourceId)) { "Action source no longer exists" }
+        val normalized = point.copy(
+            action = point.action.trim(),
+            dateText = point.dateText?.trim()?.takeIf(String::isNotBlank),
+            timeText = point.timeText?.trim()?.takeIf(String::isNotBlank),
+            locationText = point.locationText?.trim()?.takeIf(String::isNotBlank),
+            peopleText = point.peopleText?.trim()?.takeIf(String::isNotBlank),
+        )
+        if (normalized.id == 0L) {
+            require(normalized.status in setOf("needs_review", "needs_confirmation", "needs_clarification")) { "A manual draft must be reviewed before approval" }
+            require(actionPointBySourceAndAction(normalized.sourceId, normalized.action) == null) { "An action with this wording already exists. Open that action to edit it." }
+            insertActionPoints(listOf(normalized))
+            refreshSourceReviewState(normalized.sourceId)
+            insertAudit(AuditEntryEntity(entityType = "source", entityId = normalized.sourceId, action = "manual_action_drafted", detail = normalized.action))
+            return
+        }
+        val previous = requireNotNull(actionPoint(normalized.id)) { "Action candidate no longer exists" }
+        require(previous.sourceId == normalized.sourceId) { "Action candidate belongs to a different source" }
+        require(previous.status !in setOf("approved", "rejected", "dismissed")) { "Action candidate has already been handled" }
+        updateActionPoint(normalized)
+        listOf(
+            "action" to (previous.action to normalized.action),
+            "date" to (previous.dateText to normalized.dateText),
+            "time" to (previous.timeText to normalized.timeText),
+            "location" to (previous.locationText to normalized.locationText),
+            "people" to (previous.peopleText to normalized.peopleText),
+        ).filter { it.second.first != it.second.second }.forEach { (field, values) ->
+            insertLearningCorrection(LearningCorrectionEntity(actionPointId = normalized.id, field = field, before = values.first, after = values.second))
+        }
+        insertAudit(AuditEntryEntity(entityType = "action_point", entityId = normalized.id, action = "edited", detail = normalized.action))
+    }
+
+    /** Refresh generated, unhandled candidates after an extractor fix, preserving all user decisions/edits. */
+    @Transaction
+    suspend fun refreshGeneratedCandidates(sourceId: Long, expectedBody: String, revision: String, proposed: List<ActionPointEntity>) {
+        val live = source(sourceId) ?: return
+        if (live.body != expectedBody || live.reviewed || extractionRevision(sourceId) == revision) return
+        if (auditCount("source", sourceId, "manual_action_drafted") > 0) return
+        val existing = actionPoints(sourceId)
+        val pending = existing.filter { it.status in setOf("needs_review", "needs_confirmation") }
+        // A whole-source refresh must not erase corrected fields or reverse a reviewer decision.
+        if (existing.any { it.status !in setOf("needs_review", "needs_confirmation") } ||
+            pending.any { learningCorrections(it.id).isNotEmpty() || auditCount("action_point", it.id, "edited") > 0 }) return
+        pending.forEach { deleteActionPoint(it.id) }
+        insertActionPoints(proposed)
+        insertAudit(AuditEntryEntity(entityType = "source", entityId = sourceId, action = "extraction_refreshed", detail = revision))
+    }
+
+    /** Task ownership and commitment are part of the same approval transaction. */
+    @Transaction
+    suspend fun syncTaskCommitmentAtomic(taskId: Long) {
+        val current = task(taskId) ?: return
+        val existing = commitmentForTask(taskId)
+        insertCommitment(CommitmentEntity(
+            id = existing?.id ?: 0,
+            sourceId = current.sourceId,
+            taskId = current.id,
+            direction = if (current.assignee.isNullOrBlank()) "OWED_BY_ME" else "OWED_TO_ME",
+            owner = current.assignee?.takeIf { it.isNotBlank() } ?: "me",
+            counterparty = if (current.assignee.isNullOrBlank()) null else "me",
+            summary = current.title,
+            dueAt = current.dueAt,
+            status = if (current.status in setOf("completed", "deleted", "archived")) current.status else "open",
+            evidence = "Task #${current.id} · ${current.project}",
+            confidence = 1f,
+            createdAt = existing?.createdAt ?: current.createdAt,
+        ))
     }
 
     /**
@@ -164,13 +309,171 @@ interface HodDeskDao {
         val source = requireNotNull(source(sourceId)) { "Source $sourceId does not exist" }
         val title = source.title.trim()
         require(title.isNotBlank()) { "Approved source cannot have a blank title" }
-        approvedTask(sourceId, title)?.let { return it.id }
+        require(source.sensitivity !in setOf("T3", "T4", "clinical")) { "Clinical content must be reviewed in the Clinical Vault" }
+        approvedTask(sourceId, title)?.let { syncTaskCommitmentAtomic(it.id); return it.id }
         val taskId = insertTask(TaskEntity(sourceId = sourceId, title = title, project = project, dueAt = dueAt))
         if (dueAt != null) insertEvent(EventEntity(taskId = taskId, title = title, startsAt = dueAt, endsAt = dueAt + 60 * 60 * 1000L, confirmed = true))
         updateSource(source.copy(reviewed = true))
+        syncTaskCommitmentAtomic(taskId)
         insertAudit(AuditEntryEntity(entityType = "source", entityId = sourceId, action = "source_approved", detail = title))
         insertAudit(AuditEntryEntity(entityType = "task", entityId = taskId, action = "created_from_source", detail = "source=$sourceId"))
         return taskId
+    }
+
+    /** Re-read conflicts inside the write transaction; proposals may be stale. */
+    @Transaction
+    suspend fun confirmLocalScheduleAtomic(requested: EventEntity): Long {
+        require(requested.endsAt > requested.startsAt) { "Event must end after it starts" }
+        val owned = requested.taskId?.let { id ->
+            val current = requireNotNull(task(id)) { "Task no longer exists" }
+            require(current.status !in setOf("completed", "deleted", "archived")) { "Task is no longer active" }
+            current.sourceId?.let { sourceId ->
+                require(source(sourceId)?.sensitivity !in setOf("T3", "T4", "clinical")) { "Clinical work cannot enter the ordinary calendar" }
+            }
+            eventsForTask(id)
+        }.orEmpty()
+        owned.firstOrNull { it.startsAt == requested.startsAt && it.endsAt == requested.endsAt && it.confirmed }?.let { return it.id }
+        require(owned.none { it.calendarEventId != null }) { "Use the confirmed calendar reschedule flow for an exported event" }
+        val ownedIds = owned.map { it.id }.toSet()
+        require(overlappingEvents(requested.startsAt, requested.endsAt).none { it.id !in ownedIds }) { "A calendar conflict appeared before confirmation" }
+        val eventId = insertEvent(requested.copy(id = owned.firstOrNull()?.id ?: 0L, confirmed = true))
+        owned.filter { it.id != eventId }.forEach { deleteEvent(it.id) }
+        insertAudit(AuditEntryEntity(entityType = "event", entityId = eventId, action = "scheduled_confirmed", detail = requested.title))
+        return eventId
+    }
+
+    @Transaction
+    suspend fun beginCalendarWriteAtomic(requested: EventEntity): Long {
+        require(requested.endsAt > requested.startsAt) { "Event must end after it starts" }
+        val owned = requested.taskId?.let { id ->
+            val current = requireNotNull(task(id)) { "Task no longer exists" }
+            require(current.status !in setOf("completed", "deleted", "archived")) { "Task is no longer active" }
+            current.sourceId?.let { sourceId ->
+                require(source(sourceId)?.sensitivity !in setOf("T3", "T4", "clinical")) { "Clinical work cannot enter the ordinary calendar" }
+            }
+            eventsForTask(id)
+        }.orEmpty()
+        owned.firstOrNull { !it.confirmed && it.startsAt == requested.startsAt && it.endsAt == requested.endsAt }?.let { return it.id }
+        require(owned.none { it.calendarEventId != null && it.startsAt == requested.startsAt && it.endsAt == requested.endsAt }) { "This task is already exported to calendar" }
+        val replaceableIds = owned.filter { it.calendarEventId == null && it.confirmed }.map { it.id }.toSet()
+        require(overlappingEvents(requested.startsAt, requested.endsAt).none { it.id !in replaceableIds }) { "A calendar conflict appeared before confirmation" }
+        return insertEvent(requested.copy(id = 0, confirmed = false, calendarEventId = null))
+    }
+
+    @Transaction
+    suspend fun finishCalendarWriteAtomic(localId: Long, providerId: Long) {
+        require(providerId > 0) { "Provider returned an invalid calendar event id" }
+        val pending = requireNotNull(event(localId)) { "Pending calendar event no longer exists" }
+        if (pending.confirmed && pending.calendarEventId == providerId) return
+        updateEvent(pending.copy(confirmed = true, calendarEventId = providerId))
+        // Replace due-only local representations while retaining real provider links.
+        pending.taskId?.let { id -> eventsForTask(id).filter { it.id != localId && it.calendarEventId == null && it.confirmed }.forEach { deleteEvent(it.id) } }
+        insertAudit(AuditEntryEntity(entityType = "event", entityId = localId, action = "scheduled_confirmed", detail = pending.title))
+    }
+
+    @Transaction
+    suspend fun setTaskDueAtomic(taskId: Long, dueAt: Long?, providerAlreadyUpdated: Boolean = false) {
+        val current = requireNotNull(task(taskId)) { "Task no longer exists" }
+        val existingEvents = eventsForTask(taskId)
+        if (dueAt != current.dueAt) require(providerAlreadyUpdated || existingEvents.none { it.calendarEventId != null }) { "Confirm the external calendar change before changing this task's due time" }
+        updateTask(current.copy(dueAt = dueAt))
+        if (dueAt == null) {
+            existingEvents.filter { providerAlreadyUpdated || it.calendarEventId == null }.forEach { deleteEvent(it.id) }
+        } else if (existingEvents.isEmpty() && current.status !in setOf("completed", "deleted", "archived")) {
+            insertEvent(EventEntity(taskId = taskId, title = current.title, startsAt = dueAt, endsAt = dueAt + 60 * 60_000L, confirmed = true))
+        } else {
+            existingEvents.filter { it.confirmed }.forEach { event ->
+                updateEvent(event.copy(startsAt = dueAt, endsAt = dueAt + (event.endsAt - event.startsAt).coerceAtLeast(60_000L)))
+            }
+        }
+        syncTaskCommitmentAtomic(taskId)
+        insertAudit(AuditEntryEntity(entityType = "task", entityId = taskId, action = if (dueAt == null) "due_cleared" else "rescheduled", detail = dueAt?.toString()))
+    }
+
+    @Transaction
+    suspend fun setTaskDoneAtomic(taskId: Long, done: Boolean) {
+        requireNotNull(task(taskId)) { "Task no longer exists" }
+        setTaskStatus(taskId, if (done) "completed" else "open", if (done) System.currentTimeMillis() else null)
+        syncTaskCommitmentAtomic(taskId)
+        insertAudit(AuditEntryEntity(entityType = "task", entityId = taskId, action = if (done) "completed" else "reopened"))
+    }
+
+    @Transaction
+    suspend fun setAssigneeAtomic(taskId: Long, assignee: String?) {
+        val current = requireNotNull(task(taskId)) { "Task no longer exists" }
+        val normalized = assignee?.trim()?.takeIf { it.isNotBlank() }
+        updateTask(current.copy(assignee = normalized))
+        syncTaskCommitmentAtomic(taskId)
+        insertAudit(AuditEntryEntity(entityType = "task", entityId = taskId, action = if (normalized == null) "taken_back" else "delegated", detail = normalized))
+    }
+
+    @Transaction
+    suspend fun createSecretaryTaskAtomic(title: String, detail: String): Long {
+        val wording = title.trim()
+        require(wording.isNotBlank()) { "Task wording is missing" }
+        require(com.hoddesk.app.privacy.SensitivityClassifier.classify(wording, "").tier.code !in setOf("T3", "T4", "clinical")) { "Clinical work belongs in the Clinical Vault" }
+        activeSecretaryTasks(wording).singleOrNull()?.let { return it.id }
+        require(activeSecretaryTasks(wording).isEmpty()) { "Several matching secretary tasks already exist" }
+        val id = insertTask(TaskEntity(title = wording, project = "Secretary"))
+        syncTaskCommitmentAtomic(id)
+        insertAudit(AuditEntryEntity(entityType = "secretary", entityId = id, action = "secretary_task_created", detail = detail))
+        return id
+    }
+
+    @Transaction
+    suspend fun delegateSecretaryTaskAtomic(expected: TaskEntity, assignee: String, detail: String) {
+        val current = requireNotNull(task(expected.id)) { "Task no longer exists" }
+        require(current == expected) { "Task changed after review. Review the request again." }
+        require(current.status !in setOf("completed", "deleted", "archived")) { "Task is no longer active" }
+        current.sourceId?.let { require(source(it)?.sensitivity !in setOf("T3", "T4", "clinical") && source(it) != null) { "Task source is unavailable or clinical" } }
+        require(assignee.isNotBlank()) { "A configured team member is required" }
+        setAssigneeAtomic(current.id, assignee)
+        insertAudit(AuditEntryEntity(entityType = "secretary", entityId = current.id, action = "secretary_task_delegated", detail = detail))
+    }
+
+    @Transaction
+    suspend fun moveSecretaryEventAtomic(expected: EventEntity, startsAt: Long, detail: String): Long {
+        val current = requireNotNull(event(expected.id)) { "Meeting no longer exists" }
+        require(current == expected) { "Meeting changed after review. Review the request again." }
+        require(current.confirmed) { "Calendar write is still pending; wait before changing this meeting" }
+        require(current.calendarEventId == null) { "This meeting is exported. Use its Calendar reschedule confirmation to update the phone calendar first." }
+        val related = current.taskId?.let { eventsForTask(it) }.orEmpty()
+        require(related.size <= 1 && related.none { it.calendarEventId != null }) { "This task has multiple or exported meetings. Use Calendar to review them individually." }
+        val ownedTask = current.taskId?.let { requireNotNull(task(it)) { "Task no longer exists" } }
+        ownedTask?.let { task ->
+            require(task.status !in setOf("completed", "deleted", "archived")) { "Task is no longer active" }
+            task.sourceId?.let { require(source(it)?.sensitivity !in setOf("T3", "T4", "clinical") && source(it) != null) { "Task source is unavailable or clinical" } }
+        }
+        val duration = current.endsAt - current.startsAt
+        require(duration > 0) { "Meeting duration is invalid" }
+        val endsAt = Math.addExact(startsAt, duration)
+        require(overlappingEvents(startsAt, endsAt).none { it.id != current.id }) { "The proposed time conflicts with another calendar event" }
+        updateEvent(current.copy(startsAt = startsAt, endsAt = endsAt))
+        ownedTask?.let { updateTask(it.copy(dueAt = startsAt)); syncTaskCommitmentAtomic(it.id) }
+        insertAudit(AuditEntryEntity(entityType = "secretary", entityId = current.id, action = "secretary_schedule_changed", detail = detail))
+        return current.id
+    }
+
+    @Transaction
+    suspend fun scheduleSecretaryTaskAtomic(expected: TaskEntity, startsAt: Long, detail: String): Long {
+        val current = requireNotNull(task(expected.id)) { "Task no longer exists" }
+        require(current == expected) { "Task changed after review. Review the request again." }
+        require(current.status !in setOf("completed", "deleted", "archived")) { "Task is no longer active" }
+        current.sourceId?.let { require(source(it)?.sensitivity !in setOf("T3", "T4", "clinical") && source(it) != null) { "Task source is unavailable or clinical" } }
+        val owned = eventsForTask(current.id)
+        require(owned.size <= 1 && owned.none { it.calendarEventId != null || !it.confirmed }) { "This task has multiple, exported or pending meetings. Use Calendar to review them individually." }
+        val previous = owned.singleOrNull()
+        val duration = previous?.let { it.endsAt - it.startsAt } ?: 60 * 60_000L
+        require(duration > 0) { "Meeting duration is invalid" }
+        val endsAt = Math.addExact(startsAt, duration)
+        require(overlappingEvents(startsAt, endsAt).none { it.id != previous?.id }) { "The proposed time conflicts with another calendar event" }
+        val eventId = if (previous == null) insertEvent(EventEntity(taskId = current.id, title = current.title, startsAt = startsAt, endsAt = endsAt, confirmed = true)) else {
+            updateEvent(previous.copy(startsAt = startsAt, endsAt = endsAt)); previous.id
+        }
+        updateTask(current.copy(dueAt = startsAt))
+        syncTaskCommitmentAtomic(current.id)
+        insertAudit(AuditEntryEntity(entityType = "secretary", entityId = eventId, action = "secretary_task_scheduled", detail = detail))
+        return eventId
     }
 
     @Transaction
@@ -181,6 +484,7 @@ interface HodDeskDao {
         deleteCommitmentsForSource(sourceId)
         deleteSemanticEmbedding(sourceId)
         deleteSourceChunksForSource(sourceId)
+        clearStagedSource(sourceId)
         deleteSourceRelationsForSource(sourceId)
         deleteActionPointsForSource(sourceId)
         deleteReasoningRunsForSource(sourceId)
@@ -207,6 +511,7 @@ interface HodDeskDao {
     @Transaction
     suspend fun deleteAllWorkData() {
         deleteAllEvidence(); deleteAllEvents(); deleteAllTasks(); deleteAllCommitments(); deleteAllEmbeddings(); deleteAllChunks()
+        clearStagedEmbeddings(); clearStagedChunks(); deleteAllLearningCorrections()
         clearSourceRelations(); deleteAllActionPoints(); deleteAllReasoningRuns(); deleteAllSources()
     }
 

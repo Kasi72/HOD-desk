@@ -1,10 +1,5 @@
 package com.hoddesk.app.reasoning
 
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeFormatterBuilder
-import java.time.format.DateTimeParseException
-import java.time.format.ResolverStyle
 import java.util.Locale
 
 /** Field-level evidence gate. A citation can support an action only when its structured fields are also present. */
@@ -28,33 +23,39 @@ object FieldGrounding {
             return value
         }
         val groundedPeople = people.mapNotNull { supported("person", it) }
-        val groundedDate = supported("date", date)?.takeIf { value ->
-            deterministicDate(value, evidence).also { if (!it) issues += "date requires deterministic re-check: '$value'" }
+        val groundedDate = date?.takeUnless(String::isBlank)?.takeIf { value ->
+            deterministicDate(value, evidence).also { if (!it) issues += "date requires confirmation: '$value' did not pass the deterministic re-check" }
         }
-        val groundedTime = supported("time", time)?.takeIf { value ->
-            deterministicTime(value, evidence).also { if (!it) issues += "time requires deterministic re-check: '$value'" }
+        val groundedTime = time?.takeUnless(String::isBlank)?.takeIf { value ->
+            deterministicTime(value, evidence).also { if (!it) issues += "time requires confirmation: '$value' did not pass the deterministic re-check" }
         }
         val groundedLocation = supported("location", location)?.takeIf { value ->
             deterministicLocation(value, evidence).also { if (!it) issues += "location requires deterministic re-check: '$value'" }
         }
-        val weekday = Regex("\\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\b", RegexOption.IGNORE_CASE).find(evidence)?.groupValues?.get(1)
-        val parsedDate = groundedDate?.let(::parseDate)
-        if (weekday != null && parsedDate != null && weekday.lowercase() != parsedDate.dayOfWeek.name.lowercase().replaceFirstChar { it.titlecase() }) {
-            val message = "Weekday/date conflict: $weekday does not match $groundedDate"
-            issues += message
-            conflicts += message
-        }
-        val finalDate = if (conflicts.any { it.startsWith("Weekday/date conflict") }) null else groundedDate
-        return Result(finalDate, groundedTime, groundedLocation, groundedPeople, issues.distinct(), issues.isEmpty(), conflicts.distinct())
+        conflicts += TemporalEvidence.weekdayConflicts(evidence, groundedDate)
+        if (groundedDate != null && TemporalEvidence.uniqueDates(evidence).size > 1)
+            conflicts += "Date conflict: multiple distinct dates in the cited evidence require confirmation"
+        if (groundedTime != null && TemporalEvidence.hasTimeConflict(evidence))
+            conflicts += "Time conflict: multiple clock values in the cited evidence require confirmation"
+        conflicts += ambiguities.filter { it.contains("conflict", ignoreCase = true) }
+        issues += conflicts
+        val finalDate = if (conflicts.any { it.startsWith("Weekday/date conflict", true) || it.startsWith("Date conflict", true) }) null else groundedDate
+        val finalTime = if (conflicts.any { it.startsWith("Time conflict", true) }) null else groundedTime
+        return Result(finalDate, finalTime, groundedLocation, groundedPeople, issues.distinct(), issues.isEmpty(), conflicts.distinct())
     }
 
     /** Prevents a model from attaching a plausible-looking action to an unrelated quote. */
     fun supportsAction(evidence: String, action: String): Boolean {
-        val expected = tokens(normalize(action)).filter { it.length >= 2 }
+        val expected = tokens(normalize(action)).filter { it.length >= 2 && it !in actionStopWords }
         if (expected.isEmpty()) return false
         val actual = tokens(normalize(evidence)).toSet()
+        val requestedVerbs = actionVerbs.findAll(action).map { it.value.lowercase(Locale.ROOT) }.toSet()
+        val evidenceVerbs = actionVerbs.findAll(evidence).map { it.value.lowercase(Locale.ROOT) }.toSet()
+        // Matching “DME meeting” cannot support “cancel the DME meeting” or
+        // turn an informational meeting announcement into attendance.
+        if (requestedVerbs.isEmpty() || !evidenceVerbs.containsAll(requestedVerbs)) return false
         val overlap = expected.count { it in actual }
-        return overlap >= if (expected.size <= 2) expected.size else 2
+        return overlap >= kotlin.math.ceil(expected.size * .6).toInt()
     }
 
     fun supportsField(evidence: String, value: String?): Boolean = !value.isNullOrBlank() && containsPhrase(evidence, value)
@@ -63,7 +64,7 @@ object FieldGrounding {
         val normalizedEvidence = normalize(evidence)
         val normalizedValue = normalize(value)
         if (normalizedValue.isBlank()) return false
-        if (normalizedEvidence.contains(normalizedValue)) return true
+        if (Regex("(?<![\\p{L}\\p{N}])${Regex.escape(normalizedValue)}(?![\\p{L}\\p{N}])").containsMatchIn(normalizedEvidence)) return true
         // Permit punctuation differences such as "2 p.m." versus "2 PM"
         // while preserving phrase order and adjacency.
         val evidenceTokens = tokens(normalizedEvidence)
@@ -72,7 +73,7 @@ object FieldGrounding {
             .any { it == valueTokens }
     }
 
-    private fun normalize(text: String): String = text.lowercase()
+    private fun normalize(text: String): String = text.lowercase(Locale.ROOT)
         .replace(Regex("[\\u00A0\\t\\r\\n]+"), " ")
         .replace(Regex("[,;:()\\[\\]{}]+"), " ")
         .replace(Regex("\\s+"), " ")
@@ -83,28 +84,29 @@ object FieldGrounding {
         .map { it.value }
         .toList()
 
-    private val timePattern = Regex("\\b\\d{1,2}(?::\\d{2})?\\s*(?:a\\.?m\\.?|p\\.?m\\.?)\\b", RegexOption.IGNORE_CASE)
-    private val datePattern = Regex("\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{4}\\b|\\b\\d{1,2}[./-]\\d{1,2}(?:[./-]\\d{2,4})?\\b", RegexOption.IGNORE_CASE)
-    private val locationPattern = Regex("(?:\\bat\\b|\\bin\\b|\\bvenue\\b|\\blocation\\b|@|இல்|இடம்)\\s+([\\p{L}\\p{N}][\\p{L}\\p{N} .'-]{1,80})", RegexOption.IGNORE_CASE)
+    private val actionStopWords = setOf("the", "a", "an", "to", "of", "for", "with", "on", "in", "at", "by", "and", "is", "are", "be", "please", "kindly", "listed", "scheduled", "following")
+    private val actionVerbs = Regex("(?i)\\b(?:prepare|submit|send|share|review|approve|forward|attend|join|conduct|organize|organise|complete|verify|constitute|nominate|depute|report|schedule|meet|discuss|ensure|arrange|collect|participate|present|circulate|issue|obtain|coordinate|inform|notify|compile|file|sign|visit|instruct|direct|delegate|follow[- ]?up|cancel|postpone|reschedule|move|delete|create|update)\\b|செய்ய|செல்ல|கலந்து|தயார்|அனுப்ப|சமர்ப்பிக்க|பங்கேற்க|தெரிவிக்க|அறிக்கை")
+    private val locationPattern = Regex("(?:\\b(?i:at|in|venue|location)\\b|@|இல்|இடம்)\\s*:?[ ]*([\\p{L}\\p{N}][\\p{L}\\p{N} .'-]{1,80})")
 
-    private fun deterministicDate(value: String, evidence: String): Boolean = datePattern.findAll(evidence).any { containsPhrase(it.value, value) } && parseDate(value) != null
-    private fun deterministicTime(value: String, evidence: String): Boolean = timePattern.findAll(evidence).any { containsPhrase(it.value, value) }
+    private fun deterministicDate(value: String, evidence: String): Boolean {
+        val parsed = TemporalEvidence.parseDate(value) ?: return false
+        return TemporalEvidence.dates(evidence).any { it.value == parsed }
+    }
+    private fun deterministicTime(value: String, evidence: String): Boolean {
+        val parsed = TemporalEvidence.parseTime(value) ?: return false
+        return TemporalEvidence.times(evidence).any { it.start == parsed.start && it.end == parsed.end }
+    }
     private fun deterministicLocation(value: String, evidence: String): Boolean {
         // Virtual venues are locations too, but do not have an "at/in" prefix.
         // Accept only the explicit platform phrase present in the cited quote.
         val online = Regex("(?i)\\b(Google Meet|Zoom|Microsoft Teams|video call|online meeting)\\b")
         if (online.findAll(evidence).any { containsPhrase(it.groupValues[1], value) }) return true
         return locationPattern.findAll(evidence).any {
-            containsPhrase(it.groupValues[1].trim().trimEnd('.', ',', ';'), value)
-        }
-    }
-    private fun parseDate(value: String): LocalDate? {
-        val clean = value.lowercase(Locale.ROOT).replace(Regex("(st|nd|rd|th)\\b"), "").trim()
-        val month = DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("d MMMM uuuu").toFormatter(Locale.ENGLISH).withResolverStyle(ResolverStyle.STRICT)
-        return runCatching { LocalDate.parse(clean, month) }.getOrElse {
-            val parts = Regex("(\\d{1,2})[./-](\\d{1,2})(?:[./-](\\d{2,4}))?").find(clean) ?: return null
-            val year = parts.groupValues[3].ifBlank { "2026" }.let { if (it.length == 2) "20$it" else it }.toInt()
-            runCatching { LocalDate.of(year, parts.groupValues[2].toInt(), parts.groupValues[1].toInt()) }.getOrNull()
+            val phrase = it.groupValues[1].trim().trimEnd('.', ',', ';')
+            val looksLikeVenue = value.firstOrNull()?.isUpperCase() == true ||
+                Regex("(?i)\\b(?:room|hall|office|college|hospital|collectorate|campus|centre|center|auditorium)\\b|அறை|மருத்துவமனை").containsMatchIn(value) ||
+                it.value.startsWith("venue", true) || it.value.startsWith("location", true)
+            looksLikeVenue && containsPhrase(phrase, value)
         }
     }
 }

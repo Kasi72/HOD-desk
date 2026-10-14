@@ -13,6 +13,9 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.CalendarContract
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -179,13 +182,20 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val viewModel: HodDeskViewModel = viewModel(factory = HodDeskViewModelFactory(repository))
     val embeddingRuntime = remember { EmbeddingGemmaLiteRtRuntime(context) }
     val instructionModelStore = remember { InstructionModelStore(context, BuildConfig.INSTRUCTION_MODEL_URL, BuildConfig.INSTRUCTION_MODEL_SHA256.ifBlank { null }) }
-    var installedInstructionModel by remember { mutableStateOf(instructionModelStore.installedPath()) }
+    var installedInstructionModel by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(instructionModelStore) {
+        installedInstructionModel = withContext(Dispatchers.IO) { instructionModelStore.installedPath() }
+    }
     val semanticIndexer = remember { SourceSemanticIndexer(dao, embeddingRuntime) }
     val audioRuntime = remember { OfflineAudioTranscriptionRuntime(context) }
+    var verifiedTamilSpeechReady by remember { mutableStateOf(false) }
     DisposableEffect(Unit) { onDispose { embeddingRuntime.close() } }
 
     val allSources by viewModel.sources.collectAsState()
     val allTasks by viewModel.tasks.collectAsState()
+    LaunchedEffect(allSources) {
+        viewModel.refreshGeneratedCandidates(allSources).join()
+    }
     val auditLog by viewModel.auditLog.collectAsState()
     val learningCorrectionCount by remember { dao.observeLearningCorrectionCount() }.collectAsState(0)
     val commitments by remember { dao.observeCommitments() }.collectAsState(emptyList())
@@ -229,6 +239,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     var showCapture by remember { mutableStateOf(false) }
     var showNote by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(viewModel) { viewModel.operationErrors.collect { status = it } }
     // UI actions launch database/provider/model work from this scope.  A single
     // bad URI, revoked permission or provider failure must be reported in the
     // UI rather than escaping the composition and terminating the process.
@@ -253,6 +264,10 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val calendarEvents by remember(dayStart) { dao.observeEvents(dayStart, dayEnd) }.collectAsState(emptyList())
     val todayStart = LocalDate.now().atStartOfDay(zone).toInstant().toEpochMilli()
     val todayEvents by remember(todayStart) { dao.observeEvents(todayStart, todayStart + 86_400_000L) }.collectAsState(emptyList())
+    val secretaryWindowStart = remember { System.currentTimeMillis() - 7L * 86_400_000L }
+    val secretaryEvents by remember(secretaryWindowStart) {
+        dao.observeEvents(secretaryWindowStart, secretaryWindowStart + 372L * 86_400_000L)
+    }.collectAsState(emptyList())
     var proposals by remember { mutableStateOf<List<ProposedBlock>>(emptyList()) }
     var planningWarning by remember { mutableStateOf<String?>(null) }
     var openEvent by remember { mutableStateOf<EventEntity?>(null) }
@@ -280,16 +295,17 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
             searchable.filter { source -> terms.any { source.title.lowercase().contains(it) || source.body.lowercase().contains(it) } }.take(5)
         }
     }
-    LaunchedEffect(secretaryTranscript, calendarEvents, allTasks, settingsVersion) {
+    LaunchedEffect(secretaryTranscript, secretaryEvents, allTasks, settingsVersion) {
         val intent = com.hoddesk.app.secretary.VoiceSecretary.parse(secretaryTranscript)
         secretaryProposalDiff = if (!intent.requiresConfirmation) null else {
-            val target = intent.parameters["target"].orEmpty().lowercase()
-            val tokens = target.split(Regex("\\s+")).filter { it.length >= 3 }
-            fun score(text: String) = tokens.count { text.lowercase().contains(it) }
-            val matchedEvent = calendarEvents.map { it to score("${it.title} ${it.location.orEmpty()}") }
-                .maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
-            val matchedTask = allTasks.map { it to score("${it.title} ${it.project}") }
-                .maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
+            val activeTasks = allTasks.filter { it.status !in setOf("completed", "deleted", "archived") }
+            val eventMatch = com.hoddesk.app.secretary.VoiceCommandTargeting.resolve(
+                intent.query, secretaryEvents, "event", { it.id }, { "${it.title} ${it.location.orEmpty()}" })
+            val taskMatch = com.hoddesk.app.secretary.VoiceCommandTargeting.resolve(
+                intent.query, activeTasks, "task", { it.id }, { "${it.title} ${it.project}" },
+                if (intent.kind == com.hoddesk.app.secretary.SecretaryIntent.Kind.DELEGATE_TASK) settings.team.map { it.name } else emptyList())
+            val matchedEvent = eventMatch.record
+            val matchedTask = taskMatch.record
             val requestedTime = intent.parameters["time"]
             when (intent.kind) {
                 com.hoddesk.app.secretary.SecretaryIntent.Kind.MOVE_TASKS,
@@ -299,12 +315,12 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                         requestedTime == null -> "No exact time was detected; the request will remain unchanged until clarified."
                         matchedEvent != null -> "${matchedEvent.title}: ${timeLabel(matchedEvent.startsAt)} → $requestedTime"
                         matchedTask != null -> "${matchedTask.title}: ${matchedTask.dueAt?.let(::timeLabel) ?: "unscheduled"} → $requestedTime"
-                        else -> "No matching meeting or task was found; nothing will be changed."
+                        else -> eventMatch.error ?: taskMatch.error ?: "No matching meeting or task was found; nothing will be changed."
                     }
                 }
                 com.hoddesk.app.secretary.SecretaryIntent.Kind.DELEGATE_TASK -> {
-                    val member = settings.team.firstOrNull { target.contains(it.name.lowercase()) }
-                    if (matchedTask != null && member != null) "${matchedTask.title}: ${matchedTask.assignee ?: "Me"} → ${member.name}" else "Select a matching task and configured team member before delegating."
+                    val member = com.hoddesk.app.secretary.VoiceCommandTargeting.uniqueAssignee(intent.query, settings.team.map { it.name })
+                    if (matchedTask != null && member != null) "${matchedTask.title}: ${matchedTask.assignee ?: "Me"} → $member" else "Select a matching task and configured team member before delegating."
                 }
                 com.hoddesk.app.secretary.SecretaryIntent.Kind.CREATE_TASK -> "Create task: ${intent.parameters["target"].orEmpty().removePrefix("to ").trim()}"
                 else -> null
@@ -363,7 +379,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         }
     }
     fun allowed(scope: ConsentScope?): Boolean = scope == null || (privacyStore.canImportSensitive() && privacyStore.scopeGranted(scope))
-    fun saveImported(item: ImportedSource, uri: Uri?) {
+    suspend fun saveImported(item: ImportedSource, uri: Uri?) {
         if (!allowed(scopeFor(item.type))) {
             status = "${item.type} imports are turned off. Turn them on in Settings › Privacy & Data."
             return
@@ -380,42 +396,48 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         // A failure message is evidence of a processing error, never an action.
         val extractor = ActionPointExtractor()
         val actions = if (pendingAudio || extractor.isProcessingFailure(redactedInput) || needsReview && redactedInput.contains("OCR", ignoreCase = true)) emptyList() else extractor.extract(redactedInput)
-        viewModel.ingestWithActions(source, actions)
+        repository.ingestWithActions(source, actions)
     }
-    fun saveImportedBatch(items: List<ImportedSource>, uri: Uri) = items.forEach { saveImported(it, uri) }
+    suspend fun saveImportedBatch(items: List<ImportedSource>, uri: Uri) {
+        items.forEach { saveImported(it, uri) }
+    }
     fun transcribe(uri: Uri, title: String, type: String, onTranscript: ((String) -> Unit)? = null) {
         val item = ProcessingItem(title, "Transcribing Tamil and English on this phone…", null)
         processing += item
         scope.launch {
             val started = System.currentTimeMillis()
             try {
-                runCatching { audioRuntime.transcribeWav(uri) }
-                    .onSuccess { text ->
-                        runCatching {
-                            onTranscript?.invoke(text)
-                            saveImported(ImportedSource(title, text.ifBlank { "No speech detected" }, type, uri), uri)
-                            status = "$title added for review"
-                            PerformanceMetrics.record(dao, "audio_transcription_latency_ms", System.currentTimeMillis() - started, "type=$type")
-                        }.onFailure { error ->
-                            Log.e("HOD_AUDIO", "transcription_result_save_failed", error)
-                            status = "Recording transcribed but could not be saved: ${error.message ?: error.javaClass.simpleName}"
-                            PerformanceMetrics.record(dao, "audio_transcription_save_failure", 1, error.javaClass.simpleName)
-                        }
+                val text = try {
+                    audioRuntime.transcribeWav(uri)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (transcriptionFailure: Exception) {
+                    Log.e("HOD_AUDIO", "transcription_failed", transcriptionFailure)
+                    try {
+                        val fallback = AudioTranscriptImportAdapter(context.contentResolver).importAudio(uri)
+                        saveImported(fallback, uri)
+                        status = "Recording saved for retry; transcription unavailable: ${transcriptionFailure.message ?: transcriptionFailure.javaClass.simpleName}"
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (fallbackFailure: Exception) {
+                        Log.e("HOD_AUDIO", "fallback_save_failed", fallbackFailure)
+                        status = "Recording could not be saved: ${fallbackFailure.message ?: fallbackFailure.javaClass.simpleName}"
                     }
-                    .onFailure { error ->
-                        Log.e("HOD_AUDIO", "transcription_failed", error)
-                        runCatching { AudioTranscriptImportAdapter(context.contentResolver).importAudio(uri) }
-                            .onSuccess { fallback ->
-                                runCatching { saveImported(fallback, uri) }
-                                    .onFailure { saveError -> Log.e("HOD_AUDIO", "fallback_save_failed", saveError) }
-                            }
-                            .onFailure { fallbackError -> Log.e("HOD_AUDIO", "fallback_import_failed", fallbackError) }
-                        status = "Recording saved; transcription unavailable: ${error.message ?: error.javaClass.simpleName}"
-                        PerformanceMetrics.record(dao, "audio_transcription_failure", 1, error.javaClass.simpleName)
-                    }
-            } catch (error: Throwable) {
-                Log.e("HOD_AUDIO", "transcription_unexpected_failure", error)
-                status = "Recording could not be processed: ${error.message ?: error.javaClass.simpleName}"
+                    runCatching { PerformanceMetrics.record(dao, "audio_transcription_failure", 1, transcriptionFailure.javaClass.simpleName) }
+                    return@launch
+                }
+                try {
+                    saveImported(ImportedSource(title, text.ifBlank { "No speech detected" }, type, uri), uri)
+                    onTranscript?.invoke(text)
+                    status = "$title added for review"
+                    runCatching { PerformanceMetrics.record(dao, "audio_transcription_latency_ms", System.currentTimeMillis() - started, "type=$type") }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (saveFailure: Exception) {
+                    Log.e("HOD_AUDIO", "transcription_result_save_failed", saveFailure)
+                    status = "Recording transcribed but could not be saved: ${saveFailure.message ?: saveFailure.javaClass.simpleName}"
+                    runCatching { PerformanceMetrics.record(dao, "audio_transcription_save_failure", 1, saveFailure.javaClass.simpleName) }
+                }
             } finally {
                 processing.remove(item)
             }
@@ -429,13 +451,17 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
             status = "Reading the photo…"
             ScreenshotImportAdapter().recognize(context, uri)
                 .addOnSuccessListener { item ->
-                    runCatching { saveImported(item.copy(title = "Photo · ${item.title}", type = "Camera document"), uri); status = "Photo text added for review" }
-                        .onFailure { error -> Log.e("HOD_IMPORT", "camera_result_save_failed", error); status = "Photo was read but could not be saved safely." }
+                    scope.launch {
+                        runCatching { saveImported(item.copy(title = "Photo · ${item.title}", type = "Camera document"), uri); status = "Photo text added for review" }
+                            .onFailure { error -> Log.e("HOD_IMPORT", "camera_result_save_failed", error); status = "Photo was read but could not be saved safely." }
+                    }
                 }
                 .addOnFailureListener {
-                    runCatching { saveImported(ImportedSource("Camera document", "OCR could not read this image; manual review required.", "Camera document", uri), uri) }
-                        .onFailure { error -> Log.e("HOD_IMPORT", "camera_fallback_save_failed", error) }
-                    status = "Photo saved for manual review"
+                    scope.launch {
+                        runCatching { saveImported(ImportedSource("Camera document", "OCR could not read this image; manual review required.", "Camera document", uri), uri) }
+                            .onSuccess { status = "Photo saved for manual review" }
+                            .onFailure { error -> Log.e("HOD_IMPORT", "camera_fallback_save_failed", error); status = "Photo could not be saved safely." }
+                    }
                 }
         }
         cameraUri = null
@@ -449,6 +475,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) captureDocument() else status = "Camera permission is needed to photograph a document." }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
         val mime = context.contentResolver.getType(uri).orEmpty()
         runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         val extension = uri.toString().substringBefore('?').substringAfterLast('.').lowercase()
@@ -472,13 +499,17 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                 status = "Reading screenshot…"
                 ScreenshotImportAdapter().recognize(context, uri)
                     .addOnSuccessListener { item ->
-                        runCatching { saveImported(item, uri); status = "Screenshot added for review" }
-                            .onFailure { error -> Log.e("HOD_IMPORT", "screenshot_result_save_failed", error); status = "Screenshot was read but could not be saved safely." }
+                        scope.launch {
+                            runCatching { saveImported(item, uri); status = "Screenshot added for review" }
+                                .onFailure { error -> Log.e("HOD_IMPORT", "screenshot_result_save_failed", error); status = "Screenshot was read but could not be saved safely." }
+                        }
                     }
                     .addOnFailureListener {
-                        status = "Couldn't read text; screenshot saved for manual review"
-                        runCatching { saveImported(ScreenshotImportAdapter().create(uri), uri) }
-                            .onFailure { error -> Log.e("HOD_IMPORT", "screenshot_fallback_save_failed", error) }
+                        scope.launch {
+                            runCatching { saveImported(ScreenshotImportAdapter().create(uri), uri) }
+                                .onSuccess { status = "Couldn't read text; screenshot saved for manual review" }
+                                .onFailure { error -> Log.e("HOD_IMPORT", "screenshot_fallback_save_failed", error); status = "Screenshot could not be saved safely." }
+                        }
                     }
             }
             mime.contains("pdf") || mime.contains("word") || mime.contains("officedocument") || extension in setOf("pdf", "doc", "docx") ->
@@ -503,8 +534,10 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
             }
             }
         }.onFailure { error ->
+            if (error is CancellationException) throw error
             Log.e("HOD_IMPORT", "content_import_failed", error)
             status = "This file could not be imported safely: ${error.message ?: error.javaClass.simpleName}"
+        }
         }
     }
     LaunchedEffect(initialSharedUri) {
@@ -568,7 +601,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val scheduler = remember { CalendarProviderScheduler.fromResolver(context.contentResolver) { p -> context.checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED } }
     LaunchedEffect(scheduler) {
         runCatching {
-            repository.reconcilePendingCalendarEvents { event -> scheduler.findMatchingEventId(event.title, event.startsAt, event.endsAt) }
+            repository.reconcilePendingCalendarEvents { event -> scheduler.findMatchingEventId(event.title, event.startsAt, event.endsAt, event.id) }
         }.onFailure { Log.e("HOD_CALENDAR", "calendar_reconcile_failed", it) }
     }
     fun clashesFor(start: Long, end: Long, events: List<EventEntity>): List<String> {
@@ -623,13 +656,12 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                 val denied = mutableListOf<String>()
                 toWrite.forEach { p ->
                     val taskId = p.taskId
-                    if (taskId != null && dao.eventsForTask(taskId).any { it.startsAt == p.start && it.endsAt == p.end && it.confirmed }) return@forEach
-                    if (scheduler.findMatchingEventId(p.title, p.start, p.end) != null) return@forEach
+                    if (taskId != null && dao.eventsForTask(taskId).any { it.startsAt == p.start && it.endsAt == p.end && it.confirmed && it.calendarEventId != null }) return@forEach
                     val proposal = ScheduleProposal(EventEntity(taskId = p.taskId, title = p.title, startsAt = p.start, endsAt = p.end), emptyList())
                     // Persist first. If the process dies after the provider insert,
                     // the pending row is available for reconciliation on next start.
                     val localId = repository.beginCalendarWrite(proposal.event)
-                    when (val r = scheduler.writeConfirmed(proposal, calendarId, confirmed = true)) {
+                    when (val r = scheduler.writeConfirmed(proposal, calendarId, confirmed = true, localEventId = localId)) {
                         is CalendarWriteResult.Written -> {
                             repository.finishCalendarWrite(localId, r.calendarEventId)
                             written++
@@ -649,9 +681,11 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     append("$written block(s) added to ${settings.calendarName ?: "your calendar"}.")
                     if (denied.isNotEmpty()) append(" Skipped: ").append(denied.joinToString("; "))
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 Log.e("HOD_CALENDAR", "calendar_write_failed", error)
-                status = "Calendar update failed safely: ${error.message ?: error.javaClass.simpleName}. Nothing else was changed."
+                status = "Calendar update stopped: ${error.message ?: error.javaClass.simpleName}. Confirmed writes are retained; pending writes will be reconciled."
             }
         }
     }
@@ -664,7 +698,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         val km = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
         @Suppress("DEPRECATION")
         val intent = if (km.isDeviceSecure) km.createConfirmDeviceCredentialIntent("Clinical Vault", "Confirm it's you to view clinical material") else null
-        if (intent != null) vaultUnlock.launch(intent) else { status = "Set a screen lock on this phone to protect the Clinical Vault."; settingsStack += "vault" }
+        if (intent != null) vaultUnlock.launch(intent) else { status = "Set a screen lock on this phone before opening the Clinical Vault." }
     }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -721,15 +755,15 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                 TAB_REVIEW -> ReviewScreen(
                     queue = reviewQueue, startSourceId = reviewStartId, team = team,
                     observeActionPoints = { id -> dao.observeActionPoints(id) },
-                    searchRelated = { text, id -> if (embeddingReady) semanticIndexer.search(text, searchable).filter { it.source.id != id } else emptyList() },
+                    searchRelated = { text, id -> semanticIndexer.search(text, searchable).filter { it.source.id != id } },
                     rankActions = { list -> if (embeddingReady) EmbeddingGemmaActionRanker(embeddingRuntime).rank(list).map { it.first } else list },
                     instructionModelPath = installedInstructionModel,
                     onReasoning = { id, output -> viewModel.saveReasoning(id, output) },
-                    onUpdateActionPoint = { point -> viewModel.updateActionPoint(point) },
-                    onApproveEdited = { source, point, action, assignee -> viewModel.approveEditedAction(point, source.id, source.sourceType, action, assignee) },
-                    onApprove = { source, action, assignee, dueAt -> viewModel.approveAction(source.id, action, source.sourceType, dueAt = dueAt, assignee = assignee) },
-                    onActionStatus = { id, action, s -> viewModel.setActionPointStatus(id, action, s) },
-                    onDismissSource = { id, reason -> viewModel.dismissSource(id, reason) },
+                    onUpdateActionPoint = { point -> viewModel.saveReviewPoint(point) },
+                    onApproveEdited = { source, point, action, assignee -> viewModel.approveReviewPoint(point, source.id, source.sourceType, action, assignee) },
+                    onApprove = { source, action, assignee, dueAt -> viewModel.approveReviewAction(source.id, action, source.sourceType, dueAt, assignee) },
+                    onActionStatus = { id, action, s -> viewModel.statusReviewAction(id, action, s) },
+                    onDismissSource = { id, reason -> viewModel.dismissReviewSource(id, reason) },
                     onBack = { tab = TAB_TODAY },
                 )
                 TAB_TASKS -> TasksScreen(tasks, tasksSegment, onToggleDone = { t -> viewModel.setDone(t.id, t.status != "completed") }, onOpen = { openTaskId = it.id })
@@ -796,6 +830,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                 })
                 "ai" -> {
                     LaunchedEffect(Unit) { indexHealth = runCatching { IndexHealthChecker(dao).inspect(allSources) }.getOrNull() }
+                    LaunchedEffect(audioRuntime) { verifiedTamilSpeechReady = audioRuntime.tamilModelReady() }
                     val h = indexHealth
                     val latestSnapshot = IndexSnapshotManager.snapshots(context).firstOrNull()
                     val activeSnapshot = IndexSnapshotManager.active(context)
@@ -805,7 +840,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                             headline = if (aiHealthy) "Everything is working" else "Smart search needs attention",
                             detail = if (aiHealthy) "Search, speech and reading run on this phone" else embeddingLine,
                             searchLine = h?.let { "${it.indexedSourceCount} of ${it.sourceCount} items indexed · Tamil + English" } ?: "Checking…",
-                            speechReady = File(context.filesDir, "ggml-small.bin").length() >= 400_000_000L,
+                            speechReady = verifiedTamilSpeechReady,
                             reasoningInstalled = installedInstructionModel != null,
                             reasoningProgress = reasoningProgress,
                             technical = listOfNotNull(
@@ -874,8 +909,12 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     onShare = { candidate -> status = "Review the draft in your sharing app before sending."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_share_started", detail = candidate.draft.take(1000))) }; runCatching { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, candidate.draft) }, "Review follow-up before sending")) }.onFailure { status = "No sharing app is available; copy the draft instead." } },
                     onDismiss = { candidate -> scope.launch { dao.setCommitmentStatus(candidate.commitmentId, "dismissed"); dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_dismissed", detail = candidate.evidence)); status = "Follow-up dismissed." } },
                 )
-                "secretary" -> SecretaryPage(initialTranscript = secretaryTranscript, supportingSources = secretaryEvidence, proposalDiff = secretaryProposalDiff, onBack = ::pop, onRecord = { if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO) }, onRun = { intent ->
+                "secretary" -> SecretaryPage(initialTranscript = secretaryTranscript, supportingSources = secretaryEvidence, proposalDiff = secretaryProposalDiff, onBack = ::pop,
+                    onRecord = { if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO) },
+                    onTranscriptChanged = { secretaryTranscript = it }, onRun = { intent ->
                     fun auditCommand(action: String, detail: String) { scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "secretary", entityId = 0, action = action, detail = detail.take(1000))) } }
+                    val evidenceIds = secretaryEvidence.map { it.id }
+                    val commandDetail = "${intent.query}; evidence=$evidenceIds".take(1000)
                     val citationDigest = secretaryEvidence.take(5).joinToString(" • ") { source ->
                         "${source.title}: ${source.body.trim().replace(Regex("\\s+"), " ").take(120)}"
                     }.ifBlank { "No cited source evidence was retrieved." }
@@ -886,41 +925,46 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                         com.hoddesk.app.secretary.SecretaryIntent.Kind.PLAN_DAY -> { planDay(); pop(); status = "Review the proposed day plan before applying it."; auditCommand("secretary_proposed_plan", intent.query) }
                         com.hoddesk.app.secretary.SecretaryIntent.Kind.CREATE_TASK -> {
                             val title = intent.parameters["target"].orEmpty().removePrefix("to ").trim()
-                            if (title.isBlank()) { status = "The task wording is missing; nothing was created."; auditCommand("secretary_rejected_create", "${intent.query}; evidence=${secretaryEvidence.map { it.id }}") } else scope.launch { val id = dao.insertTask(TaskEntity(title = title, project = "Secretary")); dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "secretary", entityId = id, action = "secretary_task_created", detail = "${intent.query}; evidence=${secretaryEvidence.map { it.id }}")); tasksSegment = 0; tab = TAB_TASKS; status = "Task created after confirmation. Evidence: $citationDigest"; pop() }
+                            if (title.isBlank()) { status = "The task wording is missing; nothing was created."; auditCommand("secretary_rejected_create", commandDetail) } else scope.launch {
+                                try {
+                                    repository.createSecretaryTask(title, commandDetail)
+                                    tasksSegment = 0; tab = TAB_TASKS; status = "Task created after confirmation. Evidence: $citationDigest"; pop()
+                                } catch (cancelled: CancellationException) { throw cancelled }
+                                catch (failure: Exception) { status = failure.message ?: "The task could not be created; no partial change was kept." }
+                            }
                         }
                         com.hoddesk.app.secretary.SecretaryIntent.Kind.DELEGATE_TASK -> {
-                            val target = intent.parameters["target"].orEmpty().lowercase()
-                            val task = allTasks.map { candidate -> candidate to target.split(Regex("\\s+" )).count { it.length >= 3 && (candidate.title.lowercase().contains(it) || candidate.project.lowercase().contains(it)) } }.maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
-                            val member = settings.team.firstOrNull { target.contains(it.name.lowercase()) }
-                            if (task == null || member == null) { status = "I need the task and a configured team member before delegating."; auditCommand("secretary_rejected_delegate", "${intent.query}; evidence=${secretaryEvidence.map { it.id }}") } else scope.launch {
-                                dao.updateTask(task.copy(assignee = member.name))
-                                dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "secretary", entityId = task.id, action = "secretary_task_delegated", detail = "${task.title} -> ${member.name}; evidence=${secretaryEvidence.map { it.id }}"))
-                                tasksSegment = 1; tab = TAB_TASKS; status = "${task.title} delegated to ${member.name} after confirmation. Evidence: $citationDigest"; pop()
+                            val active = allTasks.filter { it.status !in setOf("completed", "deleted", "archived") }
+                            val match = com.hoddesk.app.secretary.VoiceCommandTargeting.resolve(intent.query, active, "task", { it.id }, { "${it.title} ${it.project}" }, settings.team.map { it.name })
+                            val task = match.record
+                            val memberName = com.hoddesk.app.secretary.VoiceCommandTargeting.uniqueAssignee(intent.query, settings.team.map { it.name })
+                            if (task == null || memberName == null) { status = match.error ?: "Name one configured team member; no task was changed."; auditCommand("secretary_rejected_delegate", commandDetail) } else scope.launch {
+                                try {
+                                    repository.delegateSecretaryTask(task, memberName, "$commandDetail; ${task.title} -> $memberName")
+                                    tasksSegment = 1; tab = TAB_TASKS; status = "${task.title} delegated to $memberName after confirmation. Evidence: $citationDigest"; pop()
+                                } catch (cancelled: CancellationException) { throw cancelled }
+                                catch (failure: Exception) { status = failure.message ?: "Delegation failed; no partial change was kept." }
                             }
                         }
                         com.hoddesk.app.secretary.SecretaryIntent.Kind.MOVE_TASKS,
                         com.hoddesk.app.secretary.SecretaryIntent.Kind.UPDATE_TASK,
                         com.hoddesk.app.secretary.SecretaryIntent.Kind.SCHEDULE_TASK -> {
                             val time = com.hoddesk.app.secretary.VoiceSecretary.time(intent.query)
-                            val target = intent.parameters["target"].orEmpty().lowercase()
-                            val event = calendarEvents.map { e -> e to target.split(Regex("\\s+" )).count { it.length >= 3 && (e.title.lowercase().contains(it) || e.location?.lowercase()?.contains(it) == true) } }.maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
-                            val task = allTasks.map { candidate -> candidate to target.split(Regex("\\s+" )).count { it.length >= 3 && (candidate.title.lowercase().contains(it) || candidate.project.lowercase().contains(it)) } }.maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
-                            if (time == null || (event == null && (intent.kind != com.hoddesk.app.secretary.SecretaryIntent.Kind.SCHEDULE_TASK || task == null))) { status = "I need an exact meeting/task and time before proposing a change."; auditCommand("secretary_rejected_schedule", "${intent.query}; evidence=${secretaryEvidence.map { it.id }}") } else scope.launch {
+                            val active = allTasks.filter { it.status !in setOf("completed", "deleted", "archived") }
+                            val eventMatch = com.hoddesk.app.secretary.VoiceCommandTargeting.resolve(intent.query, secretaryEvents, "event", { it.id }, { "${it.title} ${it.location.orEmpty()}" })
+                            val taskMatch = com.hoddesk.app.secretary.VoiceCommandTargeting.resolve(intent.query, active, "task", { it.id }, { "${it.title} ${it.project}" })
+                            val event = eventMatch.record
+                            val task = taskMatch.record
+                            if (time == null || (event == null && (intent.kind != com.hoddesk.app.secretary.SecretaryIntent.Kind.SCHEDULE_TASK || task == null))) { status = if (time == null) "State an exact time; no change was made." else eventMatch.error ?: taskMatch.error ?: "Name one exact meeting or task; no change was made."; auditCommand("secretary_rejected_schedule", commandDetail) } else scope.launch {
                                 val date = if (event != null) java.time.Instant.ofEpochMilli(event.startsAt).atZone(zone).toLocalDate() else if (intent.query.contains("tomorrow", true)) LocalDate.now().plusDays(1) else LocalDate.now()
                                 val newStart = date.atTime(time.first, time.second).atZone(zone).toInstant().toEpochMilli()
-                                if (event != null) {
-                                    val duration = (event.endsAt - event.startsAt).coerceAtLeast(30 * 60_000L)
-                                    dao.updateEvent(event.copy(startsAt = newStart, endsAt = newStart + duration))
-                                    event.taskId?.let { repository.setTaskDue(it, newStart) }
-                                    dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "secretary", entityId = event.id, action = "secretary_schedule_changed", detail = "${event.title}: ${event.startsAt} -> $newStart; evidence=${secretaryEvidence.map { it.id }}"))
-                                    tab = TAB_CALENDAR; status = "${event.title} moved after confirmation. Evidence: $citationDigest"
-                                } else if (task != null) {
-                                    dao.updateTask(task.copy(dueAt = newStart))
-                                    val eventId = dao.insertEvent(EventEntity(taskId = task.id, title = task.title, startsAt = newStart, endsAt = newStart + 60 * 60_000L, confirmed = true))
-                                    dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "secretary", entityId = eventId, action = "secretary_task_scheduled", detail = "${task.title} at $newStart; evidence=${secretaryEvidence.map { it.id }}"))
-                                    tab = TAB_CALENDAR; status = "${task.title} scheduled after confirmation. Evidence: $citationDigest"
-                                }
-                                pop()
+                                try {
+                                    if (event != null) repository.moveSecretaryEvent(event, newStart, "$commandDetail; ${event.startsAt} -> $newStart")
+                                    else repository.scheduleSecretaryTask(requireNotNull(task), newStart, "$commandDetail; scheduled=$newStart")
+                                    selectedDayEpoch = date.toEpochDay(); tab = TAB_CALENDAR
+                                    status = "${event?.title ?: task?.title} changed after confirmation. Evidence: $citationDigest"; pop()
+                                } catch (cancelled: CancellationException) { throw cancelled }
+                                catch (failure: Exception) { status = failure.message ?: "The schedule was not changed; no partial change was kept." }
                             }
                         }
                         else -> { status = "This secretary action is not supported yet; no data was changed."; auditCommand("secretary_rejected_unsupported", intent.query) }
@@ -1048,9 +1092,13 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         )
         if (showNote) NoteDialog(onDismiss = { showNote = false }) { title, body, type ->
             showNote = false
-            if (type == "WhatsApp") saveImported(ImportedSource(title, body, type), null)
-            else viewModel.ingestWithActions(SourceEntity(title = title, body = ActionPointExtractor().annotate(privacyStore.redact(body)), sourceType = type), ActionPointExtractor().extract(privacyStore.redact(body)))
-            status = "Note added for review"
+            scope.launch {
+                try {
+                    saveImported(ImportedSource(title, body, type), null)
+                    status = "Note added for review"
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { status = "Note could not be saved: ${failure.message ?: failure.javaClass.simpleName}" }
+            }
         }
 
         // Snackbar area, drawn above every screen: Undo for deletes, otherwise the latest status message.

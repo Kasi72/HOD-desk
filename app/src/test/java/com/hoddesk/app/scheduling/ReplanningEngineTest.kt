@@ -3,6 +3,7 @@ package com.hoddesk.app.scheduling
 import com.hoddesk.app.data.EventEntity
 import com.hoddesk.app.data.TaskEntity
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -29,5 +30,24 @@ class ReplanningEngineTest {
         assertTrue(result.conflicts.any { it.contains("overrun") })
         val diff = ReplanningEngine.scheduleDiff(listOf(task), result.changes)
         assertTrue(diff.moved.isNotEmpty())
+    }
+
+    @Test fun a_task_does_not_conflict_with_its_own_existing_event() {
+        val task = TaskEntity(id = 1, title = "Submit report", project = "Office", dueAt = 60_000L)
+        val own = EventEntity(id = 2, taskId = 1, title = task.title, startsAt = 60_000L, endsAt = 31 * 60_000L, confirmed = true)
+        assertTrue(ReplanningEngine.propose(listOf(task), listOf(own), emptyList(), now = 0).changes.isEmpty())
+    }
+
+    @Test fun delegated_tasks_do_not_reserve_the_hods_time() {
+        val delegated = TaskEntity(id = 1, title = "Submit report", project = "Office", dueAt = 60_000L, assignee = "Secretary")
+        val busy = EventEntity(id = 2, title = "Ward round", startsAt = 0, endsAt = 60 * 60_000L)
+        assertTrue(ReplanningEngine.propose(listOf(delegated), listOf(busy), emptyList(), now = 0).changes.isEmpty())
+    }
+
+    @Test fun configured_travel_values_are_minutes() {
+        val task = TaskEntity(id = 1, title = "Collector meeting", project = "Collectorate", dueAt = 60 * 60_000L)
+        val earlier = EventEntity(id = 2, title = "Ward round", location = "Ward", startsAt = 0, endsAt = 60 * 60_000L)
+        val proposal = ReplanningEngine.propose(listOf(task), listOf(earlier), emptyList(), mapOf(("Ward" to "Collectorate") to 15L), now = 0)
+        assertEquals(75 * 60_000L, proposal.changes.single().proposedStart)
     }
 }

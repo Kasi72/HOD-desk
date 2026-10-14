@@ -26,15 +26,19 @@ object ReplanningEngine {
         val busy = (events.map { it.startsAt to it.endsAt } + protectedBlocks).sortedBy { it.first }.toMutableList()
         val changes = mutableListOf<ReplanChange>()
         val conflicts = mutableListOf<String>()
-        tasks.filter { it.status == "open" }.sortedWith(compareByDescending<TaskEntity> { priority(it.priority) }.thenBy { it.dueAt ?: Long.MAX_VALUE }).forEach { task ->
+        tasks.filter { it.status == "open" && it.assignee.isNullOrBlank() }.sortedWith(compareByDescending<TaskEntity> { priority(it.priority) }.thenBy { it.dueAt ?: Long.MAX_VALUE }).forEach { task ->
             val duration = 30 * 60 * 1000L
+            // Replanning retains an existing due/start target as the anchor;
+            // explicit deadline enforcement belongs to the proposal scheduler.
             var candidate = maxOf(now, task.dueAt ?: now)
             val venue = task.project.takeIf { it.isNotBlank() }
-            val previous = events.filter { it.endsAt <= candidate && !it.location.isNullOrBlank() }.maxByOrNull { it.endsAt }
-            val travel = if (venue != null && previous?.location != null) travelFor(previous.location!!, venue, travelMinutes) else 0L
+            val ownEventIds = events.filter { it.taskId == task.id }.map { it.id }.toSet()
+            val taskBusy = events.filter { it.id !in ownEventIds }.map { it.startsAt to it.endsAt } + protectedBlocks
+            val previous = events.filter { it.id !in ownEventIds && it.endsAt <= candidate && !it.location.isNullOrBlank() }.maxByOrNull { it.endsAt }
+            val travel = if (venue != null && previous?.location != null) travelFor(previous.location!!, venue, travelMinutes) * 60_000L else 0L
             if (travel > 0L) candidate += travel
-            while (busy.any { candidate < it.second && candidate + duration > it.first }) {
-                candidate = busy.first { candidate < it.second && candidate + duration > it.first }.second
+            while (taskBusy.any { candidate < it.second && candidate + duration > it.first }) {
+                candidate = taskBusy.first { candidate < it.second && candidate + duration > it.first }.second
             }
             val end = candidate + duration
             if (task.dueAt != null && candidate != task.dueAt) {
@@ -53,6 +57,7 @@ object ReplanningEngine {
         else -> 1
     }
 
+    /** Configured venue values are minutes, by contract. */
     private fun travelFor(from: String, to: String, map: Map<Pair<String, String>, Long>): Long =
         map.entries.firstOrNull { (pair, _) ->
             (pair.first.equals(from, true) && pair.second.equals(to, true)) ||

@@ -15,7 +15,9 @@ object IndexMaintenanceScheduler {
     private const val WORK_NAME = "hoddesk-index-maintenance"
     private const val STARTUP_WORK_NAME = "hoddesk-startup-integrity"
     fun schedule(context: Context) {
-        val constraints = Constraints.Builder().setRequiresCharging(true).setRequiredNetworkType(NetworkType.NOT_REQUIRED).build()
+        // The runner performs light retention/reconciliation first and gates
+        // heavy inference on charging. Scheduling itself must not block upkeep.
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.NOT_REQUIRED).build()
         val startup = OneTimeWorkRequestBuilder<IndexMaintenanceWorker>()
             .setConstraints(constraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)

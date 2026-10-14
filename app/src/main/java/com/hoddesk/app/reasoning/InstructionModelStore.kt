@@ -5,6 +5,10 @@ import android.util.Log
 import com.google.ai.edge.litertlm.ModelInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -23,13 +27,14 @@ class InstructionModelStore(
     companion object {
         private const val TAG = "HOD_REASONING"
         private const val MIN_BYTES = 100_000_000L
+        private val installLock = Mutex()
     }
 
     private val target = File(context.filesDir, "hoddesk-instruction.litertlm")
 
     fun installedPath(): String? = target.takeIf { isValid(it) }?.absolutePath
 
-    suspend fun install(onProgress: (Int) -> Unit = {}): String = withContext(Dispatchers.IO) {
+    suspend fun install(onProgress: (Int) -> Unit = {}): String = withContext(Dispatchers.IO) { installLock.withLock {
         require(!downloadUrl.isNullOrBlank()) { "No approved instruction model URL configured" }
         require(!expectedSha256.isNullOrBlank()) { "No instruction model SHA-256 configured" }
         val part = File(target.parentFile, "${target.name}.part")
@@ -48,6 +53,7 @@ class InstructionModelStore(
                     val buffer = ByteArray(1024 * 1024)
                     var copied = 0L
                     while (true) {
+                        currentCoroutineContext().ensureActive()
                         val read = input.read(buffer)
                         if (read < 0) break
                         if (read == 0) continue
@@ -66,19 +72,18 @@ class InstructionModelStore(
                     "Configured model is not an instruction LLM"
                 }
             }
-            if (target.exists()) target.delete()
-            check(part.renameTo(target)) { "Unable to activate instruction model" }
+            java.nio.file.Files.move(part.toPath(), target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
             Log.i(TAG, "instruction_model_installed_bytes=${target.length()}")
             target.absolutePath
         } finally {
             connection.disconnect()
             if (part.exists()) part.delete()
         }
-    }
+    } }
 
     private fun isValid(file: File): Boolean {
         if (!file.isFile || file.length() < MIN_BYTES) return false
-        return expectedSha256.isNullOrBlank() || sha256(file).equals(expectedSha256, ignoreCase = true)
+        return !expectedSha256.isNullOrBlank() && sha256(file).equals(expectedSha256, ignoreCase = true)
     }
 
     private fun sha256(file: File): String {

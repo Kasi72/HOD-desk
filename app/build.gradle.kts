@@ -8,6 +8,8 @@ plugins {
 android {
     namespace = "com.hoddesk.app"
     compileSdk = 35
+    useLibrary("android.test.runner")
+    useLibrary("android.test.base")
 
     defaultConfig {
         applicationId = "com.hoddesk.app"
@@ -17,10 +19,9 @@ android {
         versionName = "2.22.0"
         buildConfigField("String", "INSTRUCTION_MODEL_URL", "\"${providers.gradleProperty("hoddeskInstructionModelUrl").orElse("https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4.litertlm?download=true").get()}\"")
         buildConfigField("String", "INSTRUCTION_MODEL_SHA256", "\"${providers.gradleProperty("hoddeskInstructionModelSha256").orElse("2e67a6cd51dfe0f793431e6bd4ed8d029c88e10f52ca0469ad38445e3cd3c1f4").get()}\"")
-        // Set this in the deployment gradle properties for a fail-closed,
-        // byte-for-byte verified EmbeddingGemma bundle. An empty value keeps
-        // development builds usable but is reported as unverified.
-        buildConfigField("String", "EMBEDDING_MODEL_SHA256", "\"${providers.gradleProperty("hoddeskEmbeddingModelSha256").orElse("").get()}\"")
+        testInstrumentationRunner = "android.test.InstrumentationTestRunner"
+        // Published LFS content digest for embeddinggemma-2-740m.litertlm (484622336 bytes).
+        buildConfigField("String", "EMBEDDING_MODEL_SHA256", "\"${providers.gradleProperty("hoddeskEmbeddingModelSha256").orElse("e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c").get()}\"")
     }
 
     buildFeatures { buildConfig = true }

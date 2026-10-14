@@ -1,43 +1,55 @@
 package com.hoddesk.app.imports
 
+import com.hoddesk.app.reasoning.TemporalEvidence
+import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
-import java.time.format.DateTimeFormatterBuilder
-import java.time.format.ResolverStyle
+import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 
-/** Converts an explicitly extracted date/time pair into a calendar-safe instant. */
+/** Converts one confirmed, valid date/time pair into a calendar-safe instant. */
 object ActionDueParser {
-    private val numeric = Regex("(\\d{1,2})[./-](\\d{1,2})(?:[./-](\\d{2,4}))?", RegexOption.IGNORE_CASE)
-    private val clock = Regex("(\\d{1,2})(?::(\\d{2}))?\\s*(AM|PM)", RegexOption.IGNORE_CASE)
-    private val monthDate = DateTimeFormatterBuilder().parseCaseInsensitive()
-        .appendPattern("d MMMM uuuu").toFormatter(Locale.ENGLISH).withResolverStyle(ResolverStyle.STRICT)
-
     fun parse(dateText: String?, timeText: String?, zone: ZoneId = ZoneId.systemDefault(), now: Long = System.currentTimeMillis()): Long? {
-        val rawDate = dateText?.split(',')?.firstOrNull()?.trim()?.takeIf { it.isNotBlank() } ?: return null
-        val date = parseDate(rawDate, now) ?: return null
-        val time = timeText?.split(',')?.firstOrNull()?.trim()?.takeIf { it.isNotBlank() }?.let(::parseTime) ?: LocalTime.MIDNIGHT
+        val rawDate = dateText?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val anchor = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val date = parseDate(rawDate, anchor) ?: return null
+        if (TemporalEvidence.weekdayConflicts(rawDate, date.toString()).isNotEmpty()) return null
+        val rawTime = timeText?.trim()?.takeUnless(String::isBlank)
+        // Date-only deadlines can use midnight. Explicit invalid or ambiguous
+        // clocks must fail instead of silently becoming midnight.
+        val time = if (rawTime == null) LocalTime.MIDNIGHT else parseTime(rawTime) ?: return null
         return LocalDateTime.of(date, time).atZone(zone).toInstant().toEpochMilli()
     }
 
-    private fun parseDate(raw: String, now: Long): LocalDate? {
-        val clean = raw.lowercase(Locale.ROOT).replace(Regex("(st|nd|rd|th)\\b"), "").trim()
-        numeric.find(clean)?.let { m ->
-            val year = m.groupValues[3].ifBlank { java.time.Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).year.toString() }
-                .let { if (it.length == 2) "20$it" else it }.toInt()
-            return runCatching { LocalDate.of(year, m.groupValues[2].toInt(), m.groupValues[1].toInt()) }.getOrNull()
+    fun parseIfUnambiguous(dateText: String?, timeText: String?, ambiguity: String?, zone: ZoneId = ZoneId.systemDefault(), now: Long = System.currentTimeMillis()): Long? =
+        if (ambiguity?.let { Regex("(?i)confirmation|conflict|multiple|requires .*check").containsMatchIn(it) } == true) null
+        else parse(dateText, timeText, zone, now)
+
+    private fun parseDate(raw: String, anchor: LocalDate): LocalDate? {
+        val clean = raw.replace(Regex("(?i)^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[, ]+"), "").trim()
+        TemporalEvidence.parseDate(clean)?.let { return it }
+        when (clean.lowercase(Locale.ROOT)) {
+            "today" -> return anchor
+            "tomorrow" -> return anchor.plusDays(1)
         }
-        return runCatching { LocalDate.parse(clean, monthDate) }.getOrNull()
+        DayOfWeek.values().firstOrNull { it.name.equals(clean, true) }?.let {
+            return anchor.with(TemporalAdjusters.nextOrSame(it))
+        }
+        Regex("^(\\d{1,2})[./-](\\d{1,2})$").matchEntire(clean)?.let {
+            return runCatching { LocalDate.of(anchor.year, it.groupValues[2].toInt(), it.groupValues[1].toInt()) }.getOrNull()
+        }
+        // Missing years are interpreted only at the confirmation boundary.
+        // Field extraction/grounding never makes this assumption.
+        return TemporalEvidence.parseDate("$clean ${anchor.year}")
     }
 
     private fun parseTime(raw: String): LocalTime? {
-        val m = clock.find(raw) ?: return null
-        var hour = m.groupValues[1].toInt()
-        val minute = m.groupValues[2].ifBlank { "0" }.toInt()
-        if (m.groupValues[3].equals("PM", true) && hour < 12) hour += 12
-        if (m.groupValues[3].equals("AM", true) && hour == 12) hour = 0
-        return runCatching { LocalTime.of(hour, minute) }.getOrNull()
+        val clean = raw.replace(Regex("(?i)^at\\s+"), "").trim()
+        TemporalEvidence.parseTime(clean)?.let { return it.start }
+        val clock = Regex("^([01]?\\d|2[0-3]):([0-5]\\d)$").matchEntire(clean) ?: return null
+        return LocalTime.of(clock.groupValues[1].toInt(), clock.groupValues[2].toInt())
     }
 }
