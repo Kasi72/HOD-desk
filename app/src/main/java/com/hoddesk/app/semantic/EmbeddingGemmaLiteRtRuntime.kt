@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -56,6 +57,8 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
     private val engineMutex = Mutex()
     private val inferenceMutex = sharedInferenceMutex
     private val installMutex = sharedInstallMutex
+    private val textCache = BoundedVectorCache(maxEntries = 128, maxBytes = 512L * 1024L)
+    private val mediaCache = BoundedVectorCache(maxEntries = 32, maxBytes = 256L * 1024L)
     @Volatile private var embedder: UniversalEmbedder? = null
     @Volatile private var closed = false
     @Volatile private var nativeLoadFailure: Throwable? = null
@@ -196,20 +199,28 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
         }.also { created -> embedder = created }
     }
 
-    override suspend fun embed(text: String): FloatArray = inferenceMutex.withLock {
+    override suspend fun embed(text: String): FloatArray {
+        require(text.isNotBlank()) { "Cannot embed blank text" }
+        val key = "text:${text.trim()}"
+        textCache.get(key)?.let { return it }
+        return withTimeout(45_000L) { inferenceMutex.withLock {
         withContext(Dispatchers.Default) {
-            require(text.isNotBlank()) { "Cannot embed blank text" }
             val started = System.currentTimeMillis()
             val vector = engine().embedText(text).embeddings().firstOrNull()?.floatEmbedding()?.copyOf()
                 ?: error("EmbeddingGemma returned no embedding")
             check(vector.size == EXPECTED_DIMENSION) { "Unexpected EmbeddingGemma dimension ${vector.size}; expected $EXPECTED_DIMENSION" }
+            textCache.put(key, vector)
             Log.i("HOD_SEMANTIC", "embedding_ms=${System.currentTimeMillis() - started},dimension=${vector.size}")
             vector
         }
+        } }
     }
 
     /** Embeds the original camera/screenshot pixels into the shared multimodal space. */
-    suspend fun embedImage(uri: Uri): FloatArray = inferenceMutex.withLock {
+    suspend fun embedImage(uri: Uri): FloatArray {
+        val key = "image:${uri}"
+        mediaCache.get(key)?.let { return it }
+        return withTimeout(60_000L) { inferenceMutex.withLock {
         withContext(Dispatchers.Default) {
             val bitmap = decodeBoundedImage(uri)
             try {
@@ -218,12 +229,14 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
                 (engine().embedImage(image).embeddings().firstOrNull()?.floatEmbedding()?.copyOf()
                     ?: error("EmbeddingGemma returned no image embedding")).also {
                     check(EmbeddingIntegrity.validate(it).valid) { "Invalid EmbeddingGemma image vector" }
+                mediaCache.put(key, it)
                 }
                 } finally { image.close() }
             } finally {
                 bitmap.recycle()
             }
         }
+        } }
     }
 
     /** Embeds a small set of quadrants so text queries can find a relevant image region. */
@@ -250,7 +263,7 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
     }
 
     /** Embeds canonical mono PCM audio; callers must provide 16 kHz float samples. */
-    suspend fun embedAudio(samples: FloatArray, sampleRate: Float = 16_000f, channels: Int = 1): FloatArray = inferenceMutex.withLock {
+    suspend fun embedAudio(samples: FloatArray, sampleRate: Float = 16_000f, channels: Int = 1): FloatArray = withTimeout(60_000L) { inferenceMutex.withLock {
         withContext(Dispatchers.Default) {
             require(samples.isNotEmpty()) { "Cannot embed empty audio" }
             require(sampleRate == 16_000f && channels == 1 && samples.size <= 480_000) { "Audio embedding requires at most 30 seconds of 16 kHz mono PCM" }
@@ -263,7 +276,7 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
                 check(EmbeddingIntegrity.validate(it).valid) { "Invalid EmbeddingGemma audio vector" }
             }
         }
-    }
+    } }
 
     /** Summarizes the original waveform windows without allocating the whole recording. */
     suspend fun embedWav(uri: Uri): FloatArray = MultimodalResourcePolicy.summarize(embedWavSegments(uri).map { it.vector })
@@ -358,6 +371,8 @@ class EmbeddingGemmaLiteRtRuntime(private val context: Context) : EmbeddingGemma
             inferenceMutex.withLock {
                 runCatching { embedder?.close() }.onFailure { Log.w("HOD_SEMANTIC", "native_teardown_failed", it) }
                 embedder = null
+                textCache.clear()
+                mediaCache.clear()
             }
         }
     }

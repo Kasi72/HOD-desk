@@ -11,6 +11,8 @@ import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.InputStream
 import java.util.zip.ZipInputStream
 import com.hoddesk.app.repository.ActionPointDraft
+import com.hoddesk.app.reasoning.FieldEvidenceAttribution
+import com.hoddesk.app.workflow.CaptureIntentClassifier
 import com.hoddesk.app.reasoning.ActionFieldQualityScorer
 import com.hoddesk.app.reasoning.TemporalEvidence
 
@@ -278,7 +280,9 @@ class ActionPointExtractor {
             val quality = ActionFieldQualityScorer.assess(finalAction, dateText, timeText, locationText, peopleValues, extractionEvidence)
             val qualityIssues = quality.issues.filter { it.contains("requires confirmation") }.take(3)
             val finalAmbiguity = listOfNotNull(ambiguity, qualityIssues.joinToString("; ").ifBlank { null }).distinct().joinToString("; ").ifBlank { null }
-            ActionPointDraft(finalAction, dateText, timeText, locationText, peopleText, extractionEvidence, minOf(confidence, quality.overall.coerceAtLeast(.25f)), finalAmbiguity, category, ownerText, referenceNumber, recurrenceRule)
+            val attribution = FieldEvidenceAttribution.assess(finalAction, dateText, timeText, locationText, peopleValues, ownerText, referenceNumber, extractionEvidence)
+            val intent = CaptureIntentClassifier.classify("", evidence, "document")
+            ActionPointDraft(finalAction, dateText, timeText, locationText, peopleText, extractionEvidence, minOf(confidence, quality.overall.coerceAtLeast(.25f)), finalAmbiguity, category, ownerText, referenceNumber, recurrenceRule, intent.kind.wire, FieldEvidenceAttribution.confidenceJson(attribution), FieldEvidenceAttribution.citationsJson(attribution), "{}")
         }.distinctBy { listOf(it.action.lowercase().replace(Regex("\\W+"), " ").trim(), it.dateText, it.timeText, it.peopleText) }
     }
 

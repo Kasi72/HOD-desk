@@ -8,6 +8,7 @@ import com.hoddesk.app.data.EvidenceEntity
 import com.hoddesk.app.data.ActionPointEntity
 import kotlinx.coroutines.flow.Flow
 import com.hoddesk.app.reasoning.ActionReasoningOutput
+import com.hoddesk.app.reasoning.FieldEvidenceAttribution
 import org.json.JSONArray
 import com.hoddesk.app.data.AuditEntryEntity
 import com.hoddesk.app.data.LearningCorrectionEntity
@@ -15,6 +16,7 @@ import com.hoddesk.app.data.CommitmentEntity
 import com.hoddesk.app.triage.TriageScorer
 import com.hoddesk.app.privacy.SensitivityClassifier
 import com.hoddesk.app.semantic.SourceFingerprint
+import com.hoddesk.app.workflow.CaptureIntentClassifier
 
 data class ScheduleProposal(val event: EventEntity, val conflicts: List<EventEntity>) {
     val requiresConfirmation: Boolean get() = conflicts.isNotEmpty()
@@ -34,8 +36,9 @@ class HodDeskRepository(private val dao: HodDeskDao) {
             return existing.id
         }
         val decision = TriageScorer.score(source)
+        val intent = CaptureIntentClassifier.classify(source.title, source.body, source.sourceType)
         val sensitivity = SensitivityClassifier.classify(source.title, source.body)
-        return dao.insertSource(source.copy(triageBucket = decision.bucket.name, priorityScore = decision.score, priorityReasons = decision.reasons.joinToString(" · "), sensitivity = sensitivity.tier.code))
+        return dao.insertSource(source.copy(triageBucket = decision.bucket.name, priorityScore = decision.score, priorityReasons = (decision.reasons + intent.reasons).distinct().joinToString(" · "), sensitivity = sensitivity.tier.code, intentKind = intent.kind.wire))
     }
 
     suspend fun ingestWithActions(source: SourceEntity, actions: List<ActionPointDraft>): Long {
@@ -44,8 +47,9 @@ class HodDeskRepository(private val dao: HodDeskDao) {
             return existing.id
         }
         val decision = TriageScorer.score(source)
+        val intent = CaptureIntentClassifier.classify(source.title, source.body, source.sourceType)
         val sensitivity = SensitivityClassifier.classify(source.title, source.body)
-        val sourceId = dao.insertSource(source.copy(triageBucket = decision.bucket.name, priorityScore = decision.score, priorityReasons = decision.reasons.joinToString(" · "), sensitivity = sensitivity.tier.code))
+        val sourceId = dao.insertSource(source.copy(triageBucket = decision.bucket.name, priorityScore = decision.score, priorityReasons = (decision.reasons + intent.reasons).distinct().joinToString(" · "), sensitivity = sensitivity.tier.code, intentKind = intent.kind.wire))
         val consolidated = ActionConsolidator.merge(actions)
         if (consolidated.isNotEmpty()) dao.insertActionPoints(consolidated.map { it.toEntity(sourceId) })
         return sourceId
@@ -178,7 +182,10 @@ class HodDeskRepository(private val dao: HodDeskDao) {
             peopleJson = JSONArray(output.people).toString(),
             ambiguitiesJson = JSONArray((output.ambiguities + output.conflicts.map { "CONFLICT: $it" }).distinct()).toString(),
             citationsJson = JSONArray(output.citations).toString(),
-            confidence = output.confidence
+            confidence = output.confidence,
+            fieldConfidenceJson = com.hoddesk.app.reasoning.FieldEvidenceAttribution.confidenceJson(output.fieldConfidence.mapValues { com.hoddesk.app.reasoning.FieldEvidence(it.value, output.fieldCitations[it.key], if (it.value >= .8f) "verified" else "ambiguous") }),
+            fieldCitationsJson = FieldEvidenceAttribution.stringMapJson(output.fieldCitations),
+            intentKind = output.intentKind
         ))
         audit("source", sourceId, "gemma_reasoning_recorded", "model=$modelVersion;sourceIds=${output.sourceIds.joinToString(",")};citations=${output.citations.size};conflicts=${output.conflicts.size};confidence=${output.confidence}")
     }
@@ -236,7 +243,11 @@ data class ActionPointDraft(
     val category: String = "official_work",
     val ownerText: String? = null,
     val referenceNumber: String? = null,
-    val recurrenceRule: String? = null
+    val recurrenceRule: String? = null,
+    val intentKind: String = "task",
+    val fieldConfidenceJson: String = "{}",
+    val fieldCitationsJson: String = "{}",
+    val conflictJson: String = "{}"
 ) {
-    fun toEntity(sourceId: Long) = ActionPointEntity(sourceId = sourceId, action = action, category = category, dateText = dateText, timeText = timeText, locationText = locationText, peopleText = peopleText, evidence = evidence, confidence = confidence, status = if (ambiguity.isNullOrBlank()) "needs_review" else "needs_confirmation", ambiguity = ambiguity, ownerText = ownerText, referenceNumber = referenceNumber, recurrenceRule = recurrenceRule)
+    fun toEntity(sourceId: Long) = ActionPointEntity(sourceId = sourceId, action = action, category = category, dateText = dateText, timeText = timeText, locationText = locationText, peopleText = peopleText, evidence = evidence, confidence = confidence, status = if (ambiguity.isNullOrBlank()) "needs_review" else "needs_confirmation", ambiguity = ambiguity, ownerText = ownerText, referenceNumber = referenceNumber, recurrenceRule = recurrenceRule, intentKind = intentKind, fieldConfidenceJson = fieldConfidenceJson, fieldCitationsJson = fieldCitationsJson, conflictJson = conflictJson)
 }

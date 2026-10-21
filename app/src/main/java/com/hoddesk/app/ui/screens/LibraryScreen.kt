@@ -36,6 +36,7 @@ import com.hoddesk.app.ui.components.SearchField
 import com.hoddesk.app.ui.components.SegmentedControl
 import com.hoddesk.app.ui.components.pressable
 import com.hoddesk.app.ui.theme.Hod
+import com.hoddesk.app.ui.theme.Neu
 import com.hoddesk.app.ui.theme.Squircles
 
 private val Scopes = listOf("All", "Letters", "WhatsApp", "Calls")
@@ -94,7 +95,7 @@ fun LibraryScreen(
             }
         }
         if (results.isEmpty()) item {
-            Box(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface)) {
+            Box(Modifier.fillMaxWidth().then(Neu.card(shape = Squircles.card)).clip(Squircles.card).background(c.surface)) {
                 EmptyState(if (query.isBlank()) "Library is empty" else "No matches", if (query.isBlank()) "Imported letters, messages and calls are kept here, searchable on this phone." else "Try a GO number, a person, or describe it in Tamil or English.")
             }
         }
@@ -102,7 +103,7 @@ fun LibraryScreen(
             val look = sourceLook(source.sourceType)
             val isSelected = source.id in selected
             Row(
-                Modifier.fillMaxWidth().clip(Squircles.card).background(if (isSelected) c.tintSoft else c.surface)
+                Modifier.fillMaxWidth().then(Neu.card(shape = Squircles.card)).clip(Squircles.card).background(if (isSelected) c.tintSoft else c.surface)
                     .pressable { if (selecting) selected = if (isSelected) selected - source.id else selected + source.id else onOpen(source) }
                     .padding(start = if (selecting) 4.dp else 16.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),

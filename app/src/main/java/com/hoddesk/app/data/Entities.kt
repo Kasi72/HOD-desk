@@ -17,7 +17,8 @@ data class SourceEntity(
     val processingStatus: String = "ready",
     val triageBucket: String = "FYI",
     val priorityScore: Int = 0,
-    val priorityReasons: String? = null
+    val priorityReasons: String? = null,
+    val intentKind: String = "reference"
 )
 
 @Entity(tableName = "tasks", indices = [Index("status"), Index("dueAt"), Index("sourceId")])
@@ -160,6 +161,10 @@ data class ActionPointEntity(
     val ownerText: String? = null,
     val referenceNumber: String? = null,
     val recurrenceRule: String? = null,
+    val intentKind: String = "task",
+    val fieldConfidenceJson: String = "{}",
+    val fieldCitationsJson: String = "{}",
+    val conflictJson: String = "{}",
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -177,6 +182,9 @@ data class ReasoningRunEntity(
     val ambiguitiesJson: String,
     val citationsJson: String,
     val confidence: Float,
+    val fieldConfidenceJson: String = "{}",
+    val fieldCitationsJson: String = "{}",
+    val intentKind: String = "task",
     val createdAt: Long = System.currentTimeMillis()
 )
 

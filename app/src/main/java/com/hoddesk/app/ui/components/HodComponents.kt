@@ -279,7 +279,7 @@ fun NavBar(backLabel: String, onBack: () -> Unit, title: String? = null, subtitl
 @Composable
 fun SearchField(value: String, onValueChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier) {
     Row(
-        modifier.fillMaxWidth().height(48.dp).clip(Squircles.small).background(Hod.colors.fill).then(Neu.inset(shape = Squircles.small)).padding(horizontal = 14.dp),
+        modifier.fillMaxWidth().height(50.dp).clip(Squircles.small).background(Hod.colors.fill).then(Neu.inset(shape = Squircles.small)).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -438,7 +438,7 @@ fun GroupedPage(modifier: Modifier = Modifier, content: @Composable BoxScope.() 
 // The floating tab bar is taller than the legacy iOS bar and its shadows
 // extend beyond the capsule. Keep a generous scroll tail so the last card is
 // never hidden behind it on gesture- and three-button-navigation devices.
-val PageContentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 24.dp, bottom = 168.dp)
+val PageContentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 24.dp, bottom = 176.dp)
 
 @Composable
 fun CheckCircle(checked: Boolean, onToggle: () -> Unit, label: String) {

@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -107,7 +108,7 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
     /** Tamil-first multilingual transcription. English remains available through [transcribeEnglish]. */
     suspend fun transcribeWav(uri: Uri): String = transcribeTamil(uri)
 
-    suspend fun transcribeTamil(uri: Uri): String = sharedInferenceMutex.withLock { withContext(Dispatchers.IO) {
+    suspend fun transcribeTamil(uri: Uri): String = withTimeout(5 * 60_000L) { sharedInferenceMutex.withLock { withContext(Dispatchers.IO) {
         val coroutine = currentCoroutineContext()
         val started = System.currentTimeMillis()
         ensureTamilModel()
@@ -174,7 +175,7 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
             source.delete()
             audio.delete()
         }
-    } }
+    } } }
 
     /** Detect compressed containers when a picker supplies no useful MIME. */
     private fun isCompressedAudio(source: File, mime: String): Boolean {

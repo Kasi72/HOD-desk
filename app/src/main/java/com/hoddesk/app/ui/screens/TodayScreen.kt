@@ -115,7 +115,7 @@ fun TodayScreen(
         }
         item {
             Row(
-                Modifier.fillMaxWidth().height(38.dp).clip(Squircles.small).background(c.fill).pressable(onClick = onSearch).padding(horizontal = 10.dp).semantics { contentDescription = "Search letters, people, GO numbers" },
+                Modifier.fillMaxWidth().height(44.dp).clip(Squircles.small).background(c.fill).then(Neu.inset(shape = Squircles.small)).pressable(onClick = onSearch).padding(horizontal = 12.dp).semantics { contentDescription = "Search letters, people, GO numbers" },
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(Icons.Rounded.Search, null, tint = c.secondaryLabel, modifier = Modifier.size(18.dp))
@@ -153,7 +153,7 @@ fun TodayScreen(
         MeetingPreparation.next(todayEvents)?.let { nextEvent ->
             item {
                 val pack = MeetingPreparation.pack(nextEvent, tasks, sources)
-                Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.fillMaxWidth().then(Neu.card(shape = Squircles.card)).clip(Squircles.card).background(c.surface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Meeting preparation", style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.tint)
                     Text(nextEvent.title, style = Hod.type.headline, color = c.label)
                     if (pack.agenda.isNotEmpty()) Text("Prepare: ${pack.agenda.joinToString(" · ")}", style = Hod.type.footnote, color = c.secondaryLabel, maxLines = 2)
@@ -238,7 +238,7 @@ private fun SectionTitle(title: String, trailingText: String?, action: String? =
 
 @Composable
 private fun BriefCard(icon: ImageVector, iconColor: Color, label: String, labelColor: Color, title: String, subtitle: String, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(Squircles.card).background(Hod.colors.surface).pressable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.fillMaxWidth().then(Neu.card(shape = Squircles.card)).clip(Squircles.card).background(Hod.colors.surface).pressable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconTile(icon, iconColor, size = 26.dp)
             Text(label, style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = labelColor, modifier = Modifier.weight(1f), maxLines = 1)
@@ -251,9 +251,9 @@ private fun BriefCard(icon: ImageVector, iconColor: Color, label: String, labelC
 
 @Composable
 private fun CountTile(count: Int, label: String, modifier: Modifier, onClick: () -> Unit) {
-    Column(modifier.clip(Squircles.card).background(Hod.colors.surface).pressable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp)) {
+    Column(modifier.then(Neu.card(shape = Squircles.card)).clip(Squircles.card).background(Hod.colors.surface).pressable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp)) {
         Text(count.toString(), style = Hod.type.title1, color = Hod.colors.label)
-        Text(label, style = Hod.type.subheadline, color = Hod.colors.secondaryLabel)
+        Text(label, style = Hod.type.subheadline, color = Hod.colors.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

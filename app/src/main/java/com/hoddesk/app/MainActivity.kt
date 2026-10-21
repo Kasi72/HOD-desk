@@ -200,6 +200,10 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val learningCorrectionCount by remember { dao.observeLearningCorrectionCount() }.collectAsState(0)
     val commitments by remember { dao.observeCommitments() }.collectAsState(emptyList())
     LaunchedEffect(Unit) {
+        // Let the first Compose frame render before maintenance performs Room
+        // migrations, retention work or WorkManager registration. This keeps
+        // cold start responsive while preserving the same startup guarantees.
+        delay(250)
         // Maintenance is best-effort. A revoked permission, a damaged legacy
         // row, or a scheduler refusal must never prevent the UI from opening.
         runCatching { IndexMaintenanceScheduler.schedule(context) }

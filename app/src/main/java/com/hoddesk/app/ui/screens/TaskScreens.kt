@@ -68,6 +68,7 @@ import com.hoddesk.app.ui.components.SegmentedControl
 import com.hoddesk.app.ui.components.SheetAction
 import com.hoddesk.app.ui.components.pressable
 import com.hoddesk.app.ui.theme.Hod
+import com.hoddesk.app.ui.theme.Neu
 import com.hoddesk.app.ui.theme.Squircles
 import java.text.DateFormat
 import java.time.LocalDate
@@ -103,7 +104,7 @@ fun TasksScreen(tasks: List<TaskEntity>, initialSegment: Int, onToggleDone: (Tas
         item { Text("Tasks", style = Hod.type.largeTitle, color = c.label, modifier = Modifier.padding(start = 4.dp, top = 12.dp)) }
         item { SegmentedControl(listOf("Mine", "Delegated", "Done"), segment, { segment = it }) }
         if (visible.isEmpty()) item {
-            Box(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface)) {
+            Box(Modifier.fillMaxWidth().then(Neu.card(shape = Squircles.card)).clip(Squircles.card).background(c.surface)) {
                 EmptyState(
                     when (segment) { 0 -> "No open tasks"; 1 -> "Nothing delegated"; else -> "Nothing completed yet" },
                     when (segment) { 0 -> "Approve an action in Review and it becomes a task here."; 1 -> "Use Delegate in Review to hand work to your team."; else -> "Completed tasks are kept here with their history." },

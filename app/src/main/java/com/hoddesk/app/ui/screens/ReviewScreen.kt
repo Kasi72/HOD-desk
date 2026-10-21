@@ -55,6 +55,7 @@ import com.hoddesk.app.imports.RecognitionCorrectionEngine
 import com.hoddesk.app.reasoning.ActionReasoningOutput
 import com.hoddesk.app.reasoning.EvidenceBundleBuilder
 import com.hoddesk.app.reasoning.FieldGrounding
+import com.hoddesk.app.reasoning.FieldEvidenceAttribution
 import com.hoddesk.app.reasoning.ActionFieldQualityScorer
 import com.hoddesk.app.reasoning.ActionDependencyAnalyzer
 import com.hoddesk.app.reasoning.ActionReasoningFallback
@@ -81,9 +82,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlin.math.roundToInt
 
-private enum class FieldState { Verified, Confirm, Missing }
-private data class FieldRowModel(val label: String, val value: String?, val state: FieldState, val confidence: Float = 0f)
+private enum class FieldState { Verified, Likely, Confirm, Conflict, Missing }
+private data class FieldRowModel(val key: String, val label: String, val value: String?, val state: FieldState, val confidence: Float = 0f, val citation: String? = null)
 
 @Composable
 fun ReviewScreen(
@@ -264,6 +266,7 @@ private fun SourceReview(
                     val bucket = bucketLabel(source.triageBucket)
                     if (bucket == "Act") Pill(bucket, c.orange.copy(alpha = 0.14f), c.orangeText) else Pill(bucket, c.fill, c.label)
                 }
+                Pill("Intent · ${source.intentKind.replace('_', ' ').replaceFirstChar { it.uppercase() }}", c.tintSoft, c.tint)
                 if (action == null) {
                     Text(if (pointState == null) "Loading action points…" else "No supported action points remain.", style = Hod.type.title3, color = c.label)
                     if (pointState != null) {
@@ -307,15 +310,7 @@ private fun SourceReview(
                     if (i > 0) RowDivider()
                     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(f.label, style = Hod.type.body, color = c.label, modifier = Modifier.weight(1f))
-                        Text(
-                            when (f.state) {
-                                FieldState.Missing -> "Not stated"
-                                FieldState.Confirm -> "${f.value.orEmpty()} · confirm"
-                                FieldState.Verified -> f.value.orEmpty()
-                            },
-                            style = Hod.type.body,
-                            color = when (f.state) { FieldState.Verified -> c.secondaryLabel; FieldState.Confirm -> c.orangeText; FieldState.Missing -> c.tertiaryLabel },
-                            modifier = Modifier.weight(1.8f).pressable(enabled = !busy) {
+                        Column(Modifier.weight(1.8f).pressable(enabled = !busy) {
                                 // Field values are edited together with the
                                 // action so uncertain extraction can never be
                                 // silently accepted as fact.
@@ -326,11 +321,26 @@ private fun SourceReview(
                                 editedOwner = point?.ownerText.orEmpty(); editedReference = point?.referenceNumber.orEmpty()
                                 edited = action.orEmpty()
                                 editing = true
-                            },
-                        )
+                            }) {
+                            val valueText = when (f.state) {
+                                FieldState.Missing -> "Not stated"
+                                FieldState.Confirm, FieldState.Conflict -> "${f.value.orEmpty()} · confirm"
+                                FieldState.Likely -> "${f.value.orEmpty()} · likely"
+                                FieldState.Verified -> f.value.orEmpty()
+                            }
+                            Text(valueText, style = Hod.type.body, color = when (f.state) {
+                                FieldState.Verified -> c.secondaryLabel
+                                FieldState.Likely -> c.tint
+                                FieldState.Confirm, FieldState.Conflict -> c.orangeText
+                                FieldState.Missing -> c.tertiaryLabel
+                            }, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            f.confidence.takeIf { it > 0f }?.let { Text("${(it * 100).roundToInt()}% confidence", style = Hod.type.caption, color = c.secondaryLabel) }
+                            f.citation?.let { Text("“${it.take(140)}”", style = Hod.type.caption, color = c.tertiaryLabel, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                        }
                         when (f.state) {
                             FieldState.Verified -> Icon(Icons.Rounded.CheckCircle, "Found in source", tint = c.green, modifier = Modifier.size(22.dp))
-                            FieldState.Confirm -> Icon(Icons.Rounded.Error, "Needs confirmation: missing support or source conflict", tint = c.orange, modifier = Modifier.size(22.dp))
+                            FieldState.Likely -> Icon(Icons.Rounded.Error, "Likely; confirm before approval", tint = c.tint, modifier = Modifier.size(22.dp))
+                            FieldState.Confirm, FieldState.Conflict -> Icon(Icons.Rounded.Error, "Needs confirmation: missing support or source conflict", tint = c.orange, modifier = Modifier.size(22.dp))
                             FieldState.Missing -> Icon(Icons.Rounded.Help, "Not stated in source", tint = c.chevron, modifier = Modifier.size(22.dp))
                         }
                     }
@@ -340,8 +350,8 @@ private fun SourceReview(
             if (groundedPoint != null) {
                 Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.tint.copy(alpha = .08f)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Evidence checks", style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.label)
-                    Text("${fields.count { it.state == FieldState.Verified }} field(s) found in the cited passage · ${fields.count { it.state == FieldState.Confirm }} need confirmation", style = Hod.type.footnote, color = c.secondaryLabel)
-                    Text("These are source checks, not measured accuracy percentages. Tap any value to inspect, edit and save it.", style = Hod.type.footnote, color = c.secondaryLabel)
+                    Text("${fields.count { it.state == FieldState.Verified }} verified · ${fields.count { it.state == FieldState.Likely }} likely · ${fields.count { it.state == FieldState.Confirm || it.state == FieldState.Conflict }} need confirmation", style = Hod.type.footnote, color = c.secondaryLabel)
+                    Text("Each field shows its confidence and exact supporting sentence. Tap any value to edit and save it.", style = Hod.type.footnote, color = c.secondaryLabel)
                 }
             }
             if (instructionModelPath != null && !action.isNullOrBlank() && manual == null && !reasoningRequested) {
@@ -466,14 +476,24 @@ private fun SourceReview(
 private fun fieldRows(point: ActionPointEntity?, evidence: String): List<FieldRowModel> {
     val people = point?.peopleText?.split(",", ";")?.map { it.trim() }?.filter { it.isNotBlank() }.orEmpty()
     val grounding = FieldGrounding.validate(evidence, point?.dateText, point?.timeText, point?.locationText, people, listOfNotNull(point?.ambiguity))
-    fun state(raw: String?, grounded: Boolean) = when { raw.isNullOrBlank() -> FieldState.Missing; grounded -> FieldState.Verified; else -> FieldState.Confirm }
+    val fallback = FieldEvidenceAttribution.assess(point?.action.orEmpty(), point?.dateText, point?.timeText, point?.locationText, people, point?.ownerText, point?.referenceNumber, evidence)
+    val storedConfidence = FieldEvidenceAttribution.readConfidences(point?.fieldConfidenceJson)
+    val storedCitations = FieldEvidenceAttribution.readCitations(point?.fieldCitationsJson)
+    fun state(key: String, raw: String?, grounded: Boolean): FieldState {
+        if (raw.isNullOrBlank()) return FieldState.Missing
+        val confidence = storedConfidence[key]?.takeIf { it > 0f } ?: fallback[key]?.confidence ?: 0f
+        if (point?.ambiguity?.contains("conflict", true) == true && (key == "date" || key == "time")) return FieldState.Conflict
+        return when { grounded && confidence >= .8f -> FieldState.Verified; confidence >= .55f -> FieldState.Likely; else -> FieldState.Confirm }
+    }
+    fun row(key: String, label: String, raw: String?, grounded: Boolean) = FieldRowModel(key, label, raw, state(key, raw, grounded), storedConfidence[key]?.takeIf { it > 0f } ?: fallback[key]?.confidence ?: 0f, storedCitations[key] ?: fallback[key]?.quote)
     return listOf(
-        FieldRowModel("Date", point?.dateText, state(point?.dateText, grounding.date != null && point?.ambiguity.isNullOrBlank())),
-        FieldRowModel("Time", point?.timeText, state(point?.timeText, grounding.time != null && point?.ambiguity.isNullOrBlank())),
-        FieldRowModel("Where", point?.locationText, state(point?.locationText, grounding.location != null)),
-        FieldRowModel("People", people.joinToString("; ").ifBlank { null }, state(people.joinToString(), grounding.people.size == people.size)),
-        FieldRowModel("Owner", point?.ownerText, state(point?.ownerText, point?.ownerText?.let { FieldGrounding.supportsField(evidence, it) } == true)),
-        FieldRowModel("Reference", point?.referenceNumber, state(point?.referenceNumber, point?.referenceNumber?.let { FieldGrounding.supportsField(evidence, it) } == true)),
+        row("action", "Action", point?.action, point?.action?.let { FieldGrounding.supportsAction(evidence, it) } == true),
+        row("date", "Date", point?.dateText, grounding.date != null && point?.ambiguity.isNullOrBlank()),
+        row("time", "Time", point?.timeText, grounding.time != null && point?.ambiguity.isNullOrBlank()),
+        row("location", "Where", point?.locationText, grounding.location != null),
+        row("people", "People", people.joinToString("; ").ifBlank { null }, grounding.people.size == people.size),
+        row("owner", "Owner", point?.ownerText, point?.ownerText?.let { FieldGrounding.supportsField(evidence, it) } == true),
+        row("reference", "Reference", point?.referenceNumber, point?.referenceNumber?.let { FieldGrounding.supportsField(evidence, it) } == true),
     )
 }
 
