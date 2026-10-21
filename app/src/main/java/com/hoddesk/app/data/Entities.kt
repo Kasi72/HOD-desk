@@ -15,13 +15,19 @@ data class SourceEntity(
     val reviewed: Boolean = false,
     val sensitivity: String = "official",
     val processingStatus: String = "ready",
+    val lifecycleState: String = SourceLifecycle.IMPORTED.wire,
     val triageBucket: String = "FYI",
     val priorityScore: Int = 0,
     val priorityReasons: String? = null,
-    val intentKind: String = "reference"
+    val intentKind: String = "reference",
+    val rawText: String? = null,
+    val correctedText: String? = null,
+    val detectedLanguage: String? = null,
+    val transcriptConfidence: Float? = null,
+    val evidenceLocator: String? = null
 )
 
-@Entity(tableName = "tasks", indices = [Index("status"), Index("dueAt"), Index("sourceId")])
+@Entity(tableName = "tasks", indices = [Index("status"), Index("dueAt"), Index("sourceId"), Index(value = ["approvalOperationId"], unique = true)])
 data class TaskEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val sourceId: Long? = null,
@@ -35,7 +41,9 @@ data class TaskEntity(
     val assignee: String? = null,
     val recurrenceRule: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
-    val completedAt: Long? = null
+    val completedAt: Long? = null,
+    /** Stable idempotency key for user-approved operations; null for free-standing secretary tasks. */
+    val approvalOperationId: String? = null
 )
 
 @Entity(tableName = "events", indices = [Index("startsAt"), Index("endsAt")])

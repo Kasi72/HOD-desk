@@ -13,6 +13,7 @@ import org.json.JSONArray
 import com.hoddesk.app.data.AuditEntryEntity
 import com.hoddesk.app.data.LearningCorrectionEntity
 import com.hoddesk.app.data.CommitmentEntity
+import com.hoddesk.app.data.transitionTo
 import com.hoddesk.app.triage.TriageScorer
 import com.hoddesk.app.privacy.SensitivityClassifier
 import com.hoddesk.app.semantic.SourceFingerprint
@@ -75,7 +76,7 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     /** Marks a source handled without creating a task ("Not mine" / "Not an action"). Nothing is deleted. */
     suspend fun dismissSource(sourceId: Long, reason: String) {
         val source = dao.source(sourceId) ?: return
-        dao.updateSource(source.copy(reviewed = true, triageBucket = if (reason == "not_mine") "NOT_MINE" else source.triageBucket))
+        dao.updateSource(source.transitionTo(com.hoddesk.app.data.SourceLifecycle.COMPLETED).copy(reviewed = true, triageBucket = if (reason == "not_mine") "NOT_MINE" else source.triageBucket))
         audit("source", sourceId, "dismissed_$reason")
     }
 
@@ -128,7 +129,7 @@ class HodDeskRepository(private val dao: HodDeskDao) {
 
     suspend fun returnSourceToInbox(sourceId: Long) {
         val source = dao.source(sourceId) ?: return
-        dao.updateSource(source.copy(reviewed = false, processingStatus = "needs_review"))
+        dao.updateSource(source.transitionTo(com.hoddesk.app.data.SourceLifecycle.REVIEW).copy(reviewed = false))
         audit("source", sourceId, "returned_to_inbox")
     }
 
@@ -189,7 +190,7 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         ))
         audit("source", sourceId, "gemma_reasoning_recorded", "model=$modelVersion;sourceIds=${output.sourceIds.joinToString(",")};citations=${output.citations.size};conflicts=${output.conflicts.size};confidence=${output.confidence}")
     }
-    suspend fun deleteSource(id: Long) { audit("source", id, "deleted"); dao.deleteSourceCascade(id) }
+    suspend fun deleteSource(id: Long) { audit("source", id, "deleted"); dao.source(id)?.let { dao.updateSource(it.transitionTo(com.hoddesk.app.data.SourceLifecycle.DELETED)) }; dao.deleteSourceCascade(id) }
     suspend fun deleteTask(id: Long) { audit("task", id, "deleted"); dao.deleteTaskCascade(id) }
     suspend fun deleteEvent(id: Long) { audit("event", id, "deleted"); dao.deleteEvent(id) }
     suspend fun purgeAuditBefore(before: Long): Int = dao.deleteAuditBefore(before)

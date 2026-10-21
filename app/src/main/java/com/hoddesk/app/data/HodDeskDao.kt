@@ -28,6 +28,7 @@ interface HodDeskDao {
     @Query("SELECT * FROM events WHERE id = :id LIMIT 1") suspend fun event(id: Long): EventEntity?
     @Query("SELECT * FROM events WHERE taskId = :taskId ORDER BY id") suspend fun eventsForTask(taskId: Long): List<EventEntity>
     @Query("SELECT * FROM tasks WHERE sourceId = :sourceId AND title = :title AND status != 'deleted' ORDER BY id LIMIT 1") suspend fun approvedTask(sourceId: Long, title: String): TaskEntity?
+    @Query("SELECT * FROM tasks WHERE approvalOperationId = :operationId AND status != 'deleted' LIMIT 1") suspend fun taskByApprovalOperation(operationId: String): TaskEntity?
     @Query("SELECT * FROM tasks WHERE dueAt IS NOT NULL AND status NOT IN ('deleted', 'archived', 'completed')") suspend fun tasksWithDueTimes(): List<TaskEntity>
     @Query("SELECT * FROM tasks WHERE sourceId IS NULL AND project = 'Secretary' AND title = :title AND status NOT IN ('deleted', 'archived', 'completed') ORDER BY id") suspend fun activeSecretaryTasks(title: String): List<TaskEntity>
     @Query("SELECT * FROM evidence WHERE taskId = :taskId ORDER BY capturedAt DESC") fun observeEvidence(taskId: Long): Flow<List<EvidenceEntity>>
@@ -164,16 +165,19 @@ interface HodDeskDao {
         require(source.sensitivity !in setOf("T3", "T4", "clinical")) { "Clinical content must be reviewed in the Clinical Vault" }
         val candidate = requireNotNull(actionPointBySourceAndAction(sourceId, normalized)) { "No persisted candidate matches this action; edit and confirm a manual action first" }
         require(dueAt == null || candidate.ambiguity.isNullOrBlank()) { "Resolve the candidate's source warnings before scheduling" }
+        val operationId = "approve:$sourceId:${normalized.trim().lowercase().replace(Regex("\\s+"), " ")}"
         approvedTask(sourceId, normalized)?.let {
             setActionPointStatus(sourceId, normalized, "approved")
             refreshSourceReviewState(sourceId)
+            source(sourceId)?.let { current -> if (SourceLifecycle.parse(current.lifecycleState) != SourceLifecycle.TASK_EVENT) updateSource(current.transitionTo(SourceLifecycle.APPROVED).transitionTo(SourceLifecycle.TASK_EVENT)) }
             syncTaskCommitmentAtomic(it.id)
             return it.id
         }
-        val taskId = insertTask(TaskEntity(sourceId = sourceId, title = normalized, project = project, dueAt = dueAt, assignee = assignee?.takeIf { it.isNotBlank() }))
+        val taskId = insertTask(TaskEntity(sourceId = sourceId, title = normalized, project = project, dueAt = dueAt, assignee = assignee?.takeIf { it.isNotBlank() }, approvalOperationId = operationId))
         if (dueAt != null) insertEvent(EventEntity(taskId = taskId, title = normalized, startsAt = dueAt, endsAt = dueAt + 60 * 60 * 1000L, confirmed = true))
         setActionPointStatus(sourceId, normalized, "approved")
         refreshSourceReviewState(sourceId)
+        source(sourceId)?.let { current -> if (SourceLifecycle.parse(current.lifecycleState) != SourceLifecycle.TASK_EVENT) updateSource(current.transitionTo(SourceLifecycle.APPROVED).transitionTo(SourceLifecycle.TASK_EVENT)) }
         syncTaskCommitmentAtomic(taskId)
         if (!assignee.isNullOrBlank()) actionPointBySourceAndAction(sourceId, normalized)?.let {
             insertLearningCorrection(LearningCorrectionEntity(actionPointId = it.id, field = "delegation", before = null, after = assignee))
@@ -189,7 +193,10 @@ interface HodDeskDao {
     suspend fun refreshSourceReviewState(sourceId: Long) {
         val current = source(sourceId) ?: return
         val remaining = actionPoints(sourceId).any { it.status !in setOf("approved", "rejected", "dismissed") }
-        updateSource(current.copy(reviewed = !remaining))
+        if (!remaining) {
+            val state = SourceLifecycle.parse(current.lifecycleState)
+            updateSource(if (state == SourceLifecycle.TASK_EVENT) current.copy(reviewed = true) else current.transitionTo(SourceLifecycle.APPROVED).copy(reviewed = true))
+        } else updateSource(current.copy(reviewed = false))
     }
 
     @Transaction
@@ -310,10 +317,11 @@ interface HodDeskDao {
         val title = source.title.trim()
         require(title.isNotBlank()) { "Approved source cannot have a blank title" }
         require(source.sensitivity !in setOf("T3", "T4", "clinical")) { "Clinical content must be reviewed in the Clinical Vault" }
+        val operationId = "approve-source:$sourceId:${title.lowercase().replace(Regex("\\s+"), " ")}"
         approvedTask(sourceId, title)?.let { syncTaskCommitmentAtomic(it.id); return it.id }
-        val taskId = insertTask(TaskEntity(sourceId = sourceId, title = title, project = project, dueAt = dueAt))
+        val taskId = insertTask(TaskEntity(sourceId = sourceId, title = title, project = project, dueAt = dueAt, approvalOperationId = operationId))
         if (dueAt != null) insertEvent(EventEntity(taskId = taskId, title = title, startsAt = dueAt, endsAt = dueAt + 60 * 60 * 1000L, confirmed = true))
-        updateSource(source.copy(reviewed = true))
+        updateSource(source.transitionTo(SourceLifecycle.APPROVED).transitionTo(SourceLifecycle.TASK_EVENT).copy(reviewed = true))
         syncTaskCommitmentAtomic(taskId)
         insertAudit(AuditEntryEntity(entityType = "source", entityId = sourceId, action = "source_approved", detail = title))
         insertAudit(AuditEntryEntity(entityType = "task", entityId = taskId, action = "created_from_source", detail = "source=$sourceId"))

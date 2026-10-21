@@ -71,7 +71,7 @@ fun buildMustAct(sources: List<SourceEntity>, tasks: List<TaskEntity>, today: Lo
     val endOfToday = today.plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
     val dueTasks = tasks.filter { it.status != "completed" && it.status != "deleted" && it.status != "archived" && it.dueAt != null && it.dueAt < endOfToday }
         .sortedBy { it.dueAt }.map { MustAct.Task(it) }
-    val reviews = sources.filter { it.processingStatus !in setOf("deleted", "archived") && it.body.isNotBlank() && !it.reviewed && it.triageBucket == "ACT" && !it.isClinical() }
+    val reviews = sources.filter { it.processingStatus !in setOf("deleted", "archived", "completed") && it.body.isNotBlank() && !it.reviewed && it.triageBucket == "ACT" && !it.isClinical() }
         .sortedByDescending { it.priorityScore }.map { MustAct.Review(it, it.title) }
     return (dueTasks + reviews).take(4)
 }
@@ -98,7 +98,7 @@ fun TodayScreen(
     val c = Hod.colors
     val today = LocalDate.now()
     val mustAct = buildMustAct(sources, tasks, today)
-    val toReview = sources.count { it.processingStatus !in setOf("deleted", "archived") && it.body.isNotBlank() && !it.reviewed && !it.isClinical() }
+    val toReview = sources.count { it.processingStatus !in setOf("deleted", "archived", "completed") && it.body.isNotBlank() && !it.reviewed && !it.isClinical() }
     val waiting = secretaryState?.waiting ?: tasks.count { it.status != "completed" && it.status != "deleted" && it.status != "archived" && !it.assignee.isNullOrBlank() }
     LazyColumn(Modifier.statusBarsPadding(), contentPadding = PageContentPadding, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {

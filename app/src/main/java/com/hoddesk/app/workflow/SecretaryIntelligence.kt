@@ -29,7 +29,7 @@ object SecretaryIntelligence {
         val end = today.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val soon = end + 48 * 60 * 60 * 1000L
         val now = System.currentTimeMillis()
-        val visibleSources = sources.filter { it.processingStatus !in setOf("deleted", "archived") && it.sensitivity !in setOf("T3", "T4", "T3_CLINICAL", "T4_SPECIAL") && it.body.isNotBlank() }
+        val visibleSources = sources.filter { it.processingStatus !in setOf("deleted", "archived", "completed") && it.sensitivity !in setOf("T3", "T4", "T3_CLINICAL", "T4_SPECIAL") && it.body.isNotBlank() }
         val visibleIds = visibleSources.map { it.id }.toSet()
         val activeTasks = tasks.filter { active(it) && (it.sourceId == null || it.sourceId in visibleIds) }
         val toReview = visibleSources.count { !it.reviewed }
@@ -91,7 +91,7 @@ object SecretaryIntelligence {
     data class ExecutiveBrief(val kind: BriefKind, val title: String, val summary: String, val citations: List<BriefCitation>, val requiresReview: Boolean)
 
     fun executiveBrief(kind: BriefKind, sources: List<SourceEntity>, tasks: List<TaskEntity>, events: List<com.hoddesk.app.data.EventEntity> = emptyList(), commitments: List<com.hoddesk.app.data.CommitmentEntity> = emptyList(), now: Long = System.currentTimeMillis()): ExecutiveBrief {
-        val visible = sources.filter { it.processingStatus !in setOf("deleted", "archived") && it.sensitivity !in setOf("T3", "T4", "T3_CLINICAL", "T4_SPECIAL") && it.body.isNotBlank() }
+        val visible = sources.filter { it.processingStatus !in setOf("deleted", "archived", "completed") && it.sensitivity !in setOf("T3", "T4", "T3_CLINICAL", "T4_SPECIAL") && it.body.isNotBlank() }
         val visibleIds = visible.map { it.id }.toSet()
         val activeTasks = tasks.filter { active(it) && (it.sourceId == null || it.sourceId in visibleIds) }
         val activeCommitments = commitments.filter { it.status == "open" && (it.sourceId == null || it.sourceId in visibleIds) && it.evidence.isNotBlank() }

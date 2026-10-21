@@ -20,7 +20,17 @@ import java.io.FileOutputStream
 import java.util.concurrent.Executors
 import com.googlecode.tesseract.android.TessBaseAPI
 
-data class ImportedSource(val title: String, val body: String, val type: String, val uri: Uri? = null)
+data class ImportedSource(
+    val title: String,
+    val body: String,
+    val type: String,
+    val uri: Uri? = null,
+    val rawText: String? = null,
+    val correctedText: String? = null,
+    val detectedLanguage: String? = null,
+    val confidence: Float? = null,
+    val evidenceLocator: String? = null,
+)
 
 enum class TranscriptionStatus { QUEUED, READY, NEEDS_REVIEW, FAILED }
 
@@ -99,7 +109,9 @@ class ScreenshotImportAdapter {
             val tamil = if (text.any { it in '\u0B80'..'\u0BFF' }) "" else runCatching { recognizeTamil(context, uri) }.getOrDefault("")
             val merged = listOf(text, tamil).filter { it.isNotBlank() }.distinct().joinToString("\n")
             val title = merged.lineSequence().map { it.trim() }.firstOrNull { it.length >= 8 }?.take(72) ?: "Screenshot capture"
-            ImportedSource(title, merged.ifBlank { "OCR found no readable text; Tamil OCR also found no readable text" }, "Screenshot", uri)
+            val language = if (merged.any { it in '\u0B80'..'\u0BFF' }) "ta" else "en"
+            val locator = task.result?.textBlocks.orEmpty().mapIndexedNotNull { index, block -> block.boundingBox?.let { "block=$index,x=${it.left},y=${it.top},w=${it.width()},h=${it.height()}" } }.joinToString(";").ifBlank { null }
+            ImportedSource(title, merged.ifBlank { "OCR found no readable text; Tamil OCR also found no readable text" }, "Screenshot", uri, rawText = merged, correctedText = merged, detectedLanguage = language, confidence = if (merged.isBlank()) 0f else .72f, evidenceLocator = locator)
         }
     }
 

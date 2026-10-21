@@ -19,7 +19,7 @@ android {
         versionName = "2.22.0"
         buildConfigField("String", "INSTRUCTION_MODEL_URL", "\"${providers.gradleProperty("hoddeskInstructionModelUrl").orElse("https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4.litertlm?download=true").get()}\"")
         buildConfigField("String", "INSTRUCTION_MODEL_SHA256", "\"${providers.gradleProperty("hoddeskInstructionModelSha256").orElse("2e67a6cd51dfe0f793431e6bd4ed8d029c88e10f52ca0469ad38445e3cd3c1f4").get()}\"")
-        testInstrumentationRunner = "android.test.InstrumentationTestRunner"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Published LFS content digest for embeddinggemma-2-740m.litertlm (484622336 bytes).
         buildConfigField("String", "EMBEDDING_MODEL_SHA256", "\"${providers.gradleProperty("hoddeskEmbeddingModelSha256").orElse("e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c").get()}\"")
     }
@@ -76,5 +76,6 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("androidx.room:room-testing:2.7.2")
+    androidTestImplementation("androidx.test:runner:1.5.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

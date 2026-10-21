@@ -396,7 +396,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
             else -> ActionPointExtractor().annotate(redactedInput)
         }
         val needsReview = pendingAudio || body.contains("pending OCR", ignoreCase = true) || body.contains("no readable text", ignoreCase = true) || body.contains("No definite action", ignoreCase = true)
-        val source = SourceEntity(title = item.title, body = body, sourceType = item.type, sourceUri = uri?.toString(), processingStatus = if (needsReview) "needs_review" else "ready")
+        val source = SourceEntity(title = item.title, body = body, sourceType = item.type, sourceUri = uri?.toString(), processingStatus = if (needsReview) "needs_review" else "ready", lifecycleState = if (needsReview) com.hoddesk.app.data.SourceLifecycle.REVIEW.wire else com.hoddesk.app.data.SourceLifecycle.IMPORTED.wire, rawText = item.rawText ?: item.body, correctedText = item.correctedText ?: body, detectedLanguage = item.detectedLanguage, transcriptConfidence = item.confidence, evidenceLocator = item.evidenceLocator)
         // A failure message is evidence of a processing error, never an action.
         val extractor = ActionPointExtractor()
         val actions = if (pendingAudio || extractor.isProcessingFailure(redactedInput) || needsReview && redactedInput.contains("OCR", ignoreCase = true)) emptyList() else extractor.extract(redactedInput)
@@ -431,7 +431,9 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     return@launch
                 }
                 try {
-                    saveImported(ImportedSource(title, text.ifBlank { "No speech detected" }, type, uri), uri)
+                    val confidence = if (text.isBlank()) 0f else ((text.count { !it.isWhitespace() }.toFloat() / text.length.coerceAtLeast(1)) * .9f).coerceIn(.2f, .95f)
+                    val language = if (text.any { it in '\u0B80'..'\u0BFF' }) "ta" else "en"
+                    saveImported(ImportedSource(title, text.ifBlank { "No speech detected" }, type, uri, rawText = text, correctedText = text, detectedLanguage = language, confidence = confidence), uri)
                     onTranscript?.invoke(text)
                     status = "$title added for review"
                     runCatching { PerformanceMetrics.record(dao, "audio_transcription_latency_ms", System.currentTimeMillis() - started, "type=$type") }
@@ -718,7 +720,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     }
 
     // --- Derived status ---
-    val reviewQueue = sources.filter { it.processingStatus !in setOf("deleted", "archived") && it.body.isNotBlank() && !it.reviewed && !it.isClinical() }
+    val reviewQueue = sources.filter { it.processingStatus !in setOf("deleted", "archived", "completed") && it.body.isNotBlank() && !it.reviewed && !it.isClinical() }
         .sortedWith(compareByDescending<SourceEntity> { it.priorityScore }.thenByDescending { it.capturedAt })
     val aiHealthy = embeddingReady && (indexHealth?.healthy != false)
     val secretaryState = remember(sources, tasks, todayEvents, commitments) {
