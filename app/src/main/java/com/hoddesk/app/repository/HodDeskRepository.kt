@@ -231,7 +231,8 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     }
 }
 
-data class ActionPointDraft(
+/** Canonical extraction contract shared by document, OCR, audio and message adapters. */
+data class ActionExtractionResult(
     val action: String,
     val dateText: String? = null,
     val timeText: String? = null,
@@ -251,3 +252,6 @@ data class ActionPointDraft(
 ) {
     fun toEntity(sourceId: Long) = ActionPointEntity(sourceId = sourceId, action = action, category = category, dateText = dateText, timeText = timeText, locationText = locationText, peopleText = peopleText, evidence = evidence, confidence = confidence, status = if (ambiguity.isNullOrBlank()) "needs_review" else "needs_confirmation", ambiguity = ambiguity, ownerText = ownerText, referenceNumber = referenceNumber, recurrenceRule = recurrenceRule, intentKind = intentKind, fieldConfidenceJson = fieldConfidenceJson, fieldCitationsJson = fieldCitationsJson, conflictJson = conflictJson)
 }
+
+/** Compatibility name for existing adapter and importer call sites. */
+typealias ActionPointDraft = ActionExtractionResult
