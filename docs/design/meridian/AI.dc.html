@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>On-device AI</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=IBM+Plex+Mono:wght@400;500&amp;family=Noto+Sans+Tamil:wght@400;600&amp;family=Source+Serif+4:opsz,wght@8..60,500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0E6B63;text-decoration:none}a:hover{color:#0A524C}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+.m{font-family:'Plus Jakarta Sans','Noto Sans Tamil',system-ui,sans-serif;color:#15181E;-webkit-font-smoothing:antialiased}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.serif{font-family:'Source Serif 4','Noto Sans Tamil',Georgia,serif}
+.eb{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#5A6170}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.rz{background:#F3F1ED;border:1px solid rgba(255,255,255,.75);box-shadow:-6px -6px 14px rgba(255,255,255,.9),7px 9px 22px rgba(84,74,60,.15)}
+.rzs{background:#F3F1ED;border:1px solid rgba(255,255,255,.75);box-shadow:-3px -3px 8px rgba(255,255,255,.95),4px 5px 11px rgba(84,74,60,.14)}
+.in{background:#E5E1DB;box-shadow:inset 3px 3px 7px rgba(84,74,60,.17),inset -3px -3px 7px rgba(255,255,255,.85)}
+.grp{border-radius:24px;overflow:hidden}
+.li{display:flex;align-items:center;gap:12px;min-height:62px;padding:9px 16px;box-sizing:border-box;width:100%;text-align:left}
+.li+.li{border-top:1px solid rgba(84,74,60,.1)}
+.tl{width:36px;height:36px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none;background:#E5E1DB;box-shadow:inset 2px 2px 5px rgba(84,74,60,.17),inset -2px -2px 5px rgba(255,255,255,.85)}
+.gh{padding:0 8px 9px;margin:0}
+.ok{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#13653A}
+.ok::before{content:"";width:8px;height:8px;border-radius:4px;background:#17A493;box-shadow:0 0 0 3px rgba(23,164,147,.18)}
+</style>
+</helmet>
+<div class="m" style="width: 390px; height: 1000px; position: relative; background: #ECE9E4; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px; overflow: hidden">
+<header style="padding: 16px 14px 0; display: flex; flex-direction: column; gap: 14px">
+<a class="rzs" href="Settings.dc.html" aria-label="Back to Settings" style="width: 44px; height: 44px; border-radius: 16px; display: flex; align-items: center; justify-content: center; color: #15181E"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg></a>
+<h1 class="serif" style="margin: 0 8px; font-size: 40px; line-height: 1; font-weight: 500; letter-spacing: -.02em">On-device AI</h1>
+</header>
+
+<div style="padding: 0 18px; display: flex; flex-direction: column; gap: 20px">
+<div class="rz" style="padding: 18px; border-radius: 28px; display: flex; align-items: center; gap: 18px">
+<div role="img" aria-label="Search index 99 percent complete" style="width: 104px; height: 104px; border-radius: 52px; background: conic-gradient(#0E6B63 0 355deg, #DEDAD3 355deg 360deg); display: flex; align-items: center; justify-content: center; flex: none; box-shadow: 4px 6px 14px rgba(84,74,60,.18), -4px -4px 10px rgba(255,255,255,.9)">
+<div class="in" style="width: 82px; height: 82px; border-radius: 41px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #ECE9E4">
+<span style="font-size: 22px; font-weight: 800; letter-spacing: -.03em">99%</span>
+<span class="mono" style="font-size: 9.5px; color: #5A6170">indexed</span>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span class="ok">Everything working</span>
+<span style="font-size: 15px; font-weight: 800; line-height: 1.3">412 of 418 items searchable</span>
+<span style="font-size: 12px; line-height: 1.45; color: #4A505B">6 clinical items kept out on purpose. Last check 10:02.</span>
+</div>
+</div>
+
+<section><h2 class="eb gh">What runs here</h2><div class="grp rz">
+<div class="li"><span class="tl" style="color: #463FBF"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 17px; height: 17px"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></span><span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14.5px; font-weight: 700">Smart search</span><span style="font-size: 12px; color: #5A6170">Meaning + exact words · Tamil, English</span></span><span class="ok">Ready</span></div>
+<div class="li"><span class="tl" style="color: #8E4504"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 17px; height: 17px"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg></span><span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14.5px; font-weight: 700">Speech to text</span><span style="font-size: 12px; color: #5A6170">Tamil first, English mixed</span></span><span class="ok">Ready</span></div>
+<div class="li"><span class="tl" style="color: #3D434E"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 17px; height: 17px"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 10h8M8 14h5"></path></svg></span><span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14.5px; font-weight: 700">Read text from images</span><span style="font-size: 12px; color: #5A6170">Screenshots, photos, scans</span></span><span class="ok">Ready</span></div>
+<div class="li"><span class="tl" style="background: linear-gradient(160deg, #2A303A, #15181E); color: #BDB8F7; box-shadow: 2px 3px 6px rgba(21,24,30,.3)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 17px; height: 17px"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg></span><span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14.5px; font-weight: 700">Deeper understanding</span><span style="font-size: 12px; color: #5A6170">Reads whole letters · large download</span></span><button class="rzs" type="button" style="height: 36px; padding: 0 16px; border-radius: 13px; color: #463FBF; font-size: 13px; font-weight: 800">Get</button></div>
+</div><p style="padding: 9px 8px 0; margin: 0; font-size: 12px; line-height: 1.5; color: #4A505B">AI only suggests. Nothing becomes a task or event until you approve it.</p></section>
+
+<section><h2 class="eb gh">Maintenance</h2>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+<button class="rzs" type="button" style="height: 54px; border-radius: 18px; font-size: 13px; font-weight: 800; color: #0E6B63">Run self-check</button>
+<button class="rzs" type="button" style="height: 54px; border-radius: 18px; font-size: 13px; font-weight: 800; color: #0E6B63">Rebuild index</button>
+</div>
+<button type="button" style="margin-top: 12px; width: 100%; height: 48px; border-radius: 17px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; box-sizing: border-box; font-size: 13.5px; font-weight: 700; color: #3D434E" class="in">Technical details<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px; color: #6B7180"><path d="m9 6 6 6-6 6"></path></svg></button>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

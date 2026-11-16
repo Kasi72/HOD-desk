@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Calendar</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=IBM+Plex+Mono:wght@400;500&amp;family=Noto+Sans+Tamil:wght@400;600&amp;family=Source+Serif+4:opsz,wght@8..60,500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0E6B63;text-decoration:none}a:hover{color:#0A524C}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+.m{font-family:'Plus Jakarta Sans','Noto Sans Tamil',system-ui,sans-serif;color:#15181E;-webkit-font-smoothing:antialiased}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.serif{font-family:'Source Serif 4','Noto Sans Tamil',Georgia,serif}
+.eb{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#5A6170}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.rz{background:#F3F1ED;border:1px solid rgba(255,255,255,.75);box-shadow:-6px -6px 14px rgba(255,255,255,.9),7px 9px 22px rgba(84,74,60,.15)}
+.rzs{background:#F3F1ED;border:1px solid rgba(255,255,255,.75);box-shadow:-3px -3px 8px rgba(255,255,255,.95),4px 5px 11px rgba(84,74,60,.14)}
+.in{background:#E5E1DB;box-shadow:inset 3px 3px 7px rgba(84,74,60,.17),inset -3px -3px 7px rgba(255,255,255,.85)}
+.tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex:1;height:54px;border-radius:19px;font-size:10.5px;font-weight:700;color:#5A6170;position:relative}
+.tab[aria-current=page]{color:#15181E;background:#E5E1DB;box-shadow:inset 3px 3px 7px rgba(84,74,60,.18),inset -3px -3px 7px rgba(255,255,255,.85)}
+.tab[aria-current=page] .ic{color:#0E6B63}
+.day{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border-radius:15px}
+.dl{font-size:10.5px;font-weight:700;color:#5A6170}
+.dn{font-size:16px;font-weight:700}
+.hr{position:absolute;left:0;right:0;display:flex;align-items:flex-start}
+.hl{width:40px;font-size:10px;color:#6B7180;text-align:right;padding-right:8px;transform:translateY(-7px)}
+.hline{flex:1;border-top:1px dashed rgba(84,74,60,.16)}
+.ev{position:absolute;box-sizing:border-box;border-radius:14px;padding:7px 10px;display:flex;flex-direction:column;gap:1px;overflow:hidden}
+</style>
+</helmet>
+<div class="m" style="width: 390px; height: 1000px; position: relative; background: #ECE9E4; box-sizing: border-box; padding: 24px 18px 124px; display: flex; flex-direction: column; gap: 16px; overflow: hidden">
+<header style="display: flex; align-items: flex-end; justify-content: space-between; padding: 4px 4px 0">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span class="eb">Week 41 · 2026</span>
+<h1 class="serif" style="margin: 0; font-size: 40px; line-height: 1; font-weight: 500; letter-spacing: -.02em">October</h1>
+</div>
+<button type="button" style="height: 42px; padding: 0 14px; border-radius: 15px; background: #ECEBFB; color: #463FBF; font-size: 13px; font-weight: 800; display: inline-flex; align-items: center; gap: 6px; border: 1.5px dashed #A9A4EE; box-shadow: 4px 5px 11px rgba(70,63,191,.12)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 15px; height: 15px"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>Plan my day</button>
+</header>
+
+<div class="in" role="group" aria-label="Week" style="display: flex; gap: 3px; padding: 5px; border-radius: 20px">
+<button class="day" type="button"><span class="dl">S</span><span class="dn">11</span></button>
+<button class="day" type="button" aria-pressed="true" style="background: linear-gradient(160deg, #2A303A, #15181E); color: #fff; box-shadow: 3px 5px 10px rgba(21,24,30,.3)"><span class="dl" style="color: #9AA3B2">M</span><span class="dn">12</span></button>
+<button class="day" type="button"><span class="dl">T</span><span class="dn">13</span></button>
+<button class="day" type="button" aria-label="Wednesday 14, deadline"><span class="dl">W</span><span class="dn">14</span><span aria-hidden="true" style="width: 5px; height: 5px; border-radius: 3px; background: #C2372E; margin-top: -1px"></span></button>
+<button class="day" type="button"><span class="dl">T</span><span class="dn">15</span></button>
+<button class="day" type="button"><span class="dl">F</span><span class="dn">16</span></button>
+<button class="day" type="button"><span class="dl">S</span><span class="dn">17</span></button>
+</div>
+<div style="display: flex; justify-content: space-between; align-items: center; padding: 0 6px">
+<span style="font-size: 12.5px; font-weight: 500; color: #4A505B">Monday · 4 h 10 m free · 30% kept clear</span>
+<button type="button" style="font-size: 12.5px; font-weight: 800; color: #0E6B63; height: 32px">Protect time</button>
+</div>
+
+<div class="rz" style="position: relative; border-radius: 26px; padding: 24px 14px 10px 6px">
+<div style="position: relative; height: 520px">
+<div class="hr" style="top: 0"><span class="hl mono">8</span><span class="hline"></span></div>
+<div class="hr" style="top: 52px"><span class="hl mono">9</span><span class="hline"></span></div>
+<div class="hr" style="top: 104px"><span class="hl mono">10</span><span class="hline"></span></div>
+<div class="hr" style="top: 156px"><span class="hl mono">11</span><span class="hline"></span></div>
+<div class="hr" style="top: 208px"><span class="hl mono">12</span><span class="hline"></span></div>
+<div class="hr" style="top: 260px"><span class="hl mono">1</span><span class="hline"></span></div>
+<div class="hr" style="top: 312px"><span class="hl mono">2</span><span class="hline"></span></div>
+<div class="hr" style="top: 364px"><span class="hl mono">3</span><span class="hline"></span></div>
+<div class="hr" style="top: 416px"><span class="hl mono">4</span><span class="hline"></span></div>
+<div class="hr" style="top: 468px"><span class="hl mono">5</span><span class="hline"></span></div>
+
+<div class="ev in" style="left: 46px; right: 0; top: 54px; height: 204px; background: repeating-linear-gradient(135deg, #E2DED7 0 6px, #EAE7E1 6px 12px)">
+<span style="font-size: 13px; font-weight: 800; color: #3D434E">OPD · fixed</span>
+<span style="font-size: 11.5px; color: #5A6170">Never booked over</span>
+</div>
+
+<div class="ev" style="left: 46px; right: 0; top: 288px; height: 50px; background: #F4F3FE; border: 1.5px dashed #8F89EA">
+<span style="font-size: 10px; font-weight: 800; color: #463FBF; letter-spacing: .08em">PROPOSED · 1:30–2:30</span>
+<span style="font-size: 13px; font-weight: 700; color: #2E2A85">Draft ECT compliance report</span>
+</div>
+
+<div class="ev" style="left: 46px; width: 148px; top: 392px; height: 50px; background: linear-gradient(160deg, #1DA392, #0E6B63); box-shadow: 0 6px 14px rgba(14,107,99,.3)">
+<span style="font-size: 13px; font-weight: 800; color: #fff">Collector’s review</span>
+<span style="font-size: 11px; color: #D2F1EC">3:30 · Collectorate</span>
+</div>
+
+<div class="ev" style="left: 198px; right: 0; top: 418px; height: 50px; background: #FCEFEE; border: 1.5px dashed #D9817A">
+<span style="font-size: 10px; font-weight: 800; color: #A3221B; letter-spacing: .08em">CLASH · PROPOSED</span>
+<span style="font-size: 12.5px; font-weight: 700; color: #8C1D17">Call DMHP officer</span>
+</div>
+</div>
+</div>
+
+<section aria-label="Proposed plan" style="position: absolute; left: 14px; right: 14px; bottom: 100px; background: linear-gradient(160deg, #262B34, #15181E); color: #fff; border-radius: 24px; padding: 14px 14px 14px 18px; display: flex; align-items: center; gap: 10px; box-shadow: 8px 14px 28px rgba(21,24,30,.35)">
+<div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 14px; font-weight: 800">2 proposed · 1 clashes</span>
+<span style="font-size: 11.5px; color: #B8BFCB">Nothing written until you add</span>
+</div>
+<button type="button" style="height: 42px; padding: 0 13px; border-radius: 14px; background: rgba(255,255,255,.08); box-shadow: inset 1px 1px 0 rgba(255,255,255,.08); font-size: 13px; font-weight: 700">Discard</button>
+<button type="button" style="height: 42px; padding: 0 15px; border-radius: 14px; background: linear-gradient(160deg, #5DD6C5, #1DA392); color: #072521; font-size: 13px; font-weight: 800; box-shadow: 0 4px 12px rgba(29,163,146,.45)">Add 1</button>
+</section>
+
+<nav aria-label="Main" style="position: absolute; left: 14px; right: 14px; bottom: 20px; display: flex; gap: 12px; align-items: center">
+<div class="rz" style="flex: 1; display: flex; gap: 2px; padding: 5px; border-radius: 26px">
+<a class="tab" href="Main.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg><span>Today</span></a>
+<a class="tab" href="Review.dc.html" aria-label="Review, 5 waiting"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"></path></svg><span>Review</span><span aria-hidden="true" style="position: absolute; top: 5px; right: 9px; min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box; border-radius: 9px; background: #C2372E; color: #fff; font-size: 10px; font-weight: 700; line-height: 17px; text-align: center; box-shadow: 0 2px 5px rgba(194,55,46,.4)">5</span></a>
+<a class="tab" href="Tasks.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg><span>Tasks</span></a>
+<a class="tab" href="Calendar.dc.html" aria-current="page"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg><span>Calendar</span></a>
+<a class="tab" href="Library.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5a2 2 0 0 1 2-2h12v14H6a2 2 0 0 0-2 2Zm0 0a2 2 0 0 0 2 2h12"></path></svg><span>Library</span></a>
+</div>
+<a href="Capture.dc.html" aria-label="Capture" style="width: 64px; height: 64px; border-radius: 24px; background: linear-gradient(160deg, #2A303A, #15181E); color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: -5px -5px 12px rgba(255,255,255,.85), 7px 10px 20px rgba(21,24,30,.35), inset 0 1px 0 rgba(255,255,255,.12)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 26px; height: 26px; stroke-width: 2.2; color: #7FDCCD"><path d="M12 5v14M5 12h14"></path></svg></a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

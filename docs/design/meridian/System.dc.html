@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Meridian design system</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=IBM+Plex+Mono:wght@400;500&amp;family=Noto+Sans+Tamil:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;1,8..60,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0E6B63}a:hover{color:#0A524C}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+.m{font-family:'Plus Jakarta Sans','Noto Sans Tamil',system-ui,sans-serif;color:#15181E;-webkit-font-smoothing:antialiased}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.serif{font-family:'Source Serif 4','Noto Sans Tamil',Georgia,serif}
+.eb{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#5A6170}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.rz{background:#F3F1ED;border:1px solid rgba(255,255,255,.75);box-shadow:-6px -6px 14px rgba(255,255,255,.9),7px 9px 22px rgba(84,74,60,.15)}
+.rzs{background:#F3F1ED;border:1px solid rgba(255,255,255,.75);box-shadow:-3px -3px 8px rgba(255,255,255,.95),4px 5px 11px rgba(84,74,60,.14)}
+.in{background:#E5E1DB;box-shadow:inset 3px 3px 7px rgba(84,74,60,.17),inset -3px -3px 7px rgba(255,255,255,.85)}
+.panel{border-radius:30px;padding:28px;display:flex;flex-direction:column;gap:20px}
+.sh{display:flex;align-items:baseline;gap:12px;margin:0}
+.num{font-family:'Source Serif 4',Georgia,serif;font-size:22px;color:#8C7048}
+.ttl{font-size:13px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.cap{font-size:11px;font-weight:600;color:#5A6170;text-align:center}
+.hx{font-size:10.5px;color:#5A6170}
+.sw{width:58px;height:34px;border-radius:17px;position:relative;flex:none;background:#DEDAD3;box-shadow:inset 3px 3px 6px rgba(84,74,60,.25),inset -2px -2px 5px rgba(255,255,255,.9)}
+.sw[aria-checked=true]{background:linear-gradient(90deg, #12907F, #2BC4B0);box-shadow:inset 3px 3px 6px rgba(0,60,52,.35),inset -2px -2px 5px rgba(255,255,255,.25)}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:28px;height:28px;border-radius:14px;box-sizing:border-box;border:1px solid #D2CCC2;background:repeating-linear-gradient(45deg, rgba(84,74,60,.07) 0 1.5px, transparent 1.5px 3.5px),repeating-linear-gradient(-45deg, rgba(84,74,60,.07) 0 1.5px, transparent 1.5px 3.5px),radial-gradient(circle at 35% 30%, #FFFFFF, #E9E5DF);box-shadow:0 2px 5px rgba(40,34,26,.28),inset 0 1px 0 #fff}
+.sw[aria-checked=true]::after{left:27px}
+.dot{width:58px;height:58px;border-radius:29px}
+.bar{height:12px;border-radius:6px;background:linear-gradient(90deg, #C9B693, #8C7048)}
+.prim{height:50px;padding:0 22px;border-radius:17px;background:linear-gradient(170deg, #158A7E, #0B5E57);color:#fff;font-size:14px;font-weight:800;box-shadow:-4px -4px 10px rgba(255,255,255,.85),6px 9px 18px rgba(14,107,99,.32),inset 0 1px 0 rgba(255,255,255,.2)}
+.sec{height:50px;padding:0 22px;border-radius:17px;font-size:14px;font-weight:800}
+</style>
+</helmet>
+<div class="m" style="width: 1330px; height: 1560px; box-sizing: border-box; padding: 60px; background: #ECE9E4; display: flex; flex-direction: column; gap: 32px">
+
+<header style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px; align-items: end">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<span class="rzs eb" style="align-self: flex-start; padding: 9px 14px; border-radius: 12px; color: #15181E">Psychiatry HOD Desk · design system</span>
+<h1 class="serif" style="margin: 0; font-size: 76px; line-height: .98; font-weight: 500; letter-spacing: -.035em">Meridian<br><span style="font-style: italic; color: #8C7048">soft, exact, calm.</span></h1>
+</div>
+<p style="margin: 0; font-size: 16px; line-height: 1.6; color: #3D434E">A tactile porcelain workspace for a busy head of department. Raised surfaces are things you can press; inset wells hold things you type or read. One rule above all: you can always tell what the source said, what the AI read into it, and what you approved.</p>
+</header>
+
+<section class="panel rz">
+<h2 class="sh"><span class="num">01</span><span class="ttl">The three layers</span></h2>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px">
+<div style="background: #FBF7EF; border: 1px solid #EFE5D2; border-radius: 24px; padding: 22px; display: flex; flex-direction: column; gap: 12px; box-shadow: 5px 7px 16px rgba(110,90,50,.12)">
+<span class="eb" style="color: #6B5430">Source · paper</span>
+<p class="serif" style="margin: 0; font-size: 17px; line-height: 1.5; color: #2B2418">“…submit the <span style="background: #F8DE9F; border-radius: 4px; padding: 0 3px">compliance report</span> on or before 14.10.2026…”</p>
+<span style="font-size: 12.5px; line-height: 1.5; color: #4A505B">Warm paper, serif text, amber marks on exact supporting words, reference and page in mono.</span>
+</div>
+<div style="background: #F7F6FE; border: 1.5px dashed #B4AFF0; border-radius: 24px; padding: 22px; display: flex; flex-direction: column; gap: 12px">
+<span class="eb" style="color: #463FBF">AI reading · dashed</span>
+<div style="display: flex; gap: 6px"><span style="height: 26px; padding: 0 10px; border-radius: 9px; background: #DFF1E6; color: #13653A; font-size: 11.5px; font-weight: 800; display: inline-flex; align-items: center">Found</span><span style="height: 26px; padding: 0 10px; border-radius: 9px; background: #F8EBD6; color: #8E4504; font-size: 11.5px; font-weight: 800; display: inline-flex; align-items: center">Confirm</span><span style="height: 26px; padding: 0 10px; border-radius: 9px; background: #E5E1DB; color: #3D434E; font-size: 11.5px; font-weight: 800; display: inline-flex; align-items: center">Not stated</span></div>
+<span style="font-size: 12.5px; line-height: 1.5; color: #4A505B">Inferred things never look solid. Each field says whether it was found word for word.</span>
+</div>
+<div style="background: linear-gradient(160deg, #158A7E, #0B5E57); color: #fff; border-radius: 24px; padding: 22px; display: flex; flex-direction: column; gap: 12px; box-shadow: 6px 10px 22px rgba(14,107,99,.3)">
+<span class="eb" style="color: #BFEDE6">Approved · solid</span>
+<span style="font-size: 17px; font-weight: 800">Approved by you · 11 Oct, 10:12</span>
+<span style="font-size: 12.5px; line-height: 1.5; color: #D2F1EC">Only human decisions are solid teal. Teal is never used for suggestions.</span>
+</div>
+</div>
+</section>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px">
+<section class="panel rz">
+<h2 class="sh"><span class="num">02</span><span class="ttl">Surfaces and depth</span></h2>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px">
+<div style="display: flex; flex-direction: column; gap: 10px"><div style="height: 84px; border-radius: 20px; background: #ECE9E4; border: 1px dashed #CFC8BD"></div><span class="cap">Ground</span></div>
+<div style="display: flex; flex-direction: column; gap: 10px"><div class="rzs" style="height: 84px; border-radius: 20px"></div><span class="cap">Raised · press</span></div>
+<div style="display: flex; flex-direction: column; gap: 10px"><div class="rz" style="height: 84px; border-radius: 20px"></div><span class="cap">Card · lift</span></div>
+<div style="display: flex; flex-direction: column; gap: 10px"><div class="in" style="height: 84px; border-radius: 20px"></div><span class="cap">Inset · input</span></div>
+</div>
+<span style="font-size: 12.5px; line-height: 1.5; color: #4A505B">Light from top-left. Two shadows per surface: white highlight, warm umber shade. Selected tabs and segments sink in; buttons rise.</span>
+</section>
+
+<section class="panel rz">
+<h2 class="sh"><span class="num">03</span><span class="ttl">Colour</span></h2>
+<div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; justify-items: center">
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px"><div class="dot" style="background: #15181E; box-shadow: 4px 6px 12px rgba(21,24,30,.3)"></div><span class="cap">Ink</span><span class="hx mono">#15181E</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px"><div class="dot rzs"></div><span class="cap">Porcelain</span><span class="hx mono">#F3F1ED</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px"><div class="dot" style="background: #0E6B63; box-shadow: 4px 6px 12px rgba(14,107,99,.3)"></div><span class="cap">Approved</span><span class="hx mono">#0E6B63</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px"><div class="dot" style="background: #463FBF; box-shadow: 4px 6px 12px rgba(70,63,191,.3)"></div><span class="cap">AI</span><span class="hx mono">#463FBF</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px"><div class="dot" style="background: #8C7048; box-shadow: 4px 6px 12px rgba(140,112,72,.3)"></div><span class="cap">Source</span><span class="hx mono">#8C7048</span></div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px">
+<span style="height: 34px; border-radius: 11px; background: #DFF1E6; color: #13653A; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center">Found</span>
+<span style="height: 34px; border-radius: 11px; background: #F8EBD6; color: #8E4504; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center">Confirm</span>
+<span style="height: 34px; border-radius: 11px; background: #F9E3E1; color: #A3221B; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center">Overdue</span>
+<span style="height: 34px; border-radius: 11px; background: #E1E9F6; color: #1F4E96; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center">Delegated</span>
+</div>
+</section>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px">
+<section class="panel rz">
+<h2 class="sh"><span class="num">04</span><span class="ttl">Controls</span></h2>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: end">
+<div style="display: flex; flex-direction: column; gap: 8px"><span class="hx">Default</span><button class="prim" type="button">Approve</button></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><span class="hx">Pressed</span><button class="prim" type="button" style="box-shadow: inset 3px 4px 8px rgba(0,0,0,.35); background: #0B5E57">Approve</button></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><span class="hx">Disabled</span><button class="sec in" type="button" disabled style="color: #8A8F99; cursor: default">Approve</button></div>
+<button class="sec rzs" type="button">Edit</button>
+<button class="sec rzs" type="button" style="color: #A3221B">Reject</button>
+<button class="sec" type="button" style="background: #ECEBFB; color: #463FBF; border: 1.5px dashed #A9A4EE">Plan my day</button>
+</div>
+<div style="display: flex; align-items: center; gap: 22px">
+<button class="sw" type="button" role="switch" aria-checked="true" aria-label="Example switch on"></button>
+<button class="sw" type="button" role="switch" aria-checked="false" aria-label="Example switch off"></button>
+<div class="in" style="flex: 1; display: flex; gap: 4px; padding: 4px; border-radius: 16px"><span style="flex: 1; height: 34px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 800; background: #F3F1ED; box-shadow: -2px -2px 5px rgba(255,255,255,.9), 3px 4px 8px rgba(84,74,60,.16)">Mine</span><span style="flex: 1; height: 34px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; color: #5A6170">Delegated</span></div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px">
+<div class="in" style="height: 50px; border-radius: 17px; display: flex; align-items: center; padding: 0 16px; font-size: 14px; color: #5A6170">Search letters…</div>
+<div class="in" style="height: 50px; border-radius: 17px; display: flex; align-items: center; padding: 0 16px; font-size: 14px; font-weight: 600; outline: 2px solid rgba(14,107,99,.35); outline-offset: 2px">ECT inspection</div>
+</div>
+</section>
+
+<section class="panel rz">
+<h2 class="sh"><span class="num">05</span><span class="ttl">Typography</span></h2>
+<div style="display: flex; align-items: baseline; gap: 18px"><span class="hx mono" style="width: 110px">Display 40 serif</span><span class="serif" style="font-size: 40px; font-weight: 500; letter-spacing: -.02em">Today</span></div>
+<div style="display: flex; align-items: baseline; gap: 18px"><span class="hx mono" style="width: 110px">Title 18 · 800</span><span style="font-size: 18px; font-weight: 800; letter-spacing: -.015em">Submit compliance report</span></div>
+<div style="display: flex; align-items: baseline; gap: 18px"><span class="hx mono" style="width: 110px">Body 14.5 · 600</span><span style="font-size: 14.5px; font-weight: 600">Send revised duty roster to the DME office</span></div>
+<div style="display: flex; align-items: baseline; gap: 18px"><span class="hx mono" style="width: 110px">Source 15.5</span><span class="serif" style="font-size: 15.5px">…on or before 14.10.2026 to this office.</span></div>
+<div style="display: flex; align-items: baseline; gap: 18px"><span class="hx mono" style="width: 110px">Tamil 15</span><span lang="ta" style="font-size: 15px">ஆய்வு அறிக்கை செவ்வாய்க்குள்</span></div>
+<div style="display: flex; align-items: baseline; gap: 18px"><span class="hx mono" style="width: 110px">Label 10.5 caps</span><span class="eb" style="color: #15181E">Must act · 01 from the source</span></div>
+<div style="display: flex; align-items: baseline; gap: 18px"><span class="hx mono" style="width: 110px">Data 11 mono</span><span class="mono" style="font-size: 11px">Rc. No. 2291/E2/2026 · 10:40</span></div>
+<span style="font-size: 12.5px; line-height: 1.5; color: #4A505B">Source Serif 4 for titles and quoted sources · Plus Jakarta Sans for interface · IBM Plex Mono for numbers and references · Noto Sans Tamil fallback.</span>
+</section>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px">
+<section class="panel rz">
+<h2 class="sh"><span class="num">06</span><span class="ttl">Space and radius</span></h2>
+<div style="display: grid; grid-template-columns: 60px 1fr; gap: 9px 14px; align-items: center">
+<span class="hx mono">4</span><div class="bar" style="width: 4%"></div>
+<span class="hx mono">8</span><div class="bar" style="width: 8%"></div>
+<span class="hx mono">12</span><div class="bar" style="width: 12%"></div>
+<span class="hx mono">16 gutter</span><div class="bar" style="width: 18%"></div>
+<span class="hx mono">20 groups</span><div class="bar" style="width: 24%"></div>
+<span class="hx mono">32</span><div class="bar" style="width: 36%"></div>
+</div>
+<div style="display: flex; gap: 16px; align-items: flex-end">
+<div style="display: flex; flex-direction: column; gap: 8px; align-items: center"><div class="rzs" style="width: 56px; height: 24px; border-radius: 9px"></div><span class="hx mono">Pill 9</span></div>
+<div style="display: flex; flex-direction: column; gap: 8px; align-items: center"><div class="rzs" style="width: 56px; height: 44px; border-radius: 16px"></div><span class="hx mono">Control 16</span></div>
+<div style="display: flex; flex-direction: column; gap: 8px; align-items: center"><div class="rzs" style="width: 56px; height: 56px; border-radius: 24px"></div><span class="hx mono">Card 24</span></div>
+<div style="display: flex; flex-direction: column; gap: 8px; align-items: center"><div style="width: 56px; height: 56px; border-radius: 30px; background: #15181E"></div><span class="hx mono">Hero 30</span></div>
+</div>
+</section>
+
+<section class="panel rz">
+<h2 class="sh"><span class="num">07</span><span class="ttl">Do and don’t</span></h2>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<span style="font-size: 13px; font-weight: 800; color: #13653A">Do</span>
+<span style="font-size: 13px; line-height: 1.5; color: #3D434E">Put the source quote next to every AI suggestion.</span>
+<span style="font-size: 13px; line-height: 1.5; color: #3D434E">One teal action per screen.</span>
+<span style="font-size: 13px; line-height: 1.5; color: #3D434E">Status as a word plus colour.</span>
+<span style="font-size: 13px; line-height: 1.5; color: #3D434E">Targets 44 px or more.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 12px">
+<span style="font-size: 13px; font-weight: 800; color: #A3221B">Don’t</span>
+<span style="font-size: 13px; line-height: 1.5; color: #3D434E">Make an AI guess look solid or approved.</span>
+<span style="font-size: 13px; line-height: 1.5; color: #3D434E">Put light text on raised porcelain.</span>
+<span style="font-size: 13px; line-height: 1.5; color: #3D434E">Stack more than two depth levels.</span>
+<span style="font-size: 13px; line-height: 1.5; color: #3D434E">Show clinical text outside the vault.</span>
+</div>
+</div>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1330,"height":1560}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

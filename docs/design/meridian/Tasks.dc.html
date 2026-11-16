@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tasks</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=IBM+Plex+Mono:wght@400;500&amp;family=Noto+Sans+Tamil:wght@400;600&amp;family=Source+Serif+4:opsz,wght@8..60,500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0E6B63;text-decoration:none}a:hover{color:#0A524C}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+.m{font-family:'Plus Jakarta Sans','Noto Sans Tamil',system-ui,sans-serif;color:#15181E;-webkit-font-smoothing:antialiased}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.serif{font-family:'Source Serif 4','Noto Sans Tamil',Georgia,serif}
+.eb{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#5A6170}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.rz{background:#F3F1ED;border:1px solid rgba(255,255,255,.75);box-shadow:-6px -6px 14px rgba(255,255,255,.9),7px 9px 22px rgba(84,74,60,.15)}
+.rzs{background:#F3F1ED;border:1px solid rgba(255,255,255,.75);box-shadow:-3px -3px 8px rgba(255,255,255,.95),4px 5px 11px rgba(84,74,60,.14)}
+.in{background:#E5E1DB;box-shadow:inset 3px 3px 7px rgba(84,74,60,.17),inset -3px -3px 7px rgba(255,255,255,.85)}
+.tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex:1;height:54px;border-radius:19px;font-size:10.5px;font-weight:700;color:#5A6170;position:relative}
+.tab[aria-current=page]{color:#15181E;background:#E5E1DB;box-shadow:inset 3px 3px 7px rgba(84,74,60,.18),inset -3px -3px 7px rgba(255,255,255,.85)}
+.tab[aria-current=page] .ic{color:#0E6B63}
+.seg{flex:1;height:36px;border-radius:13px;font-size:13px;font-weight:700;color:#5A6170}
+.seg[aria-pressed=true]{color:#15181E;background:#F3F1ED;box-shadow:-2px -2px 5px rgba(255,255,255,.9),3px 4px 8px rgba(84,74,60,.16)}
+.grp{border-radius:24px;overflow:hidden}
+.row{display:flex;align-items:center;gap:6px;padding:9px 14px 9px 6px;color:#15181E}
+.row+.row{border-top:1px solid rgba(84,74,60,.1)}
+.row:hover{color:#15181E}
+.chk{width:44px;height:44px;display:flex;align-items:center;justify-content:center;flex:none}
+.well{width:24px;height:24px;border-radius:12px;background:#E5E1DB;box-shadow:inset 2px 2px 4px rgba(84,74,60,.22),inset -2px -2px 4px rgba(255,255,255,.9)}
+.t{font-size:15px;font-weight:700;line-height:1.32;display:block;letter-spacing:-.005em}
+.mt{font-size:12px;color:#5A6170;margin-top:3px;display:block}
+.gh{display:flex;align-items:baseline;justify-content:space-between;padding:0 8px 9px}
+.pill{display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:9px;font-size:11px;font-weight:700}
+</style>
+</helmet>
+<div class="m" style="width: 390px; height: 1000px; position: relative; background: #ECE9E4; box-sizing: border-box; padding: 24px 18px 124px; display: flex; flex-direction: column; gap: 18px; overflow: hidden">
+<header style="display: flex; align-items: flex-end; justify-content: space-between; padding: 4px 4px 0">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span class="eb">6 open · 1 overdue</span>
+<h1 class="serif" style="margin: 0; font-size: 40px; line-height: 1; font-weight: 500; letter-spacing: -.02em">Tasks</h1>
+</div>
+</header>
+<div class="in" role="group" aria-label="Show" style="display: flex; gap: 4px; padding: 4px; border-radius: 17px">
+<button class="seg" type="button" aria-pressed="true">Mine · 4</button>
+<button class="seg" type="button" aria-pressed="false">Delegated · 2</button>
+<button class="seg" type="button" aria-pressed="false">Done</button>
+</div>
+
+<section>
+<div class="gh"><h2 class="eb" style="margin: 0; color: #A3221B">Overdue</h2><span class="mono" style="font-size: 11px; color: #5A6170">01</span></div>
+<div class="grp rz">
+<a class="row" href="Task.dc.html"><span class="chk"><span class="well" style="box-shadow: inset 2px 2px 4px rgba(163,34,27,.3), inset -2px -2px 4px rgba(255,255,255,.9)"></span></span><span style="flex: 1"><span class="t">Send revised duty roster to the DME office</span><span class="mt" style="color: #A3221B">Yesterday, 5:00 pm · Duty roster</span></span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px; color: #9AA3B2"><path d="m9 6 6 6-6 6"></path></svg></a>
+</div>
+</section>
+
+<section>
+<div class="gh"><h2 class="eb" style="margin: 0">Today</h2><span class="mono" style="font-size: 11px; color: #5A6170">02</span></div>
+<div class="grp rz">
+<a class="row" href="Task.dc.html"><span class="chk"><span class="well"></span></span><span style="flex: 1"><span class="t">Bring bed-occupancy figures to Collector’s review</span><span class="mt">3:30 pm · Collectorate</span></span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px; color: #9AA3B2"><path d="m9 6 6 6-6 6"></path></svg></a>
+<a class="row" href="Task.dc.html"><span class="chk"><span class="well"></span></span><span style="flex: 1"><span class="t">Sign PG thesis protocol forwarding letters</span><span class="mt">5:00 pm · Academics</span></span><span class="pill" style="background: #F8EBD6; color: #8E4504">Clarify</span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px; color: #9AA3B2"><path d="m9 6 6 6-6 6"></path></svg></a>
+</div>
+</section>
+
+<section>
+<div class="gh"><h2 class="eb" style="margin: 0">This week</h2><span class="mono" style="font-size: 11px; color: #5A6170">01</span></div>
+<div class="grp rz">
+<a class="row" href="Task.dc.html"><span class="chk"><span class="well"></span></span><span style="flex: 1"><span class="t">Submit ECT unit inspection compliance report</span><span class="mt">Tue 14 Oct · with Dr. R. Kumar</span></span><span class="pill" style="background: #E1E9F6; color: #1F4E96">Delegated</span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px; color: #9AA3B2"><path d="m9 6 6 6-6 6"></path></svg></a>
+</div>
+</section>
+
+<section>
+<div class="gh"><h2 class="eb" style="margin: 0">No date</h2><span class="mono" style="font-size: 11px; color: #5A6170">01</span></div>
+<div class="grp rz">
+<a class="row" href="Task.dc.html"><span class="chk"><span class="well"></span></span><span style="flex: 1"><span class="t">Reply to District Mental Health Programme query</span><span class="mt">No time set · DMHP</span></span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px; color: #9AA3B2"><path d="m9 6 6 6-6 6"></path></svg></a>
+</div>
+</section>
+
+<section>
+<div class="gh"><h2 class="eb" style="margin: 0">Done today</h2><span class="mono" style="font-size: 11px; color: #5A6170">01</span></div>
+<div class="grp in">
+<a class="row" href="Task.dc.html"><span class="chk"><span style="width: 24px; height: 24px; border-radius: 12px; background: linear-gradient(160deg, #17A493, #0E6B63); color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 3px 7px rgba(14,107,99,.35)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 14px; height: 14px; stroke-width: 2.6"><path d="m6 12 4 4 8-8"></path></svg></span></span><span style="flex: 1"><span class="t" style="color: #6B7180; text-decoration: line-through">Approve leave for Dr. Meena, 13–15 Oct</span><span class="mt">Done 9:12 am</span></span></a>
+</div>
+</section>
+
+<nav aria-label="Main" style="position: absolute; left: 14px; right: 14px; bottom: 20px; display: flex; gap: 12px; align-items: center">
+<div class="rz" style="flex: 1; display: flex; gap: 2px; padding: 5px; border-radius: 26px">
+<a class="tab" href="Main.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg><span>Today</span></a>
+<a class="tab" href="Review.dc.html" aria-label="Review, 5 waiting"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"></path></svg><span>Review</span><span aria-hidden="true" style="position: absolute; top: 5px; right: 9px; min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box; border-radius: 9px; background: #C2372E; color: #fff; font-size: 10px; font-weight: 700; line-height: 17px; text-align: center; box-shadow: 0 2px 5px rgba(194,55,46,.4)">5</span></a>
+<a class="tab" href="Tasks.dc.html" aria-current="page"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg><span>Tasks</span></a>
+<a class="tab" href="Calendar.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg><span>Calendar</span></a>
+<a class="tab" href="Library.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5a2 2 0 0 1 2-2h12v14H6a2 2 0 0 0-2 2Zm0 0a2 2 0 0 0 2 2h12"></path></svg><span>Library</span></a>
+</div>
+<a href="Capture.dc.html" aria-label="Capture" style="width: 64px; height: 64px; border-radius: 24px; background: linear-gradient(160deg, #2A303A, #15181E); color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: -5px -5px 12px rgba(255,255,255,.85), 7px 10px 20px rgba(21,24,30,.35), inset 0 1px 0 rgba(255,255,255,.12)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 26px; height: 26px; stroke-width: 2.2; color: #7FDCCD"><path d="M12 5v14M5 12h14"></path></svg></a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
