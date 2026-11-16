@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.provider.CalendarContract
 import android.provider.Settings
 import com.hoddesk.app.health.SystemHealth
+import com.hoddesk.app.workflow.SnoozePlan
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -50,6 +51,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -173,8 +175,30 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val sharedUri = if (intent?.action == Intent.ACTION_SEND) intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) else null
-        setContent { HodTheme { com.hoddesk.app.security.AppLockGate { HODDeskApp(sharedUri) } } }
+        // Applied before the first frame so the recent-apps preview never captures a letter.
+        com.hoddesk.app.security.ScreenPrivacy.apply(this, DeskSettingsStore(this).secureScreen)
+        val shared = SharedInput.from(intent)
+        setContent { HodTheme { com.hoddesk.app.security.AppLockGate { HODDeskApp(shared) } } }
+    }
+}
+
+/** What another app handed over through Android's Share menu. */
+data class SharedInput(val uris: List<Uri>, val text: String?, val subject: String?) {
+    companion object {
+        @Suppress("DEPRECATION")
+        fun from(intent: Intent?): SharedInput? {
+            val uris = when (intent?.action) {
+                Intent.ACTION_SEND -> listOfNotNull(intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))
+                Intent.ACTION_SEND_MULTIPLE -> intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+                else -> return null
+            }.distinct().take(MAX_SHARED_ITEMS)
+            val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+            if (uris.isEmpty() && text.isNullOrBlank()) return null
+            return SharedInput(uris, text, intent.getStringExtra(Intent.EXTRA_SUBJECT))
+        }
+
+        /** A larger selection is cut off so one share cannot flood Review or stall the phone. */
+        const val MAX_SHARED_ITEMS = 30
     }
 }
 
@@ -188,7 +212,7 @@ private const val TAB_CALENDAR = 3
 private const val TAB_LIBRARY = 4
 
 @Composable
-fun HODDeskApp(initialSharedUri: Uri? = null) {
+fun HODDeskApp(initialShare: SharedInput? = null) {
     val context = LocalContext.current
     val privacyStore = remember { PrivacyStore(context) }
     val settings = remember { DeskSettingsStore(context) }
@@ -508,8 +532,8 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         cameraLauncher.launch(outputUri)
     }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) captureDocument() else status = "Camera permission is needed to photograph a document." }
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    /** Imports one file from the picker or from Android's Share menu, routed by its content type. */
+    fun importUri(uri: Uri) {
         scope.launch {
         val mime = context.contentResolver.getType(uri).orEmpty()
         runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -575,13 +599,30 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         }
         }
     }
-    LaunchedEffect(initialSharedUri) {
-        initialSharedUri?.let { uri ->
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) importUri(uri) }
+    // Shared from another app (WhatsApp, Gmail, Gallery, Files): files go through the importer above;
+    // shared text becomes a message for review (or WhatsApp messages, if it is a pasted chat).
+    LaunchedEffect(initialShare) {
+        val share = initialShare ?: return@LaunchedEffect
+        if (share.uris.isNotEmpty()) {
+            if (share.uris.size > 1) status = "Importing ${share.uris.size} shared items…"
+            share.uris.forEach { importUri(it) }
+        } else if (!share.text.isNullOrBlank()) {
             runCatching {
-                val item = OfficialDocumentImportAdapter(context).import(uri, "Gmail attachment")
-                status = importMessage(saveImported(item, uri), "Shared attachment added for review")
+                val text = share.text.trim()
+                val chat = WhatsAppExportAdapter().parse(text)
+                status = if (chat.isNotEmpty()) {
+                    val saved = saveImportedBatch(chat, Uri.EMPTY)
+                    importMessage(saved, "${saved.added} WhatsApp messages added for review")
+                } else {
+                    val title = share.subject?.takeIf { it.isNotBlank() } ?: ("Shared message · " + text.lineSequence().first().take(60))
+                    importMessage(saveImported(ImportedSource(title, text, "Shared message"), null), "Shared message added for review")
+                }
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                Log.e("HOD_IMPORT", "shared_text_failed", error)
+                status = "Shared text could not be saved safely."
             }
-                .onFailure { status = "Shared attachment could not be read: ${it.message ?: it.javaClass.simpleName}" }
         }
     }
 
@@ -788,7 +829,8 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     }
 
     // --- Reminders: rebuilt whenever tasks or reminder settings change (alarms only, nothing is sent anywhere). ---
-    LaunchedEffect(allTasks, settingsVersion) {
+    val snoozeTimes = allSources.mapNotNull { it.snoozedUntil }
+    LaunchedEffect(allTasks, settingsVersion, snoozeTimes) {
         delay(800) // let quick successive edits settle
         Reminders.rescheduleAll(context)
     }
@@ -856,7 +898,16 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         }
     }
     // --- Derived status ---
-    val reviewQueue = sources.filter { it.processingStatus !in setOf("deleted", "archived", "completed") && it.body.isNotBlank() && !it.reviewed && !it.isClinical() }
+    // Snoozed items leave Review until their time; the clock below brings them back on time.
+    var reviewClock by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(healthEpoch) { reviewClock = System.currentTimeMillis() } // also refresh whenever the app comes back
+    val reviewCandidates = sources.filter { it.processingStatus !in setOf("deleted", "archived", "completed") && it.body.isNotBlank() && !it.reviewed && !it.isClinical() }
+    val snoozedReview = reviewCandidates.filter { SnoozePlan.isSnoozed(it.snoozedUntil, reviewClock) }
+    val nextSnoozeWake = snoozedReview.mapNotNull { it.snoozedUntil }.minOrNull()
+    LaunchedEffect(nextSnoozeWake) {
+        if (nextSnoozeWake != null) { delay((nextSnoozeWake - System.currentTimeMillis()).coerceAtLeast(0) + 500); reviewClock = System.currentTimeMillis() }
+    }
+    val reviewQueue = reviewCandidates.filter { !SnoozePlan.isSnoozed(it.snoozedUntil, reviewClock) }
         .sortedWith(compareByDescending<SourceEntity> { it.priorityScore }.thenByDescending { it.capturedAt })
     val aiHealthy = embeddingReady && (indexHealth?.healthy != false)
     val secretaryState = remember(sources, tasks, todayEvents, commitments) {
@@ -909,12 +960,20 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     onActionStatus = { id, action, s -> viewModel.statusReviewAction(id, action, s) },
                     onDismissSource = { id, reason -> viewModel.dismissReviewSource(id, reason) },
                     onBack = { tab = TAB_TODAY },
+                    snoozeOptions = { SnoozePlan.options(System.currentTimeMillis(), settings.fixedBlocks, settings.briefMinute) },
+                    onSnooze = { id, until ->
+                        viewModel.snooze(id, until)
+                        status = "Snoozed until ${dueLabel(until)}"
+                    },
+                    snoozedCount = snoozedReview.size, nextSnoozeWake = nextSnoozeWake,
+                    onShowSnoozed = { viewModel.clearAllSnoozes() },
                 )
                 TAB_TASKS -> TasksScreen(tasks, tasksSegment, onToggleDone = { t -> viewModel.setDone(t.id, t.status != "completed") }, onOpen = { openTaskId = it.id })
                 TAB_CALENDAR -> CalendarScreen(
                     selectedDay = selectedDay, events = calendarEvents.filter { it.id !in hiddenEvents }, fixedBlocks = selectedDayBlocks,
                     proposals = proposals, onSelectDay = { selectedDayEpoch = it.toEpochDay(); proposals = emptyList(); planningWarning = null },
                     onPlanDay = ::planDay, onProtectTime = { protectTimePicker = true }, onOpenEvent = { openEvent = it },
+                    overdueTaskIds = allTasks.filter { it.status !in setOf("completed", "deleted", "archived") && com.hoddesk.app.ui.screens.taskState(it) == com.hoddesk.app.ui.screens.TaskState.Overdue }.map { it.id }.toSet(),
                     onConfirmProposals = { writeProposals() }, onConfirmProposal = { writeProposals(listOf(it)) }, onDiscardProposals = { proposals = emptyList(); planningWarning = null },
                     planningWarning = planningWarning,
                 )

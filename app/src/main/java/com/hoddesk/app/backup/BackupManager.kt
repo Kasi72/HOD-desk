@@ -171,7 +171,7 @@ class BackupManager(private val context: Context, private val dao: HodDeskDao) {
         .put("processingStatus", s.processingStatus).put("lifecycleState", s.lifecycleState).put("triageBucket", s.triageBucket)
         .put("priorityScore", s.priorityScore).putOpt("priorityReasons", s.priorityReasons).put("intentKind", s.intentKind)
         .putOpt("rawText", s.rawText).putOpt("correctedText", s.correctedText).putOpt("detectedLanguage", s.detectedLanguage)
-        .putOpt("transcriptConfidence", s.transcriptConfidence?.toDouble()).putOpt("evidenceLocator", s.evidenceLocator)
+        .putOpt("transcriptConfidence", s.transcriptConfidence?.toDouble()).putOpt("evidenceLocator", s.evidenceLocator).putOpt("snoozedUntil", s.snoozedUntil)
     private fun sourceFrom(o: JSONObject): SourceEntity {
         val d = SourceEntity(title = "", body = "", sourceType = "")
         return SourceEntity(
@@ -182,6 +182,7 @@ class BackupManager(private val context: Context, private val dao: HodDeskDao) {
             priorityScore = o.optInt("priorityScore", d.priorityScore), priorityReasons = o.str("priorityReasons"),
             intentKind = o.optString("intentKind", d.intentKind), rawText = o.str("rawText"), correctedText = o.str("correctedText"),
             detectedLanguage = o.str("detectedLanguage"), transcriptConfidence = o.float("transcriptConfidence"), evidenceLocator = o.str("evidenceLocator"),
+            snoozedUntil = o.long("snoozedUntil"),
         )
     }
 

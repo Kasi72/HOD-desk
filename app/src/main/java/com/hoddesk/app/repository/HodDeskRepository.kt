@@ -68,6 +68,14 @@ class HodDeskRepository(private val dao: HodDeskDao) {
         return ingestWithActions(source, actions)
     }
 
+    /** Takes an item out of Review until [until]; null brings it back now. */
+    suspend fun snoozeSource(sourceId: Long, until: Long?) {
+        dao.setSourceSnooze(sourceId, until)
+        audit("source", sourceId, if (until == null) "snooze_cleared" else "snoozed", until?.let { java.time.Instant.ofEpochMilli(it).toString() })
+    }
+
+    suspend fun clearAllSnoozes() { dao.clearAllSnoozes(); audit("app", 0, "snoozes_cleared") }
+
     suspend fun approveSource(sourceId: Long, project: String, dueAt: Long? = null): Long {
         return dao.approveSourceAtomic(sourceId, project, dueAt)
     }

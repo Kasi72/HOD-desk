@@ -44,6 +44,15 @@ import com.hoddesk.app.settings.DeskSettingsStore
 import com.hoddesk.app.ui.components.HodButton
 import com.hoddesk.app.ui.theme.Hod
 
+/** Hides the app's content from the recent-apps preview, screenshots and screen recording. */
+object ScreenPrivacy {
+    fun apply(activity: Activity?, enabled: Boolean) {
+        val window = activity?.window ?: return
+        if (enabled) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+    }
+}
+
 /** Pure decision: should the app ask for the phone's screen lock now? */
 object AppLockPolicy {
     /** Choices offered in Settings; 0 means "as soon as the app leaves the screen". */
@@ -117,7 +126,10 @@ fun AppLockGate(content: @Composable () -> Unit) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_STOP -> state.markBackground()
-                Lifecycle.Event.ON_START -> if (!locked && state.shouldLockNow(settings)) locked = true
+                Lifecycle.Event.ON_START -> {
+                    ScreenPrivacy.apply(context as? Activity, settings.secureScreen)
+                    if (!locked && state.shouldLockNow(settings)) locked = true
+                }
                 else -> Unit
             }
         }

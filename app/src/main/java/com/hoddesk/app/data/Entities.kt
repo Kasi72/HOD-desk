@@ -24,7 +24,9 @@ data class SourceEntity(
     val correctedText: String? = null,
     val detectedLanguage: String? = null,
     val transcriptConfidence: Float? = null,
-    val evidenceLocator: String? = null
+    val evidenceLocator: String? = null,
+    /** Hidden from the Review queue until this time ("remind me tomorrow"); null when not snoozed. */
+    val snoozedUntil: Long? = null
 )
 
 @Entity(tableName = "tasks", indices = [Index("status"), Index("dueAt"), Index("sourceId"), Index(value = ["approvalOperationId"], unique = true)])

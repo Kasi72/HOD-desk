@@ -24,6 +24,8 @@ interface HodDeskDao {
     @Update suspend fun updateTask(task: TaskEntity)
     @Query("UPDATE tasks SET status = :status, completedAt = :completedAt WHERE id = :id") suspend fun setTaskStatus(id: Long, status: String, completedAt: Long?)
     @Query("SELECT * FROM sources WHERE id = :id LIMIT 1") suspend fun source(id: Long): SourceEntity?
+    @Query("UPDATE sources SET snoozedUntil = :until WHERE id = :id") suspend fun setSourceSnooze(id: Long, until: Long?)
+    @Query("UPDATE sources SET snoozedUntil = NULL WHERE snoozedUntil IS NOT NULL") suspend fun clearAllSnoozes()
     @Query("SELECT * FROM tasks WHERE id = :id LIMIT 1") suspend fun task(id: Long): TaskEntity?
     @Query("SELECT * FROM events WHERE id = :id LIMIT 1") suspend fun event(id: Long): EventEntity?
     @Query("SELECT * FROM events WHERE taskId = :taskId ORDER BY id") suspend fun eventsForTask(taskId: Long): List<EventEntity>

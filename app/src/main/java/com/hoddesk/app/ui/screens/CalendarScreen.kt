@@ -74,6 +74,8 @@ fun CalendarScreen(
     onDiscardProposals: () -> Unit,
     onConfirmProposal: (ProposedBlock) -> Unit = {},
     planningWarning: String? = null,
+    /** Tasks that are past due; their calendar blocks are drawn in red. */
+    overdueTaskIds: Set<Long> = emptySet(),
 ) {
     val c = Hod.colors
     val today = LocalDate.now()
@@ -113,14 +115,14 @@ fun CalendarScreen(
         val scroll = rememberScrollState()
         LaunchedEffect(selectedDay) { scroll.scrollTo(0) }
         Box(Modifier.weight(1f)) {
-            Timeline(selectedDay, events, fixedBlocks, proposals, onOpenEvent, Modifier.verticalScroll(scroll))
+            Timeline(selectedDay, events, fixedBlocks, proposals, onOpenEvent, Modifier.verticalScroll(scroll), overdueTaskIds)
             if (proposals.isNotEmpty()) ProposalPanel(proposals, onConfirmProposals, onDiscardProposals, onConfirmProposal, planningWarning, Modifier.align(Alignment.BottomCenter))
         }
     }
 }
 
 @Composable
-private fun Timeline(day: LocalDate, events: List<EventEntity>, fixedBlocks: List<FixedBlock>, proposals: List<ProposedBlock>, onOpenEvent: (EventEntity) -> Unit, modifier: Modifier) {
+private fun Timeline(day: LocalDate, events: List<EventEntity>, fixedBlocks: List<FixedBlock>, proposals: List<ProposedBlock>, onOpenEvent: (EventEntity) -> Unit, modifier: Modifier, overdueTaskIds: Set<Long> = emptySet()) {
     val c = Hod.colors
     val zone = ZoneId.systemDefault()
     fun minuteOf(epoch: Long): Int = Instant.ofEpochMilli(epoch).atZone(zone).toLocalTime().let { it.hour * 60 + it.minute }
@@ -161,12 +163,14 @@ private fun Timeline(day: LocalDate, events: List<EventEntity>, fixedBlocks: Lis
                 val x = laneWidth * laneOf[i]
                 val boxModifier = Modifier.offset(x = x, y = top(item.start)).width(laneWidth - 3.dp).height(height(item.start, item.end))
                 if (item.event != null) {
+                    val overdue = item.event.taskId != null && item.event.taskId in overdueTaskIds
+                    val fg = if (overdue) c.redText else c.blueText
                     Column(
-                        boxModifier.clip(Squircles.pill).background(c.blue.copy(alpha = 0.14f)).pressable { onOpenEvent(item.event) }.padding(horizontal = 8.dp, vertical = 5.dp)
-                            .semantics { contentDescription = "${item.event.title}, ${formatMinute(item.start)} to ${formatMinute(item.end)}" },
+                        boxModifier.clip(Squircles.pill).background(if (overdue) c.red.copy(alpha = 0.12f) else c.blue.copy(alpha = 0.14f)).pressable { onOpenEvent(item.event) }.padding(horizontal = 8.dp, vertical = 5.dp)
+                            .semantics { contentDescription = (if (overdue) "Overdue: " else "") + "${item.event.title}, ${formatMinute(item.start)} to ${formatMinute(item.end)}" },
                     ) {
-                        Text(item.event.title, style = Hod.type.footnote.copy(fontWeight = FontWeight.SemiBold), color = c.blueText, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text(item.event.location ?: "${formatMinute(item.start)} – ${formatMinute(item.end)}", style = Hod.type.caption, color = c.blueText, maxLines = 1)
+                        Text((if (overdue) "Overdue · " else "") + item.event.title, style = Hod.type.footnote.copy(fontWeight = FontWeight.SemiBold), color = fg, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(item.event.location ?: "${formatMinute(item.start)} – ${formatMinute(item.end)}", style = Hod.type.caption, color = fg, maxLines = 1)
                     }
                 } else if (item.proposal != null) {
                     val clash = item.proposal.clashesWith.isNotEmpty()

@@ -133,8 +133,14 @@ private fun TaskRow(task: TaskEntity, onToggle: () -> Unit, onOpen: () -> Unit) 
         CheckCircle(done, onToggle, task.title)
         Column(Modifier.weight(1f).padding(start = 4.dp)) {
             Text(task.title, style = Hod.type.body.copy(textDecoration = if (done) TextDecoration.LineThrough else null), color = if (done) c.tertiaryLabel else c.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            val meta = listOfNotNull(task.dueAt?.let { dueLabel(it) }, task.assignee?.let { "with $it" }, task.project.takeIf { it.isNotBlank() }).joinToString(" · ")
-            if (meta.isNotBlank()) Text(meta, style = Hod.type.footnote, color = if (state == TaskState.Overdue) c.redText else c.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val countdown = if (done) null else task.dueAt?.let { com.hoddesk.app.workflow.DueCountdown.of(it, System.currentTimeMillis()) }
+            val meta = listOfNotNull(task.dueAt?.let { if (done) dueLabel(it) else dueWithCountdown(it) }, task.assignee?.let { "with $it" }, task.project.takeIf { it.isNotBlank() }).joinToString(" · ")
+            val metaColor = when {
+                state == TaskState.Overdue -> c.redText
+                countdown?.tone == com.hoddesk.app.workflow.DueCountdown.Tone.SOON -> c.orangeText
+                else -> c.secondaryLabel
+            }
+            if (meta.isNotBlank()) Text(meta, style = Hod.type.footnote, color = metaColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (state == TaskState.Blocked || state == TaskState.Clarification) {
             val pill = taskPill(state)
@@ -183,7 +189,7 @@ fun TaskDetailScreen(
             }
 
             GroupedSection {
-                ListRow("Due", icon = Icons.Rounded.CalendarMonth, iconColor = c.red, value = task.dueAt?.let { dueLabel(it) } ?: "Add date", valueColor = if (task.dueAt == null) c.tint else c.secondaryLabel, chevron = true, onClick = { showDate = true })
+                ListRow("Due", icon = Icons.Rounded.CalendarMonth, iconColor = c.red, value = task.dueAt?.let { if (state == TaskState.Done) dueLabel(it) else dueWithCountdown(it) } ?: "Add date", valueColor = if (task.dueAt == null) c.tint else if (state == TaskState.Overdue) c.redText else c.secondaryLabel, chevron = true, onClick = { showDate = true })
                 RowDivider(58.dp)
                 ListRow("Owner", icon = Icons.Rounded.Person, iconColor = c.blue, value = task.assignee ?: "Me", chevron = true, onClick = { showOwner = true })
                 RowDivider(58.dp)

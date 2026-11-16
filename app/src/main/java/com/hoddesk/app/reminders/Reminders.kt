@@ -37,6 +37,8 @@ object Reminders {
     const val CHANNEL_ID = "hod_desk_reminders"
     const val ACTION_BRIEF = "com.hoddesk.app.action.REMINDER_BRIEF"
     const val ACTION_TASK = "com.hoddesk.app.action.REMINDER_TASK"
+    const val ACTION_SNOOZE = "com.hoddesk.app.action.REMINDER_SNOOZE"
+    private const val SNOOZE_NOTIFICATION_ID = 2
     const val EXTRA_TASK_ID = "taskId"
     const val EXTRA_DUE_AT = "dueAt"
     private const val BRIEF_NOTIFICATION_ID = 1
@@ -64,6 +66,7 @@ object Reminders {
         runCatching {
             scheduleBrief(app)
             scheduleTasks(app)
+            scheduleSnooze(app)
         }.onFailure { Log.e(TAG, "reschedule_failed", it) }
     }
 
@@ -97,6 +100,32 @@ object Reminders {
             }
         }
         state.edit().putStringSet(KEY_TASK_IDS, scheduled).apply()
+    }
+
+    /** One alarm for the earliest snoozed Review item; it says how many items are back (never their titles). */
+    private suspend fun scheduleSnooze(context: Context) {
+        val alarms = context.getSystemService(AlarmManager::class.java) ?: return
+        val pending = snoozeIntent(context)
+        val now = System.currentTimeMillis()
+        val next = HodDeskDatabase.get(context).dao().allSources()
+            .filter { !it.reviewed && it.lifecycleState != "deleted" }
+            .mapNotNull { it.snoozedUntil }.filter { it > now }.minOrNull()
+        if (next != null) alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pending) else alarms.cancel(pending)
+    }
+
+    private fun snoozeIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
+        context, 0,
+        Intent(context, ReminderReceiver::class.java).setAction(ACTION_SNOOZE),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+    internal suspend fun postSnoozed(context: Context) {
+        val now = System.currentTimeMillis()
+        // Items whose snooze ended in the last 12 hours and that still wait for review.
+        val back = HodDeskDatabase.get(context).dao().allSources().count {
+            !it.reviewed && it.lifecycleState != "deleted" && it.snoozedUntil != null && it.snoozedUntil in (now - 12 * 60 * 60_000L)..(now + 60_000L)
+        }
+        if (back > 0) notify(context, SNOOZE_NOTIFICATION_ID, "Back in Review", if (back == 1) "1 snoozed item is ready for review." else "$back snoozed items are ready for review.")
     }
 
     private fun briefIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
@@ -179,6 +208,10 @@ class ReminderReceiver : BroadcastReceiver() {
                     Reminders.ACTION_BRIEF -> {
                         Reminders.postBrief(app)
                         Reminders.scheduleBrief(app)
+                    }
+                    Reminders.ACTION_SNOOZE -> {
+                        Reminders.postSnoozed(app)
+                        Reminders.rescheduleAll(app) // arranges the next snoozed item, if any
                     }
                     Reminders.ACTION_TASK -> {
                         val taskId = intent.getLongExtra(Reminders.EXTRA_TASK_ID, -1L)

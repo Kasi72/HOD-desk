@@ -102,6 +102,11 @@ class DeskSettingsStore(context: Context) {
         get() = prefs.getBoolean("auto_lock_enabled", true)
         set(value) = prefs.edit().putBoolean("auto_lock_enabled", value).apply()
 
+    /** Hide HOD Desk in the recent-apps screen and block screenshots / screen recording. On by default. */
+    var secureScreen: Boolean
+        get() = prefs.getBoolean("secure_screen", true)
+        set(value) = prefs.edit().putBoolean("secure_screen", value).apply()
+
     var autoLockMinutes: Int
         get() = prefs.getInt("auto_lock_minutes", 5)
         set(value) = prefs.edit().putInt("auto_lock_minutes", value.coerceIn(0, 60)).apply()

@@ -11,7 +11,7 @@ import com.hoddesk.app.privacy.DatabasePassphraseProvider
 import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SupportFactory
 
-@Database(entities = [SourceEntity::class, TaskEntity::class, EventEntity::class, EvidenceEntity::class, SemanticEmbeddingEntity::class, SourceChunkEntity::class, SemanticEmbeddingStagingEntity::class, SourceChunkStagingEntity::class, SourceRelationEntity::class, ActionPointEntity::class, ReasoningRunEntity::class, AuditEntryEntity::class, PerformanceMetricEntity::class, LearningCorrectionEntity::class, CommitmentEntity::class], version = 21, exportSchema = false)
+@Database(entities = [SourceEntity::class, TaskEntity::class, EventEntity::class, EvidenceEntity::class, SemanticEmbeddingEntity::class, SourceChunkEntity::class, SemanticEmbeddingStagingEntity::class, SourceChunkStagingEntity::class, SourceRelationEntity::class, ActionPointEntity::class, ReasoningRunEntity::class, AuditEntryEntity::class, PerformanceMetricEntity::class, LearningCorrectionEntity::class, CommitmentEntity::class], version = 22, exportSchema = false)
 abstract class HodDeskDatabase : RoomDatabase() {
     abstract fun dao(): HodDeskDao
 
@@ -21,7 +21,7 @@ abstract class HodDeskDatabase : RoomDatabase() {
             SQLiteDatabase.loadLibs(context.applicationContext)
             instance ?: Room.databaseBuilder(context.applicationContext, HodDeskDatabase::class.java, "hod-desk.db")
                 .openHelperFactory(SupportFactory(DatabasePassphraseProvider(context).get()))
-                .addMigrations(MIGRATION_1_3, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21).build().also { Log.i("HOD_DB", "encrypted_database_opened"); instance = it }
+                .addMigrations(MIGRATION_1_3, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22).build().also { Log.i("HOD_DB", "encrypted_database_opened"); instance = it }
         }
 
         /** Preserves existing sources/tasks while adding workflow and import processing fields. */
@@ -173,6 +173,12 @@ abstract class HodDeskDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE sources ADD COLUMN detectedLanguage TEXT")
                 db.execSQL("ALTER TABLE sources ADD COLUMN transcriptConfidence REAL")
                 db.execSQL("ALTER TABLE sources ADD COLUMN evidenceLocator TEXT")
+            }
+        }
+        /** Review snooze: the item stays out of the Review queue until this time. Existing rows are not snoozed. */
+        private val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sources ADD COLUMN snoozedUntil INTEGER")
             }
         }
     }

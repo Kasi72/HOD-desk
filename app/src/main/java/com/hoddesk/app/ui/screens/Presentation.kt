@@ -76,6 +76,10 @@ fun dueLabel(dueAt: Long?, now: LocalDate = LocalDate.now()): String {
     }
 }
 
+/** Due date with a countdown for open work, e.g. "in 3 days · Thu 19 Nov, 5:00 pm". */
+fun dueWithCountdown(dueAt: Long, now: Long = System.currentTimeMillis()): String =
+    com.hoddesk.app.workflow.DueCountdown.of(dueAt, now)?.let { "${it.text} · ${dueLabel(dueAt)}" } ?: dueLabel(dueAt)
+
 enum class TaskState { Open, Delegated, Scheduled, Clarification, Blocked, Overdue, Done }
 
 fun taskState(task: TaskEntity, now: Long = System.currentTimeMillis()): TaskState = when {

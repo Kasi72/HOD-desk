@@ -103,27 +103,50 @@ fun ReviewScreen(
     onActionStatus: suspend (sourceId: Long, action: String, status: String) -> Unit,
     onDismissSource: suspend (sourceId: Long, reason: String) -> Unit,
     onBack: () -> Unit,
+    snoozeOptions: () -> List<com.hoddesk.app.workflow.SnoozePlan.Option> = { emptyList() },
+    onSnooze: (sourceId: Long, until: Long) -> Unit = { _, _ -> },
+    snoozedCount: Int = 0,
+    nextSnoozeWake: Long? = null,
+    onShowSnoozed: () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val c = Hod.colors
     var currentId by remember { mutableStateOf(startSourceId) }
     val source = queue.firstOrNull { it.id == currentId } ?: queue.firstOrNull()
+    var snoozeFor by remember { mutableStateOf<SourceEntity?>(null) }
+    var pickSnoozeTime by remember { mutableStateOf<SourceEntity?>(null) }
+    fun snooze(item: SourceEntity, until: Long) {
+        // Move on first so the screen does not jump back to the top of the queue.
+        if (queue.size > 1) currentId = queue[(queue.indexOf(item) + 1) % queue.size].id
+        onSnooze(item.id, until)
+    }
     Column(Modifier.fillMaxSize().background(c.groupedBackground).statusBarsPadding()) {
         val position = source?.let { queue.indexOf(it) + 1 } ?: 0
         NavBar(
             backLabel = "Today", onBack = onBack, title = "Review",
             subtitle = if (source != null) "$position of ${queue.size}" else null,
-            trailing = if (queue.size > 1 && source != null) ({
-                Text("Later", style = Hod.type.body, color = c.tint, modifier = Modifier.padding(horizontal = 8.dp).pressable {
-                    val i = queue.indexOf(source)
-                    currentId = queue[(i + 1) % queue.size].id
-                })
+            trailing = if (source != null) ({
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Snooze", style = Hod.type.body, color = c.tint, modifier = Modifier.padding(horizontal = 8.dp).pressable { snoozeFor = source })
+                    if (queue.size > 1) Text("Later", style = Hod.type.body, color = c.tint, modifier = Modifier.padding(horizontal = 8.dp).pressable {
+                        val i = queue.indexOf(source)
+                        currentId = queue[(i + 1) % queue.size].id
+                    })
+                }
             }) else null,
         )
         if (source == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     EmptyState("All clear", "Nothing is waiting for review. New imports will appear here.")
+                    if (snoozedCount > 0) {
+                        Text(
+                            "$snoozedCount snoozed" + (nextSnoozeWake?.let { " · next back ${dueLabel(it)}" } ?: ""),
+                            style = Hod.type.subheadline, color = c.secondaryLabel, modifier = Modifier.padding(bottom = 10.dp),
+                        )
+                        HodButton("Show snoozed now", onShowSnoozed, style = HodButtonStyle.Gray, height = 44.dp)
+                        Spacer(Modifier.height(10.dp))
+                    }
                     HodButton("Back to Today", onBack, style = HodButtonStyle.Tinted, height = 44.dp)
                 }
             }
@@ -135,6 +158,23 @@ fun ReviewScreen(
                 onApproveEdited = onApproveEdited,
                 onApprove = onApprove, onActionStatus = onActionStatus, onDismissSource = onDismissSource,
             )
+        }
+    }
+    snoozeFor?.let { item ->
+        SheetDialog(onDismiss = { snoozeFor = null }) {
+            ActionSheetContent(
+                "Bring this back to Review", "It leaves the queue until then. If reminders are allowed, you get a notification.",
+                snoozeOptions().map { option ->
+                    SheetAction("${option.label} · ${dueLabel(option.until)}") { snoozeFor = null; snooze(item, option.until) }
+                } + SheetAction("Pick date & time…") { snoozeFor = null; pickSnoozeTime = item },
+                onCancel = { snoozeFor = null },
+            )
+        }
+    }
+    pickSnoozeTime?.let { item ->
+        DateTimePickerDialog(initial = System.currentTimeMillis() + 24 * 60 * 60_000L, onDismiss = { pickSnoozeTime = null }) { at ->
+            pickSnoozeTime = null
+            if (at > System.currentTimeMillis()) snooze(item, at)
         }
     }
 }

@@ -460,6 +460,8 @@ fun AutoLockPage(store: com.hoddesk.app.settings.DeskSettingsStore, deviceSecure
     var enabled by remember { mutableStateOf(store.autoLockEnabled) }
     var minutes by remember { mutableStateOf(store.autoLockMinutes) }
     var pick by remember { mutableStateOf(false) }
+    var secure by remember { mutableStateOf(store.secureScreen) }
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
     SettingsPage("Auto-Lock", "Settings", onBack) {
         Text(
             "When HOD Desk has been away from the screen for a while, it covers itself and asks for your fingerprint, face or screen lock before showing anything.",
@@ -471,6 +473,13 @@ fun AutoLockPage(store: com.hoddesk.app.settings.DeskSettingsStore, deviceSecure
                 RowDivider()
                 ListRow("Lock", value = com.hoddesk.app.security.AppLockPolicy.timeoutLabel(minutes), chevron = true, onClick = { pick = true })
             }
+        }
+        GroupedSection(header = "Screen privacy", footer = "Shows a blank card in recent apps and blocks screenshots and screen recording of HOD Desk. Turn off if you need to screenshot the app.") {
+            SwitchRow("Hide in recent apps", secure, { on ->
+                secure = on; store.secureScreen = on
+                com.hoddesk.app.security.ScreenPrivacy.apply(activity, on)
+                onChanged()
+            })
         }
         if (enabled && !deviceSecure) Text(
             "This phone has no screen lock, so HOD Desk cannot lock itself. Set one in Android Settings › Security › Screen lock.",

@@ -45,6 +45,8 @@ class HodDeskViewModel(private val repository: HodDeskRepository) : ViewModel() 
         items.forEach { (source, actions) -> if (repository.ingestWithActionsIfNew(source, actions) != null) added++ else skipped++ }
         onDone(added, skipped)
     }
+    fun snooze(sourceId: Long, until: Long?) = launchSafe("snooze_failed") { repository.snoozeSource(sourceId, until) }
+    fun clearAllSnoozes() = launchSafe("show_snoozed_failed") { repository.clearAllSnoozes() }
     fun approve(sourceId: Long, project: String, dueAt: Long? = null) = launchSafe("approve_source_failed") { repository.approveSource(sourceId, project, dueAt) }
     fun approveAction(sourceId: Long, action: String, project: String, dueAt: Long? = null, assignee: String? = null) = launchSafe("approve_action_failed") { repository.approveAction(sourceId, action, project, dueAt, assignee) }
     fun dismissSource(sourceId: Long, reason: String) = launchSafe("dismiss_source_failed") { repository.dismissSource(sourceId, reason) }
