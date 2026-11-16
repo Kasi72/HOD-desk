@@ -180,6 +180,21 @@ class MainActivity : ComponentActivity() {
         val shared = SharedInput.from(intent)
         setContent { HodTheme { com.hoddesk.app.security.AppLockGate { HODDeskApp(shared) } } }
     }
+
+    /** Give the multi-gigabyte reasoning model back as soon as Android signals memory pressure. */
+    @Suppress("DEPRECATION")
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        val pressure = level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND
+        if (pressure) com.hoddesk.app.reasoning.ReasoningEngineHolder.releaseAsync()
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        com.hoddesk.app.reasoning.ReasoningEngineHolder.releaseAsync()
+    }
 }
 
 /** What another app handed over through Android's Share menu. */

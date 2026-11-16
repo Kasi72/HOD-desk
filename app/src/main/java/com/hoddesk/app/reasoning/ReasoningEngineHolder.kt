@@ -30,9 +30,23 @@ object ReasoningEngineHolder {
     private var releaseJob: Job? = null
     private var useGeneration = 0L
 
-    suspend fun <T> use(modelPath: String, block: (Engine) -> T): T = mutex.withLock {
+    /**
+     * @param memory when given, checked before loading; a refusal throws [InsufficientMemoryException]
+     * and, if Android reports low memory, frees an already-loaded engine too.
+     */
+    suspend fun <T> use(modelPath: String, memory: (() -> MemorySnapshot)? = null, block: (Engine) -> T): T = mutex.withLock {
         releaseJob?.cancel()
         try {
+            memory?.let { probe ->
+                val file = File(modelPath)
+                val loaded = engine != null && engineKey == keyFor(modelPath, file)
+                val snapshot = probe()
+                val decision = ReasoningMemoryPolicy.decide(snapshot, file.length(), loaded)
+                if (!decision.allowed) {
+                    Log.w(TAG, "engine_load_refused avail=${snapshot.availableBytes} low=${snapshot.lowMemory}")
+                    throw InsufficientMemoryException(snapshot, decision.requiredBytes)
+                }
+            }
             block(acquireLocked(modelPath))
         } catch (error: Throwable) {
             closeLocked()
@@ -49,8 +63,7 @@ object ReasoningEngineHolder {
     }
 
     private fun acquireLocked(modelPath: String): Engine {
-        val file = File(modelPath)
-        val key = "$modelPath|${file.length()}|${file.lastModified()}"
+        val key = keyFor(modelPath, File(modelPath))
         engine?.let { if (engineKey == key) return it }
         closeLocked()
         val fresh = Engine(EngineConfig(modelPath, Backend.CPU()))
@@ -65,6 +78,11 @@ object ReasoningEngineHolder {
         Log.i(TAG, "engine_loaded")
         return fresh
     }
+
+    private fun keyFor(modelPath: String, file: File) = "$modelPath|${file.length()}|${file.lastModified()}"
+
+    /** Called when Android asks the app to give memory back. Waits for any running inference. */
+    fun releaseAsync() { scope.launch { release() } }
 
     private fun closeLocked() {
         engine?.let { runCatching { it.close() }; Log.i(TAG, "engine_released") }
