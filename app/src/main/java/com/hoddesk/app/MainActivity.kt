@@ -1104,7 +1104,7 @@ fun HODDeskApp(initialShare: SharedInput? = null) {
                     else com.hoddesk.app.ui.components.EmptyState("Matter not available", "The related sources have not been indexed yet.")
                 }
                 "followups" -> FollowUpPage(
-                    candidates = FollowUpEngine.candidates(commitments),
+                    candidates = FollowUpEngine.candidates(commitments), commitments = commitments,
                     onBack = ::pop,
                     onDraftGenerated = { candidate -> scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_draft_generated", detail = candidate.draft.take(1000))) } },
                     onDraftSaved = { candidate -> status = "Draft saved for review."; scope.launch { dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "commitment", entityId = candidate.commitmentId, action = "followup_draft_saved", detail = candidate.draft.take(1000))) } },

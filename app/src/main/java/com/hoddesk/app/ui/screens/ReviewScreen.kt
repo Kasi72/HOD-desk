@@ -61,6 +61,14 @@ import com.hoddesk.app.reasoning.ActionDependencyAnalyzer
 import com.hoddesk.app.reasoning.ActionReasoningFallback
 import com.hoddesk.app.reasoning.OnDeviceActionReasoner
 import com.hoddesk.app.reasoning.ReviewApprovalPolicy
+import com.hoddesk.app.reasoning.ApprovalPreview
+import com.hoddesk.app.reasoning.ApprovalPreviewBuilder
+import com.hoddesk.app.reasoning.CorrectionChips
+import com.hoddesk.app.triage.PriorityReasons
+import com.hoddesk.app.ui.components.ListRow
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.CircleShape
+import java.time.LocalDate
 import com.hoddesk.app.semantic.SourceSemanticHit
 import com.hoddesk.app.settings.TeamMember
 import com.hoddesk.app.ui.components.ActionSheetContent
@@ -290,6 +298,35 @@ private fun SourceReview(
 
     val groundedPoint = point
     val fields = remember(groundedPoint) { fieldRows(groundedPoint, groundedPoint?.evidence ?: evidence) }
+    // What Approve will actually do, built from the same candidate and due rule the DAO uses.
+    val uncertain = if (editing && fieldsConfirmed) emptyList() else fields.filter { it.state == FieldState.Confirm || it.state == FieldState.Conflict }.map { it.label }
+    fun preview(assignee: String?): ApprovalPreview? {
+        val candidate = (if (editing && point != null) runCatching { editedPoint() }.getOrNull() else point) ?: return null
+        if (candidate.action.isBlank()) return null
+        return ApprovalPreviewBuilder.build(
+            original = if (manual != null) null else point, candidate = candidate, source = source, assignee = assignee,
+            dueAt = ReviewApprovalPolicy.dueAt(candidate), dueLabel = { dueLabel(it) },
+            uncertainFields = uncertain, newerSources = possibleUpdates.map { it.source.title },
+        )
+    }
+    var confirmFor by remember(source.id) { mutableStateOf<Pair<String?, ApprovalPreview>?>(null) }
+    fun requestApprove(assignee: String?) {
+        val p = preview(assignee)
+        if (p?.needsConfirmation == true) { showDelegate = false; customDelegate = null; confirmFor = assignee to p }
+        else approveTo(assignee)
+    }
+    fun startEditing() {
+        if (editing) return
+        edited = action.orEmpty()
+        editedDate = point?.dateText.orEmpty(); editedTime = point?.timeText.orEmpty(); editedLocation = point?.locationText.orEmpty(); editedPeople = point?.peopleText.orEmpty()
+        editedOwner = point?.ownerText.orEmpty(); editedReference = point?.referenceNumber.orEmpty()
+        fieldsConfirmed = false
+        editing = true
+    }
+    val reasons = PriorityReasons.forItem(
+        source.priorityReasons, dueAt = ReviewApprovalPolicy.dueAt(point),
+        hasConflict = fields.any { it.state == FieldState.Conflict } || possibleUpdates.isNotEmpty(),
+    )
     val highlights = fields.mapNotNull { f -> f.value.takeIf { f.state == FieldState.Verified } }.flatMap { v -> v.split(",", ";").map(String::trim) }
     val look = sourceLook(source.sourceType)
 
@@ -329,8 +366,11 @@ private fun SourceReview(
                         }
                     }
                     OutlinedTextField(value = editedDate, onValueChange = { editedDate = it }, modifier = Modifier.fillMaxWidth(), shape = Squircles.small, label = { Text("Due date (optional)") }, singleLine = true)
+                    ChipRow(CorrectionChips.dates(LocalDate.now()).map { it.label to { editedDate = it.value } } + ("No date" to { editedDate = ""; editedTime = "" }), enabled = !busy)
                     OutlinedTextField(value = editedTime, onValueChange = { editedTime = it }, modifier = Modifier.fillMaxWidth(), shape = Squircles.small, label = { Text("Time (optional)") }, singleLine = true)
+                    ChipRow(CorrectionChips.times.map { t -> t to { editedTime = t } } + ("No time" to { editedTime = "" }), enabled = !busy)
                     OutlinedTextField(value = editedLocation, onValueChange = { editedLocation = it }, modifier = Modifier.fillMaxWidth(), shape = Squircles.small, label = { Text("Where (optional)") }, singleLine = true)
+                    ChipRow(listOf(CorrectionChips.ONLINE to { editedLocation = CorrectionChips.ONLINE }), enabled = !busy)
                     OutlinedTextField(value = editedPeople, onValueChange = { editedPeople = it }, modifier = Modifier.fillMaxWidth(), shape = Squircles.small, label = { Text("People / owner (optional)") }, singleLine = true)
                     OutlinedTextField(value = editedOwner, onValueChange = { editedOwner = it }, modifier = Modifier.fillMaxWidth(), shape = Squircles.small, label = { Text("Responsible person / office (optional)") })
                     OutlinedTextField(value = editedReference, onValueChange = { editedReference = it }, modifier = Modifier.fillMaxWidth(), shape = Squircles.small, label = { Text("Reference number (optional)") })
@@ -342,8 +382,25 @@ private fun SourceReview(
                     Text(action, style = Hod.type.title2, color = c.label)
                 }
                 if (remaining.size > 1) Text("Action ${actions.size - remaining.size + 1} of ${actions.size} from this item", style = Hod.type.footnote, color = c.secondaryLabel)
-                source.priorityReasons?.takeIf { it.isNotBlank() }?.let { Text("Why: $it", style = Hod.type.subheadline, color = c.secondaryLabel) }
+                if (reasons.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Why", style = Hod.type.footnote.copy(fontWeight = FontWeight.SemiBold), color = c.secondaryLabel)
+                    reasons.forEach { reason ->
+                        val strong = reason == "Overdue" || reason == "Conflicting details" || reason.startsWith("Due")
+                        if (strong) Pill(reason, c.orange.copy(alpha = 0.14f), c.orangeText) else Pill(reason, c.fill, c.secondaryLabel)
+                    }
+                }
             }
+
+            // One-tap corrections: each opens the edit fields pre-filled; nothing is saved until confirmed.
+            if (action != null && !editing) ChipRow(
+                CorrectionChips.dates(LocalDate.now()).take(3).map { chip -> chip.label to { startEditing(); editedDate = chip.value } } +
+                    listOf(
+                        CorrectionChips.ONLINE to { startEditing(); editedLocation = CorrectionChips.ONLINE },
+                        "Delegate…" to { showDelegate = true },
+                        "Not an action" to { perform { onActionStatus(source.id, action, "rejected"); finish(action) } },
+                    ),
+                enabled = !busy,
+            )
 
             if (action != null) GroupedSection(header = "Details", footer = point?.ambiguity?.let { "Needs clarification: $it" }) {
                 fields.forEachIndexed { i, f ->
@@ -383,6 +440,23 @@ private fun SourceReview(
                             FieldState.Confirm, FieldState.Conflict -> Icon(Icons.Rounded.Error, "Needs confirmation: missing support or source conflict", tint = c.orange, modifier = Modifier.size(22.dp))
                             FieldState.Missing -> Icon(Icons.Rounded.Help, "Not stated in source", tint = c.chevron, modifier = Modifier.size(22.dp))
                         }
+                    }
+                }
+            }
+
+            if (action != null) preview(null)?.let { p ->
+                GroupedSection(header = "When You Approve", footer = p.evidence?.let { "Based on: “$it”" }) {
+                    p.effects.filter { it.label != "New task" }.forEachIndexed { i, e ->
+                        if (i > 0) RowDivider()
+                        ListRow(e.label, value = e.value)
+                    }
+                    p.edits.forEach { change ->
+                        RowDivider()
+                        ListRow("You changed ${change.field}", subtitle = "${change.previous ?: "empty"} → ${change.current ?: "empty"}", titleColor = c.tint)
+                    }
+                    p.warnings.forEach { warning ->
+                        RowDivider()
+                        ListRow(warning, titleColor = c.orangeText)
                     }
                 }
             }
@@ -465,7 +539,7 @@ private fun SourceReview(
         }
         if (action != null) Column(Modifier.fillMaxWidth().background(c.groupedBackground).navigationBarsPadding().imePadding().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (!point?.ambiguity.isNullOrBlank()) Text("Unconfirmed date/time warnings keep this task unscheduled. Edit and confirm to resolve them.", style = Hod.type.footnote, color = c.orangeText)
-            HodButton(if (busy) "Saving…" else if (editing) "Save fields and approve" else "Approve", onClick = { approveTo(null) }, modifier = Modifier.fillMaxWidth(), enabled = !busy && (!editing || edited.isNotBlank()))
+            HodButton(if (busy) "Saving…" else if (editing) "Save fields and approve" else "Approve", onClick = { requestApprove(null) }, modifier = Modifier.fillMaxWidth(), enabled = !busy && (!editing || edited.isNotBlank()))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 HodButton(if (editing) "Save fields" else "Edit fields", onClick = {
                     if (editing) perform {
@@ -499,7 +573,7 @@ private fun SourceReview(
         val finalAction = if (editing && edited.isNotBlank()) edited.trim() else action
         ActionSheetContent(
             title = "Delegate to", message = if (team.isEmpty()) "Add your team in Settings › Department to pick people here." else "A task is created with this person as owner. You send the message yourself.",
-            actions = team.map { m -> SheetAction("${m.name}${m.role.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}") { approveTo(m.name) } } +
+            actions = team.map { m -> SheetAction("${m.name}${m.role.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}") { requestApprove(m.name) } } +
                 SheetAction("Someone else…") { showDelegate = false; customDelegate = "" },
             onCancel = { showDelegate = false },
         )
@@ -507,8 +581,36 @@ private fun SourceReview(
     customDelegate?.let { name ->
         val finalAction = if (editing && edited.isNotBlank()) edited.trim() else action.orEmpty()
         TextPromptDialog(title = "Delegate to", label = "Name", initial = name, confirm = "Delegate", onDismiss = { customDelegate = null }) { entered ->
-            if (entered.isNotBlank() && action != null) approveTo(entered.trim())
             customDelegate = null
+            if (entered.isNotBlank() && action != null) requestApprove(entered.trim())
+        }
+    }
+    confirmFor?.let { (assignee, p) ->
+        SheetDialog(onDismiss = { confirmFor = null }) {
+            val effects = p.effects.filter { it.label in setOf("Owner", "Due", "Calendar") }.joinToString("\n") { "${it.label}: ${it.value}" }
+            ActionSheetContent(
+                title = "Check before approving",
+                message = (p.warnings.map { "• $it" } + "" + effects).joinToString("\n"),
+                actions = listOf(
+                    SheetAction(if (assignee != null) "Delegate to $assignee anyway" else "Approve anyway") { confirmFor = null; approveTo(assignee) },
+                    SheetAction("Edit fields first") { confirmFor = null; startEditing() },
+                ),
+                onCancel = { confirmFor = null },
+            )
+        }
+    }
+}
+
+/** Horizontally scrolling iOS-style capsule chips for one-tap corrections. */
+@Composable
+private fun ChipRow(chips: List<Pair<String, () -> Unit>>, enabled: Boolean = true) {
+    val c = Hod.colors
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        chips.forEach { (label, onClick) ->
+            Text(
+                label, style = Hod.type.subheadline.copy(fontWeight = FontWeight.Medium), color = if (enabled) c.tint else c.tertiaryLabel,
+                modifier = Modifier.clip(CircleShape).background(c.tintSoft).pressable(enabled = enabled, onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+            )
         }
     }
 }
