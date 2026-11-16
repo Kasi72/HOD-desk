@@ -15,8 +15,8 @@ android {
         applicationId = "com.hoddesk.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2022000
-        versionName = "2.22.0"
+        versionCode = 3000000
+        versionName = "3.0.0"
         // Gemma 4 E2B instruction model (Apache 2.0, open download, 2,588,147,712 bytes), pinned to one
         // repository revision with its published LFS SHA-256. Override both properties to use another approved model.
         buildConfigField("String", "INSTRUCTION_MODEL_URL", "\"${providers.gradleProperty("hoddeskInstructionModelUrl").orElse("https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/2d74ac41a33d7da82f39f7d5720a04c68514a103/gemma-4-E2B-it.litertlm?download=true").get()}\"")
