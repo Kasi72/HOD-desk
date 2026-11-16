@@ -5,6 +5,10 @@ import android.util.Log
 import com.google.ai.edge.litertlm.ModelInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -23,13 +27,20 @@ class InstructionModelStore(
     companion object {
         private const val TAG = "HOD_REASONING"
         private const val MIN_BYTES = 100_000_000L
+        private val installLock = Mutex()
     }
 
     private val target = File(context.filesDir, "hoddesk-instruction.litertlm")
+    // Remembers that this exact file (size + modification time) already passed the SHA-256 check,
+    // so app start does not re-hash a multi-gigabyte model every time.
+    private val verified = context.getSharedPreferences("hod_desk_model_verification", Context.MODE_PRIVATE)
+
+    /** True after an installed model was removed because it failed its check (for example after a model update). */
+    val needsDownload: Boolean get() = verified.getBoolean("needs_download", false)
 
     fun installedPath(): String? = target.takeIf { isValid(it) }?.absolutePath
 
-    suspend fun install(onProgress: (Int) -> Unit = {}): String = withContext(Dispatchers.IO) {
+    suspend fun install(onProgress: (Int) -> Unit = {}): String = withContext(Dispatchers.IO) { installLock.withLock {
         require(!downloadUrl.isNullOrBlank()) { "No approved instruction model URL configured" }
         require(!expectedSha256.isNullOrBlank()) { "No instruction model SHA-256 configured" }
         val part = File(target.parentFile, "${target.name}.part")
@@ -48,6 +59,7 @@ class InstructionModelStore(
                     val buffer = ByteArray(1024 * 1024)
                     var copied = 0L
                     while (true) {
+                        currentCoroutineContext().ensureActive()
                         val read = input.read(buffer)
                         if (read < 0) break
                         if (read == 0) continue
@@ -66,19 +78,37 @@ class InstructionModelStore(
                     "Configured model is not an instruction LLM"
                 }
             }
-            if (target.exists()) target.delete()
-            check(part.renameTo(target)) { "Unable to activate instruction model" }
+            ReasoningEngineHolder.release()
+            java.nio.file.Files.move(part.toPath(), target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            rememberVerified(target)
             Log.i(TAG, "instruction_model_installed_bytes=${target.length()}")
             target.absolutePath
         } finally {
             connection.disconnect()
             if (part.exists()) part.delete()
         }
-    }
+    } }
 
     private fun isValid(file: File): Boolean {
         if (!file.isFile || file.length() < MIN_BYTES) return false
-        return expectedSha256.isNullOrBlank() || sha256(file).equals(expectedSha256, ignoreCase = true)
+        if (expectedSha256.isNullOrBlank()) return false
+        if (file == target && verified.getString("marker", null) == marker(file)) return true
+        val before = file.length() to file.lastModified()
+        val ok = sha256(file).equals(expectedSha256, ignoreCase = true)
+        // Act only on the exact file that was hashed; an install may have replaced it meanwhile.
+        if (file == target && before == (file.length() to file.lastModified())) {
+            if (ok) rememberVerified(file)
+            // A previously approved model (e.g. after a model switch) or a corrupt file can never be used;
+            // remove it so it does not occupy gigabytes or get re-hashed at every start.
+            else { Log.i(TAG, "instruction_model_removed_checksum_mismatch"); file.delete(); verified.edit().remove("marker").putBoolean("needs_download", true).apply() }
+        }
+        return ok
+    }
+
+    private fun marker(file: File): String = "${expectedSha256!!.lowercase()}|${file.length()}|${file.lastModified()}"
+
+    private fun rememberVerified(file: File) {
+        if (!expectedSha256.isNullOrBlank()) verified.edit().putString("marker", marker(file)).putBoolean("needs_download", false).apply()
     }
 
     private fun sha256(file: File): String {

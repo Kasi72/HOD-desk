@@ -4,33 +4,92 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.ViewModelProvider
 import com.hoddesk.app.data.SourceEntity
+import com.hoddesk.app.data.ActionPointEntity
 import com.hoddesk.app.repository.HodDeskRepository
 import com.hoddesk.app.repository.ActionPointDraft
 import com.hoddesk.app.reasoning.ActionReasoningOutput
+import com.hoddesk.app.imports.ActionDueParser
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import android.util.Log
 
 class HodDeskViewModel(private val repository: HodDeskRepository) : ViewModel() {
+    private val failures = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    val operationErrors = failures.asSharedFlow()
+    /** Database/provider failures must be surfaced as a logged operation
+     * failure, never as an uncaught exception that takes down the activity. */
+    private fun launchSafe(operation: String, block: suspend () -> Unit) = viewModelScope.launch {
+        try {
+            block()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Throwable) {
+            Log.e("HOD_DB", operation, failure)
+            failures.emit("${operation.removeSuffix("_failed").replace('_', ' ')} could not be saved. Please retry.")
+        }
+    }
     val sources = repository.sources.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val tasks = repository.tasks.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun ingest(source: SourceEntity) = viewModelScope.launch { repository.ingest(source) }
-    fun ingestWithActions(source: SourceEntity, actions: List<ActionPointDraft>) = viewModelScope.launch { repository.ingestWithActions(source, actions) }
-    fun approve(sourceId: Long, project: String, dueAt: Long? = null) = viewModelScope.launch { repository.approveSource(sourceId, project, dueAt) }
-    fun approveAction(sourceId: Long, action: String, project: String, dueAt: Long? = null) = viewModelScope.launch { repository.approveAction(sourceId, action, project, dueAt) }
-    fun setActionPointStatus(sourceId: Long, action: String, status: String) = viewModelScope.launch { repository.setActionPointStatus(sourceId, action, status) }
-    fun complete(taskId: Long) = viewModelScope.launch { repository.completeTask(taskId) }
-    fun setDone(taskId: Long, done: Boolean) = viewModelScope.launch { repository.setTaskDone(taskId, done) }
-    fun setBlocker(taskId: Long, blocker: String?) = viewModelScope.launch { repository.setBlocker(taskId, blocker) }
-    fun clarify(taskId: Long, detail: String) = viewModelScope.launch { repository.requestClarification(taskId, detail) }
-    fun addEvidence(taskId: Long, uri: String, type: String, note: String? = null) = viewModelScope.launch { repository.addEvidence(taskId, uri, type, note) }
-    fun saveReasoning(sourceId: Long, output: ActionReasoningOutput) = viewModelScope.launch { repository.saveReasoningRun(sourceId, output) }
-    fun deleteSource(id: Long) = viewModelScope.launch { repository.deleteSource(id) }
-    fun deleteTask(id: Long) = viewModelScope.launch { repository.deleteTask(id) }
-    fun deleteEvent(id: Long) = viewModelScope.launch { repository.deleteEvent(id) }
-    fun purgeAuditBefore(before: Long) = viewModelScope.launch { repository.purgeAuditBefore(before) }
-    fun schedulePlannedTask(taskId: Long, title: String, startsAt: Long, endsAt: Long) = viewModelScope.launch { repository.schedulePlannedTask(taskId, title, startsAt, endsAt) }
+    fun ingest(source: SourceEntity) = launchSafe("ingest_failed") { repository.ingest(source) }
+    fun ingestWithActions(source: SourceEntity, actions: List<ActionPointDraft>) = launchSafe("ingest_with_actions_failed") { repository.ingestWithActions(source, actions) }
+
+    /** Imports items in order, skipping ones already in the Library, then reports how many were new and how many were skipped. */
+    fun ingestNew(items: List<Pair<SourceEntity, List<ActionPointDraft>>>, onDone: (added: Int, skipped: Int) -> Unit) = launchSafe("ingest_new_failed") {
+        var added = 0
+        var skipped = 0
+        items.forEach { (source, actions) -> if (repository.ingestWithActionsIfNew(source, actions) != null) added++ else skipped++ }
+        onDone(added, skipped)
+    }
+    fun snooze(sourceId: Long, until: Long?) = launchSafe("snooze_failed") { repository.snoozeSource(sourceId, until) }
+    fun clearAllSnoozes() = launchSafe("show_snoozed_failed") { repository.clearAllSnoozes() }
+    fun approve(sourceId: Long, project: String, dueAt: Long? = null) = launchSafe("approve_source_failed") { repository.approveSource(sourceId, project, dueAt) }
+    fun approveAction(sourceId: Long, action: String, project: String, dueAt: Long? = null, assignee: String? = null) = launchSafe("approve_action_failed") { repository.approveAction(sourceId, action, project, dueAt, assignee) }
+    fun dismissSource(sourceId: Long, reason: String) = launchSafe("dismiss_source_failed") { repository.dismissSource(sourceId, reason) }
+    fun returnToInbox(sourceId: Long) = launchSafe("return_to_inbox_failed") { repository.returnSourceToInbox(sourceId) }
+    fun setTaskDue(taskId: Long, dueAt: Long?) = launchSafe("set_due_failed") { repository.setTaskDue(taskId, dueAt) }
+    fun setAssignee(taskId: Long, assignee: String?) = launchSafe("set_assignee_failed") { repository.setAssignee(taskId, assignee) }
+    fun deleteAllWorkData() = launchSafe("delete_all_failed") { repository.deleteAllWorkData() }
+    val auditLog =repository.observeAllAudit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    suspend fun proposeSchedule(title: String, startsAt: Long, endsAt: Long, taskId: Long? = null) = repository.proposeSchedule(title, startsAt, endsAt, taskId)
+    fun confirmSchedule(proposal: com.hoddesk.app.repository.ScheduleProposal) = launchSafe("confirm_schedule_failed") { repository.confirmSchedule(proposal) }
+    fun setActionPointStatus(sourceId: Long, action: String, status: String) = launchSafe("action_status_failed") { repository.setActionPointStatus(sourceId, action, status) }
+    fun updateActionPoint(point: ActionPointEntity) = launchSafe("update_action_point_failed") { repository.updateActionPoint(point) }
+    fun approveEditedAction(point: ActionPointEntity?, sourceId: Long, project: String, action: String, assignee: String? = null) = launchSafe("approve_edited_action_failed") {
+        repository.approveEditedAction(point, sourceId, project, action,
+            dueAt = point?.let { ActionDueParser.parseIfUnambiguous(it.dateText, it.timeText, it.ambiguity) }, assignee = assignee)
+    }
+    // Review awaits the durable transition. Failures stay visible instead of optimistically
+    // dismissing a candidate while a fire-and-forget Job is still pending.
+    suspend fun saveReviewPoint(point: ActionPointEntity) { repository.updateActionPoint(point) }
+    suspend fun approveReviewPoint(point: ActionPointEntity?, sourceId: Long, project: String, action: String, assignee: String? = null) {
+        repository.approveEditedAction(point, sourceId, project, action,
+            dueAt = com.hoddesk.app.reasoning.ReviewApprovalPolicy.dueAt(point), assignee = assignee)
+    }
+    suspend fun approveReviewAction(sourceId: Long, action: String, project: String, dueAt: Long?, assignee: String?) {
+        repository.approveAction(sourceId, action, project, dueAt, assignee)
+    }
+    suspend fun statusReviewAction(sourceId: Long, action: String, status: String) { repository.setActionPointStatus(sourceId, action, status) }
+    suspend fun dismissReviewSource(sourceId: Long, reason: String) { repository.dismissSource(sourceId, reason) }
+    fun refreshGeneratedCandidates(sources: List<SourceEntity>) = launchSafe("refresh_candidates_failed") {
+        sources.forEach { repository.refreshGeneratedCandidates(it) }
+    }
+    fun complete(taskId: Long) = launchSafe("complete_task_failed") { repository.completeTask(taskId) }
+    fun setDone(taskId: Long, done: Boolean) = launchSafe("set_done_failed") { repository.setTaskDone(taskId, done) }
+    fun setBlocker(taskId: Long, blocker: String?) = launchSafe("set_blocker_failed") { repository.setBlocker(taskId, blocker) }
+    fun clarify(taskId: Long, detail: String) = launchSafe("clarification_failed") { repository.requestClarification(taskId, detail) }
+    fun addEvidence(taskId: Long, uri: String, type: String, note: String? = null) = launchSafe("add_evidence_failed") { repository.addEvidence(taskId, uri, type, note) }
+    fun saveReasoning(sourceId: Long, output: ActionReasoningOutput) = launchSafe("save_reasoning_failed") { repository.saveReasoningRun(sourceId, output) }
+    fun deleteSource(id: Long) = launchSafe("delete_source_failed") { repository.deleteSource(id) }
+    fun deleteTask(id: Long) = launchSafe("delete_task_failed") { repository.deleteTask(id) }
+    fun deleteEvent(id: Long) = launchSafe("delete_event_failed") { repository.deleteEvent(id) }
+    fun purgeAuditBefore(before: Long) = launchSafe("purge_audit_failed") { repository.purgeAuditBefore(before) }
+    fun purgeExpiredSources(before: Long) = launchSafe("purge_sources_failed") { repository.purgeExpiredSources(before) }
+    fun schedulePlannedTask(taskId: Long, title: String, startsAt: Long, endsAt: Long) = launchSafe("schedule_task_failed") { repository.schedulePlannedTask(taskId, title, startsAt, endsAt) }
 }
 
 class HodDeskViewModelFactory(private val repository: HodDeskRepository) : ViewModelProvider.Factory {

@@ -12,6 +12,6 @@ object ActionConsolidator {
             best.copy(evidence = evidence, ambiguity = ambiguities, confidence = group.maxOf { it.confidence })
         }
 
-    private fun key(action: ActionPointDraft): String = listOf(action.action, action.dateText, action.timeText, action.locationText, action.peopleText, action.category)
+    private fun key(action: ActionPointDraft): String = listOf(action.action, action.dateText, action.timeText, action.locationText, action.peopleText, action.ownerText, action.referenceNumber, action.recurrenceRule, action.category)
         .joinToString("|") { it.orEmpty().lowercase().replace(Regex("\\s+"), " ").trim() }
 }

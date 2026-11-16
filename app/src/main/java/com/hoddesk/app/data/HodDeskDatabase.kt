@@ -11,7 +11,7 @@ import com.hoddesk.app.privacy.DatabasePassphraseProvider
 import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SupportFactory
 
-@Database(entities = [SourceEntity::class, TaskEntity::class, EventEntity::class, EvidenceEntity::class, SemanticEmbeddingEntity::class, SourceChunkEntity::class, SourceRelationEntity::class, ActionPointEntity::class, ReasoningRunEntity::class, AuditEntryEntity::class], version = 10, exportSchema = false)
+@Database(entities = [SourceEntity::class, TaskEntity::class, EventEntity::class, EvidenceEntity::class, SemanticEmbeddingEntity::class, SourceChunkEntity::class, SemanticEmbeddingStagingEntity::class, SourceChunkStagingEntity::class, SourceRelationEntity::class, ActionPointEntity::class, ReasoningRunEntity::class, AuditEntryEntity::class, PerformanceMetricEntity::class, LearningCorrectionEntity::class, CommitmentEntity::class], version = 22, exportSchema = false)
 abstract class HodDeskDatabase : RoomDatabase() {
     abstract fun dao(): HodDeskDao
 
@@ -21,7 +21,7 @@ abstract class HodDeskDatabase : RoomDatabase() {
             SQLiteDatabase.loadLibs(context.applicationContext)
             instance ?: Room.databaseBuilder(context.applicationContext, HodDeskDatabase::class.java, "hod-desk.db")
                 .openHelperFactory(SupportFactory(DatabasePassphraseProvider(context).get()))
-                .addMigrations(MIGRATION_1_3, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).build().also { Log.i("HOD_DB", "encrypted_database_opened"); instance = it }
+                .addMigrations(MIGRATION_1_3, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22).build().also { Log.i("HOD_DB", "encrypted_database_opened"); instance = it }
         }
 
         /** Preserves existing sources/tasks while adding workflow and import processing fields. */
@@ -84,6 +84,101 @@ abstract class HodDeskDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE sources ADD COLUMN triageBucket TEXT NOT NULL DEFAULT 'FYI'")
                 db.execSQL("ALTER TABLE sources ADD COLUMN priorityScore INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE sources ADD COLUMN priorityReasons TEXT")
+            }
+        }
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS learning_corrections (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, actionPointId INTEGER NOT NULL, field TEXT NOT NULL, before TEXT, after TEXT, createdAt INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_learning_corrections_actionPointId ON learning_corrections(actionPointId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_learning_corrections_createdAt ON learning_corrections(createdAt)")
+            }
+        }
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS commitments (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, sourceId INTEGER, taskId INTEGER, direction TEXT NOT NULL, owner TEXT, counterparty TEXT, summary TEXT NOT NULL, dueAt INTEGER, status TEXT NOT NULL, evidence TEXT NOT NULL, confidence REAL NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_commitments_sourceId ON commitments(sourceId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_commitments_taskId ON commitments(taskId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_commitments_direction ON commitments(direction)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_commitments_status ON commitments(status)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_commitments_dueAt ON commitments(dueAt)")
+            }
+        }
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE action_points ADD COLUMN ownerText TEXT")
+                db.execSQL("ALTER TABLE action_points ADD COLUMN referenceNumber TEXT")
+                db.execSQL("ALTER TABLE action_points ADD COLUMN recurrenceRule TEXT")
+            }
+        }
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE source_chunks ADD COLUMN paragraphIndex INTEGER")
+                db.execSQL("ALTER TABLE source_chunks ADD COLUMN messageIndex INTEGER")
+            }
+        }
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE semantic_embeddings ADD COLUMN modality TEXT NOT NULL DEFAULT 'text'")
+                db.execSQL("ALTER TABLE semantic_embeddings ADD COLUMN evidenceLocator TEXT")
+            }
+        }
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE semantic_embeddings ADD COLUMN sourceFingerprint TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE semantic_embeddings ADD COLUMN promptVersion INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE semantic_embeddings ADD COLUMN chunkNumber INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE source_chunks ADD COLUMN sourceFingerprint TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE source_chunks ADD COLUMN promptVersion INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE source_chunks ADD COLUMN chunkNumber INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS semantic_embeddings_staging (sourceId INTEGER NOT NULL PRIMARY KEY, modelVersion TEXT NOT NULL, dimension INTEGER NOT NULL, vector BLOB NOT NULL, modality TEXT NOT NULL, evidenceLocator TEXT, indexedAt INTEGER NOT NULL, sourceFingerprint TEXT NOT NULL, promptVersion INTEGER NOT NULL, chunkNumber INTEGER NOT NULL)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS source_chunks_staging (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, sourceId INTEGER NOT NULL, ordinal INTEGER NOT NULL, modality TEXT NOT NULL, text TEXT NOT NULL, citation TEXT NOT NULL, page INTEGER, paragraphIndex INTEGER, messageIndex INTEGER, startMs INTEGER, endMs INTEGER, modelVersion TEXT NOT NULL, dimension INTEGER NOT NULL, vector BLOB NOT NULL, indexedAt INTEGER NOT NULL, sourceFingerprint TEXT NOT NULL, promptVersion INTEGER NOT NULL, chunkNumber INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_source_chunks_staging_sourceId ON source_chunks_staging(sourceId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_source_chunks_staging_modality ON source_chunks_staging(modality)")
+            }
+        }
+        private val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS performance_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, kind TEXT NOT NULL, value INTEGER NOT NULL, detail TEXT, createdAt INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_performance_metrics_kind ON performance_metrics(kind)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_performance_metrics_createdAt ON performance_metrics(createdAt)")
+            }
+        }
+        private val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sources ADD COLUMN intentKind TEXT NOT NULL DEFAULT 'reference'")
+                db.execSQL("ALTER TABLE action_points ADD COLUMN intentKind TEXT NOT NULL DEFAULT 'task'")
+                db.execSQL("ALTER TABLE action_points ADD COLUMN fieldConfidenceJson TEXT NOT NULL DEFAULT '{}'")
+                db.execSQL("ALTER TABLE action_points ADD COLUMN fieldCitationsJson TEXT NOT NULL DEFAULT '{}'")
+                db.execSQL("ALTER TABLE action_points ADD COLUMN conflictJson TEXT NOT NULL DEFAULT '{}'")
+                db.execSQL("ALTER TABLE reasoning_runs ADD COLUMN fieldConfidenceJson TEXT NOT NULL DEFAULT '{}'")
+                db.execSQL("ALTER TABLE reasoning_runs ADD COLUMN fieldCitationsJson TEXT NOT NULL DEFAULT '{}'")
+                db.execSQL("ALTER TABLE reasoning_runs ADD COLUMN intentKind TEXT NOT NULL DEFAULT 'task'")
+            }
+        }
+        private val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sources ADD COLUMN lifecycleState TEXT NOT NULL DEFAULT 'imported'")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN approvalOperationId TEXT")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_tasks_approvalOperationId ON tasks(approvalOperationId)")
+            }
+        }
+        private val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sources ADD COLUMN rawText TEXT")
+                db.execSQL("ALTER TABLE sources ADD COLUMN correctedText TEXT")
+                db.execSQL("ALTER TABLE sources ADD COLUMN detectedLanguage TEXT")
+                db.execSQL("ALTER TABLE sources ADD COLUMN transcriptConfidence REAL")
+                db.execSQL("ALTER TABLE sources ADD COLUMN evidenceLocator TEXT")
+            }
+        }
+        /** Review snooze: the item stays out of the Review queue until this time. Existing rows are not snoozed. */
+        private val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sources ADD COLUMN snoozedUntil INTEGER")
             }
         }
     }

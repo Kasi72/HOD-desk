@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Task detail</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=IBM+Plex+Mono:wght@400;500&amp;family=Noto+Sans+Tamil:wght@400;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;1,8..60,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0E6B63;text-decoration:none}a:hover{color:#0A524C}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+.m{font-family:'Plus Jakarta Sans','Noto Sans Tamil',system-ui,sans-serif;color:#15181E;-webkit-font-smoothing:antialiased}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.serif{font-family:'Source Serif 4','Noto Sans Tamil',Georgia,serif}
+.eb{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#5A6170}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.rz{background:#F3F1ED;border:1px solid rgba(255,255,255,.75);box-shadow:-6px -6px 14px rgba(255,255,255,.9),7px 9px 22px rgba(84,74,60,.15)}
+.rzs{background:#F3F1ED;border:1px solid rgba(255,255,255,.75);box-shadow:-3px -3px 8px rgba(255,255,255,.95),4px 5px 11px rgba(84,74,60,.14)}
+.in{background:#E5E1DB;box-shadow:inset 3px 3px 7px rgba(84,74,60,.17),inset -3px -3px 7px rgba(255,255,255,.85)}
+.li{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 16px;width:100%;box-sizing:border-box;text-align:left}
+.li+.li{border-top:1px solid rgba(84,74,60,.1)}
+.lk{flex:1;font-size:14.5px;color:#4A505B}
+.lv{font-size:14.5px;font-weight:700}
+.pill{display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:10px;font-size:11.5px;font-weight:700}
+.dot{width:12px;height:12px;border-radius:6px;flex:none;margin-top:3px;box-sizing:border-box}
+</style>
+</helmet>
+<div class="m" style="width: 390px; height: 1060px; position: relative; background: #ECE9E4; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden">
+<header style="display: flex; align-items: center; justify-content: space-between; height: 60px; padding: 16px 14px 0">
+<a class="rzs" href="Tasks.dc.html" aria-label="Back to Tasks" style="width: 44px; height: 44px; border-radius: 16px; display: flex; align-items: center; justify-content: center; color: #15181E"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg></a>
+<span class="mono" style="font-size: 10.5px; color: #5A6170">Task · ECT unit inspection</span>
+<button class="rzs" type="button" aria-label="More actions" style="width: 44px; height: 44px; border-radius: 16px; display: flex; align-items: center; justify-content: center"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"></circle><circle cx="12" cy="12" r="1.2"></circle><circle cx="19" cy="12" r="1.2"></circle></svg></button>
+</header>
+
+<div style="flex: 1; padding: 20px 18px 0; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; flex-direction: column; gap: 12px; padding: 0 4px">
+<div style="display: flex; gap: 6px">
+<span class="pill" style="background: #E1E9F6; color: #1F4E96">Delegated</span>
+<span class="pill" style="background: #F8EBD6; color: #8E4504">Due in 3 days</span>
+</div>
+<h1 class="serif" style="margin: 0; font-size: 28px; line-height: 1.18; font-weight: 500; letter-spacing: -.015em">Submit ECT unit inspection compliance report</h1>
+</div>
+
+<div class="rz" style="display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 22px">
+<span style="width: 46px; height: 46px; border-radius: 23px; background: linear-gradient(160deg, #3366B0, #1F4E96); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; box-shadow: 0 4px 10px rgba(31,78,150,.3)">RK</span>
+<div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 15px; font-weight: 800">Dr. R. Kumar</span>
+<span style="font-size: 12px; color: #5A6170">Asst. Professor · ECT unit lead</span>
+</div>
+<button class="in" type="button" style="height: 36px; padding: 0 13px; border-radius: 12px; font-size: 12.5px; font-weight: 700">Change</button>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 11px; padding: 16px; border-radius: 22px; background: #DCEEEA; box-shadow: inset 2px 2px 5px rgba(14,107,99,.1), inset -2px -2px 5px rgba(255,255,255,.6)">
+<span class="eb" style="color: #0E6B63">Next step</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.45; font-weight: 500">Check in with Dr. Kumar on Monday — the report is due Tuesday, 5 pm. The app never messages him.</p>
+<div style="display: flex; gap: 8px">
+<button type="button" style="height: 40px; padding: 0 14px; border-radius: 13px; background: linear-gradient(170deg, #158A7E, #0B5E57); color: #fff; font-size: 13px; font-weight: 800; box-shadow: 0 5px 12px rgba(14,107,99,.3), inset 0 1px 0 rgba(255,255,255,.2)">Copy follow-up draft</button>
+<button class="rzs" type="button" style="height: 40px; padding: 0 14px; border-radius: 13px; color: #0E6B63; font-size: 13px; font-weight: 800">Remind me Mon</button>
+</div>
+</div>
+
+<div class="rz" style="border-radius: 22px; overflow: hidden">
+<button class="li" type="button"><span class="lk">Due</span><span class="lv">Tue 14 Oct, 5:00 pm</span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px; color: #9AA3B2"><path d="m9 6 6 6-6 6"></path></svg></button>
+<button class="li" type="button"><span class="lk">Matter</span><span class="lv">ECT unit inspection</span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px; color: #9AA3B2"><path d="m9 6 6 6-6 6"></path></svg></button>
+<button class="li" type="button"><span class="lk">Blocker</span><span class="lv" style="color: #0E6B63">Add</span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px; color: #9AA3B2"><path d="m9 6 6 6-6 6"></path></svg></button>
+</div>
+
+<section style="display: flex; flex-direction: column; gap: 9px">
+<span class="eb" style="padding: 0 6px">Provenance</span>
+<div class="rz" style="border-radius: 22px; padding: 16px; display: flex; flex-direction: column; gap: 14px">
+<a href="Review.dc.html" style="display: flex; gap: 11px; color: #15181E"><span class="dot" style="background: #D6C29C"></span><span style="flex: 1; display: flex; flex-direction: column; gap: 4px"><span style="font-size: 11.5px; font-weight: 700; color: #6B5430">Source · Rc. No. 2291/E2/2026</span><span class="serif" style="font-size: 14px; line-height: 1.45; color: #2B2418">“…submit the compliance report on the ECT unit inspection on or before 14.10.2026…”</span></span></a>
+<div style="display: flex; gap: 11px"><span class="dot" style="border: 2px dashed #463FBF"></span><span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11.5px; font-weight: 700; color: #463FBF">AI reading · suggested wording</span><span style="font-size: 13px; color: #4A505B">Location confirmed by you</span></span></div>
+<div style="display: flex; gap: 11px"><span class="dot" style="background: #0E6B63; box-shadow: 0 0 0 3px rgba(14,107,99,.18)"></span><span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11.5px; font-weight: 700; color: #0E6B63">Approved by you · delegated</span><span class="mono" style="font-size: 11px; color: #5A6170">11 Oct · 10:12</span></span></div>
+</div>
+</section>
+</div>
+
+<div style="display: flex; gap: 12px; padding: 18px 18px 30px">
+<button class="rzs" type="button" style="flex: 1; height: 58px; border-radius: 20px; font-size: 15px; font-weight: 700">Reschedule</button>
+<button type="button" style="flex: 1.5; height: 58px; border-radius: 20px; background: linear-gradient(170deg, #158A7E, #0B5E57); color: #fff; font-size: 15.5px; font-weight: 800; box-shadow: -5px -5px 12px rgba(255,255,255,.85), 7px 10px 20px rgba(14,107,99,.35), inset 0 1px 0 rgba(255,255,255,.2)">Mark done</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1060}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

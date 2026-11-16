@@ -30,6 +30,11 @@ object EmbeddingGemmaConfigLoader {
 
 interface EmbeddingGemmaService {
     suspend fun embed(text: String): FloatArray
+
+    /** Bounded batches prevent large documents from monopolising the queue or heap. */
+    suspend fun embedBatch(texts: List<String>, batchSize: Int = 8): List<FloatArray> = buildList {
+        texts.chunked(batchSize.coerceIn(1, 32)).forEach { batch -> batch.forEach { add(embed(it)) } }
+    }
 }
 
 /** Uses EmbeddingGemma to rank extracted candidates by official-work relevance. */
@@ -41,6 +46,8 @@ class EmbeddingGemmaActionRanker(private val embedder: EmbeddingGemmaService) {
             "meeting appointment conference attend join schedule",
             "deadline due date submit before within",
             "teaching lecture class resident training duty roster",
+            "government order circular proceedings reference number comply",
+            "delegation assign owner forward to responsible officer",
             "follow up pending reminder obtain confirmation"
         ).map { embedder.embed(EmbeddingPromptRegistry.classify(it)) }
         return candidates.map { candidate ->

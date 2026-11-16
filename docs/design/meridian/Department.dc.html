@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Department</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=IBM+Plex+Mono:wght@400;500&amp;family=Noto+Sans+Tamil:wght@400;600&amp;family=Source+Serif+4:opsz,wght@8..60,500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0E6B63;text-decoration:none}a:hover{color:#0A524C}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+.m{font-family:'Plus Jakarta Sans','Noto Sans Tamil',system-ui,sans-serif;color:#15181E;-webkit-font-smoothing:antialiased}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.serif{font-family:'Source Serif 4','Noto Sans Tamil',Georgia,serif}
+.eb{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#5A6170}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.rz{background:#F3F1ED;border:1px solid rgba(255,255,255,.75);box-shadow:-6px -6px 14px rgba(255,255,255,.9),7px 9px 22px rgba(84,74,60,.15)}
+.rzs{background:#F3F1ED;border:1px solid rgba(255,255,255,.75);box-shadow:-3px -3px 8px rgba(255,255,255,.95),4px 5px 11px rgba(84,74,60,.14)}
+.in{background:#E5E1DB;box-shadow:inset 3px 3px 7px rgba(84,74,60,.17),inset -3px -3px 7px rgba(255,255,255,.85)}
+.grp{border-radius:24px;overflow:hidden}
+.li{display:flex;align-items:center;gap:12px;min-height:58px;padding:9px 16px;box-sizing:border-box;width:100%;text-align:left}
+.li+.li{border-top:1px solid rgba(84,74,60,.1)}
+.gh{padding:0 8px 9px;margin:0}
+.wk{display:flex;gap:4px}
+.wd{width:17px;height:17px;border-radius:6px;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.on{background:linear-gradient(160deg, #2A303A, #15181E);color:#fff;box-shadow:1px 2px 3px rgba(21,24,30,.3)}
+.off{background:#E5E1DB;color:#8A8F99;box-shadow:inset 1px 1px 2px rgba(84,74,60,.2)}
+.av{width:40px;height:40px;border-radius:20px;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:800;flex:none;box-shadow:0 4px 9px rgba(21,24,30,.2),inset 0 1px 0 rgba(255,255,255,.2)}
+.add{color:#0E6B63;font-size:14px;font-weight:800;gap:8px}
+.grip{width:36px;height:36px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#6B7180}
+</style>
+</helmet>
+<div class="m" style="width: 390px; height: 1060px; position: relative; background: #ECE9E4; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px; overflow: hidden">
+<header style="padding: 16px 14px 0; display: flex; flex-direction: column; gap: 14px">
+<a class="rzs" href="Settings.dc.html" aria-label="Back to Settings" style="width: 44px; height: 44px; border-radius: 16px; display: flex; align-items: center; justify-content: center; color: #15181E"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg></a>
+<div style="padding: 0 8px; display: flex; flex-direction: column; gap: 8px">
+<h1 class="serif" style="margin: 0; font-size: 40px; line-height: 1; font-weight: 500; letter-spacing: -.02em">Department</h1>
+<p style="margin: 0; font-size: 13.5px; line-height: 1.5; color: #4A505B">Planning works around these blocks; delegation suggests these people. Stored only on this phone.</p>
+</div>
+</header>
+
+<div style="padding: 0 18px; display: flex; flex-direction: column; gap: 20px">
+<section><h2 class="eb gh">Fixed clinical time</h2><div class="grp rz">
+<button class="li" type="button"><span style="flex: 1; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 15px; font-weight: 700">OPD</span><span class="wk" aria-label="Monday to Saturday"><span class="wd on">M</span><span class="wd on">T</span><span class="wd on">W</span><span class="wd on">T</span><span class="wd on">F</span><span class="wd on">S</span><span class="wd off">S</span></span></span><span class="mono in" style="font-size: 11.5px; color: #3D434E; padding: 6px 9px; border-radius: 10px">9:00–1:00</span></button>
+<button class="li" type="button"><span style="flex: 1; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 15px; font-weight: 700">ECT sessions</span><span class="wk" aria-label="Tuesday and Friday"><span class="wd off">M</span><span class="wd on">T</span><span class="wd off">W</span><span class="wd off">T</span><span class="wd on">F</span><span class="wd off">S</span><span class="wd off">S</span></span></span><span class="mono in" style="font-size: 11.5px; color: #3D434E; padding: 6px 9px; border-radius: 10px">8:00–9:00</span></button>
+<button class="li" type="button"><span style="flex: 1; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 15px; font-weight: 700">PG teaching</span><span class="wk" aria-label="Wednesday"><span class="wd off">M</span><span class="wd off">T</span><span class="wd on">W</span><span class="wd off">T</span><span class="wd off">F</span><span class="wd off">S</span><span class="wd off">S</span></span></span><span class="mono in" style="font-size: 11.5px; color: #3D434E; padding: 6px 9px; border-radius: 10px">2:00–4:00</span></button>
+<button class="li add" type="button"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 17px; height: 17px; stroke-width: 2.2"><path d="M12 5v14M5 12h14"></path></svg>Add fixed block</button>
+</div></section>
+
+<section><h2 class="eb gh">Team</h2><div class="grp rz">
+<button class="li" type="button"><span class="av" style="background: linear-gradient(160deg, #3366B0, #1F4E96)">RK</span><span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 700">Dr. R. Kumar</span><span style="font-size: 12px; color: #5A6170">Asst. Professor · ECT, inspections</span></span></button>
+<button class="li" type="button"><span class="av" style="background: linear-gradient(160deg, #1DA392, #0E6B63)">SM</span><span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 700">Dr. S. Meena</span><span style="font-size: 12px; color: #5A6170">Asst. Professor · PG academics</span></span></button>
+<button class="li" type="button"><span class="av" style="background: linear-gradient(160deg, #8C7048, #6B5430)">PV</span><span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 700">P. Vijay</span><span style="font-size: 12px; color: #5A6170">Office assistant · files, roster</span></span></button>
+<button class="li add" type="button"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 17px; height: 17px; stroke-width: 2.2"><path d="M12 5v14M5 12h14"></path></svg>Add team member</button>
+</div></section>
+
+<section><h2 class="eb gh">Who outranks whom</h2><div class="grp rz">
+<div class="li" style="min-height: 52px"><span class="mono" style="width: 22px; font-size: 11px; color: #6B7180">01</span><span style="flex: 1; font-size: 14.5px; font-weight: 600">Secretary, Health</span><button class="grip in" type="button" aria-label="Reorder Secretary, Health"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px"><path d="M8 9h8M8 15h8"></path></svg></button></div>
+<div class="li" style="min-height: 52px"><span class="mono" style="width: 22px; font-size: 11px; color: #6B7180">02</span><span style="flex: 1; font-size: 14.5px; font-weight: 600">District Collector</span><button class="grip in" type="button" aria-label="Reorder District Collector"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px"><path d="M8 9h8M8 15h8"></path></svg></button></div>
+<div class="li" style="min-height: 52px"><span class="mono" style="width: 22px; font-size: 11px; color: #6B7180">03</span><span style="flex: 1; font-size: 14.5px; font-weight: 600">DME / Joint Director</span><button class="grip in" type="button" aria-label="Reorder DME / Joint Director"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px"><path d="M8 9h8M8 15h8"></path></svg></button></div>
+<div class="li" style="min-height: 52px"><span class="mono" style="width: 22px; font-size: 11px; color: #6B7180">04</span><span style="flex: 1; font-size: 14.5px; font-weight: 600">Dean / Superintendent</span><button class="grip in" type="button" aria-label="Reorder Dean / Superintendent"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 16px; height: 16px"><path d="M8 9h8M8 15h8"></path></svg></button></div>
+</div></section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1060}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -15,12 +15,21 @@ data class SourceEntity(
     val reviewed: Boolean = false,
     val sensitivity: String = "official",
     val processingStatus: String = "ready",
+    val lifecycleState: String = SourceLifecycle.IMPORTED.wire,
     val triageBucket: String = "FYI",
     val priorityScore: Int = 0,
-    val priorityReasons: String? = null
+    val priorityReasons: String? = null,
+    val intentKind: String = "reference",
+    val rawText: String? = null,
+    val correctedText: String? = null,
+    val detectedLanguage: String? = null,
+    val transcriptConfidence: Float? = null,
+    val evidenceLocator: String? = null,
+    /** Hidden from the Review queue until this time ("remind me tomorrow"); null when not snoozed. */
+    val snoozedUntil: Long? = null
 )
 
-@Entity(tableName = "tasks", indices = [Index("status"), Index("dueAt"), Index("sourceId")])
+@Entity(tableName = "tasks", indices = [Index("status"), Index("dueAt"), Index("sourceId"), Index(value = ["approvalOperationId"], unique = true)])
 data class TaskEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val sourceId: Long? = null,
@@ -34,7 +43,9 @@ data class TaskEntity(
     val assignee: String? = null,
     val recurrenceRule: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
-    val completedAt: Long? = null
+    val completedAt: Long? = null,
+    /** Stable idempotency key for user-approved operations; null for free-standing secretary tasks. */
+    val approvalOperationId: String? = null
 )
 
 @Entity(tableName = "events", indices = [Index("startsAt"), Index("endsAt")])
@@ -65,7 +76,12 @@ data class SemanticEmbeddingEntity(
     val modelVersion: String,
     val dimension: Int,
     val vector: ByteArray,
-    val indexedAt: Long = System.currentTimeMillis()
+    val modality: String = "text",
+    val evidenceLocator: String? = null,
+    val indexedAt: Long = System.currentTimeMillis(),
+    val sourceFingerprint: String = "",
+    val promptVersion: Int = 0,
+    val chunkNumber: Int = 0
 )
 
 @Entity(tableName = "source_chunks", indices = [Index("sourceId"), Index("modality")])
@@ -77,12 +93,54 @@ data class SourceChunkEntity(
     val text: String,
     val citation: String,
     val page: Int? = null,
+    val paragraphIndex: Int? = null,
+    val messageIndex: Int? = null,
     val startMs: Long? = null,
     val endMs: Long? = null,
     val modelVersion: String,
     val dimension: Int,
     val vector: ByteArray,
-    val indexedAt: Long = System.currentTimeMillis()
+    val indexedAt: Long = System.currentTimeMillis(),
+    val sourceFingerprint: String = "",
+    val promptVersion: Int = 0,
+    val chunkNumber: Int = ordinal
+)
+
+/** Physical staging copies used while rebuilding the semantic index. */
+@Entity(tableName = "semantic_embeddings_staging")
+data class SemanticEmbeddingStagingEntity(
+    @PrimaryKey val sourceId: Long,
+    val modelVersion: String,
+    val dimension: Int,
+    val vector: ByteArray,
+    val modality: String = "text",
+    val evidenceLocator: String? = null,
+    val indexedAt: Long = System.currentTimeMillis(),
+    val sourceFingerprint: String = "",
+    val promptVersion: Int = 0,
+    val chunkNumber: Int = 0
+)
+
+@Entity(tableName = "source_chunks_staging", indices = [Index("sourceId"), Index("modality")])
+data class SourceChunkStagingEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sourceId: Long,
+    val ordinal: Int,
+    val modality: String,
+    val text: String,
+    val citation: String,
+    val page: Int? = null,
+    val paragraphIndex: Int? = null,
+    val messageIndex: Int? = null,
+    val startMs: Long? = null,
+    val endMs: Long? = null,
+    val modelVersion: String,
+    val dimension: Int,
+    val vector: ByteArray,
+    val indexedAt: Long = System.currentTimeMillis(),
+    val sourceFingerprint: String = "",
+    val promptVersion: Int = 0,
+    val chunkNumber: Int = ordinal
 )
 
 @Entity(tableName = "source_relations", indices = [Index("sourceId"), Index("relatedSourceId")])
@@ -110,6 +168,13 @@ data class ActionPointEntity(
     val confidence: Float,
     val status: String = "needs_review",
     val ambiguity: String? = null,
+    val ownerText: String? = null,
+    val referenceNumber: String? = null,
+    val recurrenceRule: String? = null,
+    val intentKind: String = "task",
+    val fieldConfidenceJson: String = "{}",
+    val fieldCitationsJson: String = "{}",
+    val conflictJson: String = "{}",
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -127,6 +192,9 @@ data class ReasoningRunEntity(
     val ambiguitiesJson: String,
     val citationsJson: String,
     val confidence: Float,
+    val fieldConfidenceJson: String = "{}",
+    val fieldCitationsJson: String = "{}",
+    val intentKind: String = "task",
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -139,4 +207,41 @@ data class AuditEntryEntity(
     val action: String,
     val detail: String? = null,
     val createdAt: Long = System.currentTimeMillis()
+)
+
+/** Local operational telemetry; no source text or clinical identifiers are stored. */
+@Entity(tableName = "performance_metrics", indices = [Index("kind"), Index("createdAt")])
+data class PerformanceMetricEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val kind: String,
+    val value: Long,
+    val detail: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(tableName = "learning_corrections", indices = [Index("actionPointId"), Index("createdAt")])
+data class LearningCorrectionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val actionPointId: Long,
+    val field: String,
+    val before: String?,
+    val after: String?,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(tableName = "commitments", indices = [Index("sourceId"), Index("taskId"), Index("direction"), Index("status"), Index("dueAt")])
+data class CommitmentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sourceId: Long? = null,
+    val taskId: Long? = null,
+    val direction: String,
+    val owner: String? = null,
+    val counterparty: String? = null,
+    val summary: String,
+    val dueAt: Long? = null,
+    val status: String = "open",
+    val evidence: String,
+    val confidence: Float = 1f,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
 )

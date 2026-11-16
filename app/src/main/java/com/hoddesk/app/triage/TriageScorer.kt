@@ -16,12 +16,12 @@ object TriageScorer {
             listOf("collector", "dme", "director", "dean", "secretary", "superintendent").any(text::contains) -> { score += 4; reasons += "high-authority sender or office" }
             text.contains("hod") || text.contains("head of department") -> { score += 3; reasons += "addressed to HOD" }
         }
-        if (listOf("reminder", "urgent", "most urgent", "without fail", "explanation called for").any(text::contains)) { score += 3; reasons += "escalation wording" }
-        if (listOf("attend", "submit", "send", "report", "arrange", "review", "collect", "join", "share", "வாருங்கள்", "சமர்ப்பிக்க").any(text::contains)) { score += 2; reasons += "action language" }
-        if (Regex("\\b\\d{1,2}([:/.-]\\d{1,2})?\\b").containsMatchIn(text) || listOf("today", "tomorrow", "நாளை", "by ").any(text::contains)) { score += 2; reasons += "date or time cue" }
+        if (listOf("reminder", "urgent", "most urgent", "without fail", "explanation called for", "immediately", "முக்கியம்", "அவசரம்").any(text::contains)) { score += 3; reasons += "escalation wording" }
+        if (listOf("attend", "submit", "send", "report", "arrange", "review", "collect", "join", "share", "follow up", "வாருங்கள்", "சமர்ப்பிக்க", "அனுப்ப", "கலந்து", "தொடர்ந்து").any(text::contains)) { score += 2; reasons += "action language" }
+        if (Regex("\\b\\d{1,2}([:/.-]\\d{1,2})?\\b").containsMatchIn(text) || listOf("today", "tomorrow", "tonight", "this week", "நாளை", "இன்று", "தேதி", "by ").any(text::contains)) { score += 2; reasons += "date or time cue" }
         val notMine = listOf("hod surgery", "hod medicine", "hod orthopaedics", "for surgery department").any(text::contains)
-        val waiting = listOf("will send", "promised", "awaiting", "waiting for", "pending from").any(text::contains)
-        val delegate = listOf("ask dr", "assign", "delegate", "team to", "staff to").any(text::contains)
+        val waiting = listOf("will send", "promised", "awaiting", "waiting for", "pending from", "will confirm", "பின்னர் அனுப்ப").any(text::contains)
+        val delegate = listOf("ask dr", "assign", "delegate", "team to", "staff to", "ஒப்படைக்க", "பொறுப்பு").any(text::contains)
         val bucket = when {
             notMine -> TriageBucket.NOT_MINE
             waiting -> TriageBucket.WAITING

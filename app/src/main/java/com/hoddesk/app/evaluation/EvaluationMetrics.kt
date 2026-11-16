@@ -38,5 +38,8 @@ data class EvaluationReport(
     val recallAt10: Double,
     val cer: Double? = null,
     val wer: Double? = null,
-    val generatedAt: Long = System.currentTimeMillis()
+    val fieldAccuracy: Double = 1.0,
+    val citationCoverage: Double = 1.0,
+    val generatedAt: Long = System.currentTimeMillis(),
+    val falseVerifiedRate: Double = 0.0
 )

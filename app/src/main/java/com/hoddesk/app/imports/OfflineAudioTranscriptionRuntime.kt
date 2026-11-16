@@ -6,9 +6,15 @@ import android.util.Log
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
-import java.nio.ByteBuffer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import com.hoddesk.app.semantic.MultimodalResourcePolicy
 import org.vosk.Model
 import org.vosk.Recognizer
 import dev.ffmpegkit.whisper.Whisper
@@ -22,55 +28,88 @@ import java.util.zip.ZipInputStream
 /** Tamil-first multilingual offline transcription with Whisper, with an English Vosk fallback. */
 class OfflineAudioTranscriptionRuntime(private val context: Context) {
     companion object {
-        private const val WHISPER_MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin?download=true"
-        private const val WHISPER_MODEL_NAME = "ggml-small.bin"
-        private const val MIN_WHISPER_MODEL_BYTES = 400_000_000L
+        // Keep the selected multilingual medium model; trust its exact published
+        // artifact independently of the transcription quality evaluation.
+        private const val WHISPER_REVISION = "5359861c739e955e79d9a303bcbc70fb988958b1"
+        private const val WHISPER_MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/$WHISPER_REVISION/ggml-medium.bin?download=true"
+        private const val WHISPER_MODEL_NAME = "ggml-medium.bin"
+        private const val WHISPER_MODEL_BYTES = 1_533_763_059L
+        private const val WHISPER_MODEL_SHA256 = "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208"
         private const val MODEL_URL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
         private const val MODEL_DIR = "vosk-model-small-en-us-0.15"
+        private val sharedWhisperInstallMutex = Mutex()
+        private val sharedVoskInstallMutex = Mutex()
+        private val sharedInferenceMutex = Mutex()
+        private val modelVerifier = CachedModelVerifier()
     }
 
     private val whisperModelFile get() = File(context.filesDir, WHISPER_MODEL_NAME)
     private val modelDirectory get() = File(context.filesDir, MODEL_DIR)
+    private val whisperInstallMutex = sharedWhisperInstallMutex
+    private val voskInstallMutex = sharedVoskInstallMutex
 
-    /** Downloads the multilingual Whisper base model used for Tamil-first transcription. */
-    suspend fun ensureTamilModel(onProgress: (Int) -> Unit = {}) = withContext(Dispatchers.IO) {
-        if (whisperModelFile.length() >= MIN_WHISPER_MODEL_BYTES) return@withContext
-        val temp = File(context.cacheDir, "$WHISPER_MODEL_NAME.part")
-        if (temp.exists()) temp.delete()
+    /** Downloads and verifies the pinned multilingual medium model. */
+    suspend fun ensureTamilModel(onProgress: (Int) -> Unit = {}) = whisperInstallMutex.withLock { withContext(Dispatchers.IO) {
+        val coroutine = currentCoroutineContext()
+        if (verifiedWhisperInstalled { coroutine.ensureActive() }) return@withContext
+        check(context.filesDir.usableSpace >= WHISPER_MODEL_BYTES + 64L * 1024 * 1024) { "Not enough free storage to install the verified offline speech model" }
+        // The old model remains intact until a same-directory atomic activation.
+        val temp = File.createTempFile("$WHISPER_MODEL_NAME-", ".part", context.filesDir)
         val connection = (URL(WHISPER_MODEL_URL).openConnection() as HttpURLConnection).apply {
             connectTimeout = 30_000
-            readTimeout = 120_000
+            readTimeout = 30_000
             instanceFollowRedirects = true
         }
         try {
             connection.connect()
             check(connection.responseCode in 200..299) { "Tamil transcription model download failed: HTTP ${connection.responseCode}" }
             val total = connection.contentLengthLong
+            check(total < 0 || total == WHISPER_MODEL_BYTES) { "Speech model download does not match the pinned artifact size" }
             connection.inputStream.use { input -> temp.outputStream().use { output ->
                 val buffer = ByteArray(1024 * 1024); var copied = 0L
                 while (true) {
+                    coroutine.ensureActive()
                     val read = input.read(buffer)
                     if (read < 0) break
                     if (read == 0) continue
+                    check(copied + read <= WHISPER_MODEL_BYTES) { "Speech model download exceeds its trusted size" }
                     output.write(buffer, 0, read); copied += read
                     if (total > 0) onProgress((copied * 100L / total).toInt().coerceIn(0, 100))
                 }
                 output.fd.sync()
             } }
-            check(temp.length() >= MIN_WHISPER_MODEL_BYTES) { "Tamil transcription model is incomplete" }
-            if (whisperModelFile.exists()) whisperModelFile.delete()
-            check(temp.renameTo(whisperModelFile)) { "Unable to install Tamil transcription model" }
-            Log.i("HOD_AUDIO", "tamil_model=small,bytes=${whisperModelFile.length()}")
+            modelVerifier.activate(temp, whisperModelFile, WHISPER_MODEL_BYTES, WHISPER_MODEL_SHA256, WHISPER_REVISION) { coroutine.ensureActive() }
+            Log.i("HOD_AUDIO", "tamil_model=medium,bytes=${whisperModelFile.length()}")
         } finally {
             connection.disconnect()
             if (temp.exists()) temp.delete()
         }
+    } }
+
+    private fun verifiedWhisperInstalled(checkActive: () -> Unit): Boolean = try {
+        modelVerifier.verify(whisperModelFile, WHISPER_MODEL_BYTES, WHISPER_MODEL_SHA256, WHISPER_REVISION, checkActive)
+        true
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: java.io.IOException) {
+        false
+    } catch (_: IllegalArgumentException) {
+        false
+    } catch (_: IllegalStateException) {
+        false
+    }
+
+    /** Reports readiness only after checking the exact pinned file, off the UI thread. */
+    suspend fun tamilModelReady(): Boolean = withContext(Dispatchers.IO) {
+        val coroutine = currentCoroutineContext()
+        verifiedWhisperInstalled { coroutine.ensureActive() }
     }
 
     /** Tamil-first multilingual transcription. English remains available through [transcribeEnglish]. */
     suspend fun transcribeWav(uri: Uri): String = transcribeTamil(uri)
 
-    suspend fun transcribeTamil(uri: Uri): String = withContext(Dispatchers.IO) {
+    suspend fun transcribeTamil(uri: Uri): String = withTimeout(5 * 60_000L) { sharedInferenceMutex.withLock { withContext(Dispatchers.IO) {
+        val coroutine = currentCoroutineContext()
         val started = System.currentTimeMillis()
         ensureTamilModel()
         val mime = context.contentResolver.getType(uri).orEmpty().lowercase()
@@ -87,26 +126,45 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
         try {
             context.contentResolver.openInputStream(uri).use { input ->
                 requireNotNull(input) { "Unable to open recording" }
-                source.outputStream().use { output -> input.copyTo(output) }
+                source.outputStream().use { output ->
+                    MultimodalResourcePolicy.copyBounded(input, output, AudioFileSafety.MAX_SOURCE_BYTES) { coroutine.ensureActive() }
+                }
             }
             require(source.length() > 44L) { "Selected recording is empty or incomplete" }
-            if (mime.contains("mp4") || mime.contains("m4a") || mime.contains("aac")) {
-                decodeCompressedToWav(uri, audio)
-                Log.i("HOD_AUDIO", "m4a_decoded_to_wav_bytes=${audio.length()}")
+            // Some Android document providers report recordings as
+            // application/octet-stream (and omit the extension).  MIME-only
+            // routing then sends an M4A/AAC file to the WAV parser, which is
+            // why audio could appear to import successfully but never
+            // produce a transcript.  Inspect the copied bytes as a second
+            // source of truth before choosing the decoder.
+            val compressed = isCompressedAudio(source, mime)
+            Log.i("HOD_AUDIO", "audio_input_format=${if (compressed) "compressed" else "wav"}")
+            if (compressed) {
+                decodeCompressedToWav(source, audio) { coroutine.ensureActive() }
+                Log.i("HOD_AUDIO", "compressed_decoded_to_wav_bytes=${audio.length()}")
             } else {
-                canonicalizeWav(source, audio)
+                canonicalizeWav(source, audio) { coroutine.ensureActive() }
             }
             require(audio.length() > 44L) { "Decoded recording is empty or incomplete" }
-            normalizeWavInPlace(audio)
+            normalizeWavInPlace(audio) { coroutine.ensureActive() }
             Log.i("HOD_AUDIO", "audio_preprocessed=16khz_mono_normalized")
             Log.i("HOD_AUDIO", "whisper_input_mime=$mime,bytes=${audio.length()},suffix=.wav")
+            // Recheck the cached file identity/pin immediately before native load.
+            modelVerifier.verify(whisperModelFile, WHISPER_MODEL_BYTES, WHISPER_MODEL_SHA256, WHISPER_REVISION) { coroutine.ensureActive() }
             val model = Whisper.loadModel(context, whisperModelFile.absolutePath)
             try {
+                // The medium checkpoint is intentionally retained for Tamil
+                // accuracy, but four threads leaves the S26 Ultra largely
+                // idle.  Use the device's available cores (bounded to avoid
+                // starving Compose/Room or causing runaway thread creation).
+                val inferenceThreads = Runtime.getRuntime().availableProcessors().coerceIn(4, 8)
+                Log.i("HOD_AUDIO", "whisper_inference_threads=$inferenceThreads")
                 val result = Whisper.transcribe(
                     model,
                     audio.absolutePath,
-                    WhisperConfig(language = "ta", translate = false, threads = 4, maxSegmentLength = 0, printTimestamps = false)
+                    WhisperConfig(language = "ta", translate = false, threads = inferenceThreads, maxSegmentLength = 0, printTimestamps = false)
                 )
+                coroutine.ensureActive()
                 val text = result.text.trim()
                 Log.i("HOD_AUDIO", "language=ta,transcription_ms=${System.currentTimeMillis() - started},chars=${text.length}")
                 text
@@ -117,10 +175,31 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
             source.delete()
             audio.delete()
         }
+    } } }
+
+    /** Detect compressed containers when a picker supplies no useful MIME. */
+    private fun isCompressedAudio(source: File, mime: String): Boolean {
+        if (mime.contains("mp4") || mime.contains("m4a") || mime.contains("aac") ||
+            mime.contains("mpeg") || mime.contains("mp3") || mime.contains("flac") ||
+            mime.contains("ogg") || mime.contains("opus") || mime.contains("amr")) return true
+        val header = ByteArray(12)
+        RandomAccessFile(source, "r").use { file ->
+            val count = file.read(header)
+            if (count < 4) return false
+            val first = String(header, 0, 4, Charsets.US_ASCII)
+            if (first == "RIFF" && count >= 12 && String(header, 8, 4, Charsets.US_ASCII) == "WAVE") return false
+            if (first == "fLaC" || first == "ID3") return true
+            // ISO-BMFF audio (M4A/AAC) stores an `ftyp` box at byte 4.
+            if (count >= 8 && String(header, 4, 4, Charsets.US_ASCII) == "ftyp") return true
+            // ADTS AAC and MPEG audio commonly begin with a sync word.
+            if ((header[0].toInt() and 0xff) == 0xff &&
+                ((header[1].toInt() and 0xe0) == 0xe0)) return true
+        }
+        return false
     }
 
-    private fun decodeCompressedToWav(uri: Uri, outputFile: File) {
-        val extractor = MediaExtractor().apply { setDataSource(context, uri, null) }
+    private fun decodeCompressedToWav(sourceFile: File, outputFile: File, checkActive: () -> Unit) {
+        val extractor = MediaExtractor().apply { setDataSource(sourceFile.absolutePath) }
         val track = (0 until extractor.trackCount).firstOrNull {
             extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
         } ?: error("Recording has no decodable audio track")
@@ -132,31 +211,44 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
         val codec = MediaCodec.createDecoderByType(mime)
         val info = MediaCodec.BufferInfo()
         var pcmBytes = 0L
-        val targetRate = 16_000
-        val targetChannels = 1
+        var codecStarted = false
         try {
-            codec.configure(inputFormat, null, null, 0); codec.start()
+            codec.configure(inputFormat, null, null, 0); codec.start(); codecStarted = true
             outputFile.outputStream().use { out ->
                 out.write(ByteArray(44))
+                val resampler = StreamingPcmResampler(sourceRate, sourceChannels)
                 var inputEnded = false; var outputEnded = false
+                var stalledPolls = 0
                 while (!outputEnded) {
+                    checkActive()
                     if (!inputEnded) {
                         val inputIndex = codec.dequeueInputBuffer(10_000)
                         if (inputIndex >= 0) {
-                            val input = codec.getInputBuffer(inputIndex)!!
+                            val input = codec.getInputBuffer(inputIndex)
+                                ?: error("Audio decoder returned no input buffer")
                             val size = extractor.readSampleData(input, 0)
                             if (size < 0) { codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM); inputEnded = true }
                             else { codec.queueInputBuffer(inputIndex, 0, size, extractor.sampleTime, 0); extractor.advance() }
                         }
                     }
                     when (val index = codec.dequeueOutputBuffer(info, 10_000)) {
-                        MediaCodec.INFO_OUTPUT_FORMAT_CHANGED, MediaCodec.INFO_TRY_AGAIN_LATER -> if (inputEnded && index == MediaCodec.INFO_TRY_AGAIN_LATER) outputEnded = true
+                        MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> Unit
+                        MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED -> Unit
+                        MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                            // A decoder may have delayed frames after EOS. Do not
+                            // truncate the tail merely because one poll is empty.
+                            stalledPolls++
+                            check(stalledPolls < 120) { "Audio decoder stalled before end of stream" }
+                        }
                         else -> {
+                            stalledPolls = 0
                             if (info.size > 0) {
-                                val buffer = codec.getOutputBuffer(index)!!
+                                val buffer = codec.getOutputBuffer(index)
+                                    ?: error("Audio decoder returned no output buffer")
                                 buffer.position(info.offset); buffer.limit(info.offset + info.size)
                                 val bytes = ByteArray(info.size); buffer.get(bytes)
-                                val pcm = resamplePcm(bytes, bytes.size, sourceRate, sourceChannels)
+                                val pcm = resampler.process(bytes, bytes.size)
+                                check(pcmBytes + pcm.size <= AudioFileSafety.MAX_PCM_BYTES) { "Recording exceeds the one-hour transcription limit" }
                                 out.write(pcm); pcmBytes += pcm.size
                             }
                             codec.releaseOutputBuffer(index, false)
@@ -165,90 +257,44 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
                     }
                 }
             }
-            writeWavHeader(outputFile, pcmBytes, targetRate, targetChannels)
-        } finally { codec.stop(); codec.release(); extractor.release() }
-    }
-
-    private fun writeWavHeader(file: File, dataSize: Long, sampleRate: Int, channels: Int) {
-        val header = ByteArray(44)
-        fun putAscii(offset: Int, value: String) { value.toByteArray(Charsets.US_ASCII).copyInto(header, offset) }
-        fun putInt(offset: Int, value: Long) { for (i in 0..3) header[offset + i] = (value shr (8 * i)).toByte() }
-        fun putShort(offset: Int, value: Int) { header[offset] = value.toByte(); header[offset + 1] = (value shr 8).toByte() }
-        putAscii(0, "RIFF"); putInt(4, 36 + dataSize); putAscii(8, "WAVE"); putAscii(12, "fmt "); putInt(16, 16); putShort(20, 1); putShort(22, channels); putInt(24, sampleRate.toLong()); putInt(28, (sampleRate * channels * 2).toLong()); putShort(32, channels * 2); putShort(34, 16); putAscii(36, "data"); putInt(40, dataSize)
-        RandomAccessFile(file, "rw").use { it.seek(0); it.write(header) }
+            AudioFileSafety.writeWaveHeader(outputFile, pcmBytes)
+        } finally {
+            if (codecStarted) runCatching { codec.stop() }
+            codec.release(); extractor.release()
+        }
     }
 
     /** Converts a user-provided PCM WAV (any common rate, one/two channels) to Whisper's contract. */
-    private fun canonicalizeWav(inputFile: File, outputFile: File) {
-        val bytes = inputFile.readBytes()
-        require(bytes.size >= 44 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF" &&
-            String(bytes, 8, 4, Charsets.US_ASCII) == "WAVE") { "WAV header is invalid" }
-        val channels = littleU16(bytes, 22)
-        val sampleRate = littleU32(bytes, 24).toInt()
-        val bits = littleU16(bytes, 34)
-        val dataOffset = findWavDataOffset(bytes)
-        require(channels in 1..2 && sampleRate > 0 && bits == 16) { "WAV must contain 16-bit PCM audio" }
-        val pcmLength = bytes.size - dataOffset
-        require(pcmLength > 0 && pcmLength % (2 * channels) == 0) { "WAV contains no complete PCM frames" }
-        val pcm = bytes.copyOfRange(dataOffset, bytes.size)
-        val converted = resamplePcm(pcm, pcm.size, sampleRate, channels)
-        outputFile.outputStream().use { it.write(ByteArray(44)); it.write(converted) }
-        writeWavHeader(outputFile, converted.size.toLong(), 16_000, 1)
+    private fun canonicalizeWav(inputFile: File, outputFile: File, checkActive: () -> Unit) {
+        val layout = AudioFileSafety.inspectWave(inputFile, checkActive)
+        val resampler = StreamingPcmResampler(layout.sampleRate, layout.channels)
+        var written = 0L
+        RandomAccessFile(inputFile, "r").use { input ->
+            input.seek(layout.dataOffset)
+            outputFile.outputStream().use { output ->
+                output.write(ByteArray(44))
+                val buffer = ByteArray(64 * 1024)
+                var remaining = layout.dataBytes
+                while (remaining > 0) {
+                    checkActive()
+                    val count = minOf(remaining, buffer.size.toLong()).toInt()
+                    input.readFully(buffer, 0, count)
+                    val converted = resampler.process(buffer, count)
+                    check(written + converted.size <= AudioFileSafety.MAX_PCM_BYTES) { "Recording exceeds the one-hour transcription limit" }
+                    output.write(converted); written += converted.size; remaining -= count
+                }
+            }
+        }
+        AudioFileSafety.writeWaveHeader(outputFile, written)
     }
 
     /** Removes DC offset and applies bounded gain so quiet Tamil speech is not lost by the decoder. */
-    private fun normalizeWavInPlace(file: File) {
-        val bytes = file.readBytes()
-        if (bytes.size <= 44) return
-        val pcm = bytes.copyOfRange(44, bytes.size)
-        val sampleCount = pcm.size / 2
-        if (sampleCount == 0) return
-        var mean = 0.0
-        var sumSquares = 0.0
-        var peak = 0
-        for (i in 0 until sampleCount) {
-            val value = (pcm[i * 2].toInt() and 0xff) or (pcm[i * 2 + 1].toInt() shl 8)
-            mean += value.toShort().toInt()
-        }
-        mean /= sampleCount
-        for (i in 0 until sampleCount) {
-            val value = (pcm[i * 2].toInt() and 0xff) or (pcm[i * 2 + 1].toInt() shl 8)
-            val centered = (value.toShort().toInt() - mean)
-            sumSquares += centered * centered
-            peak = maxOf(peak, kotlin.math.abs(centered).toInt())
-        }
-        val rms = kotlin.math.sqrt(sumSquares / sampleCount)
-        val gain = if (rms < 1.0 || peak == 0) 1.0 else (0.12 * Short.MAX_VALUE / rms).coerceIn(0.75, 2.5).coerceAtMost(0.95 * Short.MAX_VALUE / peak)
-        for (i in 0 until sampleCount) {
-            val value = (pcm[i * 2].toInt() and 0xff) or (pcm[i * 2 + 1].toInt() shl 8)
-            val normalized = ((value.toShort().toInt() - mean) * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-            pcm[i * 2] = normalized.toByte()
-            pcm[i * 2 + 1] = (normalized shr 8).toByte()
-        }
-        file.outputStream().use { it.write(bytes, 0, 44); it.write(pcm) }
-    }
-
-    private fun findWavDataOffset(bytes: ByteArray): Int {
-        var offset = 12
-        while (offset + 8 <= bytes.size) {
-            val size = littleU32(bytes, offset + 4).toInt()
-            if (String(bytes, offset, 4, Charsets.US_ASCII) == "data") return offset + 8
-            offset += 8 + size + (size and 1)
-        }
-        require(bytes.size >= 44) { "WAV data chunk is missing" }
-        return 44
-    }
-
-    private fun littleU16(bytes: ByteArray, offset: Int): Int =
-        (bytes[offset].toInt() and 0xff) or ((bytes[offset + 1].toInt() and 0xff) shl 8)
-
-    private fun littleU32(bytes: ByteArray, offset: Int): Long =
-        (bytes[offset].toLong() and 0xff) or ((bytes[offset + 1].toLong() and 0xff) shl 8) or
-            ((bytes[offset + 2].toLong() and 0xff) shl 16) or ((bytes[offset + 3].toLong() and 0xff) shl 24)
+    private fun normalizeWavInPlace(file: File, checkActive: () -> Unit) =
+        AudioFileSafety.normalizeCanonicalWave(file, checkActive)
 
     suspend fun transcribeEnglish(uri: Uri): String = transcribeVosk(uri)
 
-    suspend fun ensureModel(onProgress: (Int) -> Unit = {}) = withContext(Dispatchers.IO) {
+    suspend fun ensureModel(onProgress: (Int) -> Unit = {}) = voskInstallMutex.withLock { withContext(Dispatchers.IO) {
         val started = System.currentTimeMillis()
         if (File(modelDirectory, "am/final.mdl").exists()) return@withContext
         val zip = File(context.cacheDir, "$MODEL_DIR.zip")
@@ -273,7 +319,7 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
         zip.delete()
         check(File(modelDirectory, "am/final.mdl").exists()) { "Transcription model is incomplete" }
         Log.i("HOD_AUDIO", "model_ready_ms=${System.currentTimeMillis() - started}")
-    }
+    } }
 
     private suspend fun transcribeVosk(uri: Uri): String = withContext(Dispatchers.IO) {
         val started = System.currentTimeMillis()
@@ -294,16 +340,28 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
     }
 
     private fun feedWav(uri: Uri, recognizer: Recognizer) {
-        context.contentResolver.openInputStream(uri).use { input ->
-            requireNotNull(input) { "Unable to open recording" }
-            val header = ByteArray(44)
-            require(input.read(header) == 44) { "WAV header is incomplete" }
-            val channels = (header[22].toInt() and 0xff) or ((header[23].toInt() and 0xff) shl 8)
-            val sampleRate = (header[24].toInt() and 0xff) or ((header[25].toInt() and 0xff) shl 8) or ((header[26].toInt() and 0xff) shl 16) or ((header[27].toInt() and 0xff) shl 24)
-            val bits = (header[34].toInt() and 0xff) or ((header[35].toInt() and 0xff) shl 8)
-            require(channels in 1..2 && bits == 16 && sampleRate > 0) { "WAV must be 16-bit PCM with one or two channels" }
-            val buffer = ByteArray(8192)
-            while (true) { val read = input.read(buffer); if (read <= 0) break; val pcm = resamplePcm(buffer, read - (read % (2 * channels)), sampleRate, channels); recognizer.acceptWaveForm(pcm, pcm.size) }
+        val temp = File.createTempFile("hod-vosk-wave-", ".wav", context.cacheDir)
+        try {
+            context.contentResolver.openInputStream(uri).use { input ->
+                requireNotNull(input) { "Unable to open recording" }
+                temp.outputStream().use { MultimodalResourcePolicy.copyBounded(input, it, AudioFileSafety.MAX_SOURCE_BYTES) }
+            }
+            val layout = AudioFileSafety.inspectWave(temp)
+            RandomAccessFile(temp, "r").use { input ->
+                input.seek(layout.dataOffset)
+                var remaining = layout.dataBytes
+                val resampler = StreamingPcmResampler(layout.sampleRate, layout.channels)
+                val buffer = ByteArray(8192)
+                while (remaining > 0) {
+                    val count = minOf(remaining, buffer.size.toLong()).toInt()
+                    input.readFully(buffer, 0, count)
+                    val pcm = resampler.process(buffer, count)
+                    recognizer.acceptWaveForm(pcm, pcm.size)
+                    remaining -= count
+                }
+            }
+        } finally {
+            temp.delete()
         }
     }
 
@@ -324,11 +382,14 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
             codec.start()
             var inputEnded = false
             var outputEnded = false
+            var stalledPolls = 0
+            val resampler = StreamingPcmResampler(sourceRate, channels)
             while (!outputEnded) {
                 if (!inputEnded) {
                     val inputIndex = codec.dequeueInputBuffer(10_000)
                     if (inputIndex >= 0) {
-                        val input = codec.getInputBuffer(inputIndex)!!
+                        val input = codec.getInputBuffer(inputIndex)
+                            ?: error("Audio decoder returned no input buffer")
                         val size = extractor.readSampleData(input, 0)
                         if (size < 0) { codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM); inputEnded = true }
                         else { codec.queueInputBuffer(inputIndex, 0, size, extractor.sampleTime, 0); extractor.advance() }
@@ -336,13 +397,19 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
                 }
                 when (val outputIndex = codec.dequeueOutputBuffer(info, 10_000)) {
                     MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> Unit
-                    MediaCodec.INFO_TRY_AGAIN_LATER -> if (inputEnded) outputEnded = true
+                    MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED -> Unit
+                    MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                        stalledPolls++
+                        check(stalledPolls < 120) { "Audio decoder stalled before end of stream" }
+                    }
                     else -> {
+                        stalledPolls = 0
                         if (info.size > 0) {
-                            val output = codec.getOutputBuffer(outputIndex)!!
+                            val output = codec.getOutputBuffer(outputIndex)
+                                ?: error("Audio decoder returned no output buffer")
                             output.position(info.offset); output.limit(info.offset + info.size)
                             val bytes = ByteArray(info.size); output.get(bytes)
-                            val pcm = resamplePcm(bytes, bytes.size, sourceRate, channels)
+                            val pcm = resampler.process(bytes, bytes.size)
                             recognizer.acceptWaveForm(pcm, pcm.size)
                         }
                         codec.releaseOutputBuffer(outputIndex, false)
@@ -353,21 +420,4 @@ class OfflineAudioTranscriptionRuntime(private val context: Context) {
         } finally { codec.stop(); codec.release(); extractor.release() }
     }
 
-    private fun resamplePcm(input: ByteArray, length: Int, sourceRate: Int, channels: Int): ByteArray {
-        val sourceFrames = length / 2 / channels
-        if (sourceFrames <= 0 || sourceRate <= 0 || channels <= 0) return ByteArray(0)
-        val targetFrames = (sourceFrames.toLong() * 16_000L / sourceRate).toInt().coerceAtLeast(0)
-        val output = ByteArray(targetFrames * 2)
-        for (target in 0 until targetFrames) {
-            val source = ((target.toLong() * sourceRate) / 16_000L).toInt().coerceAtMost(sourceFrames - 1)
-            var mixed = 0
-            for (channel in 0 until channels) {
-                val index = (source * channels + channel) * 2
-                mixed += (input[index].toInt() and 0xff) or (input[index + 1].toInt() shl 8)
-            }
-            val sample = (mixed / channels).coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-            output[target * 2] = sample.toByte(); output[target * 2 + 1] = (sample shr 8).toByte()
-        }
-        return output
-    }
 }

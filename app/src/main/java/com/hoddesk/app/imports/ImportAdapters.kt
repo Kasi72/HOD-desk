@@ -15,8 +15,22 @@ import android.graphics.ColorMatrixColorFilter
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.zip.ZipInputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.util.concurrent.Executors
+import com.googlecode.tesseract.android.TessBaseAPI
 
-data class ImportedSource(val title: String, val body: String, val type: String, val uri: Uri? = null)
+data class ImportedSource(
+    val title: String,
+    val body: String,
+    val type: String,
+    val uri: Uri? = null,
+    val rawText: String? = null,
+    val correctedText: String? = null,
+    val detectedLanguage: String? = null,
+    val confidence: Float? = null,
+    val evidenceLocator: String? = null,
+)
 
 enum class TranscriptionStatus { QUEUED, READY, NEEDS_REVIEW, FAILED }
 
@@ -56,7 +70,12 @@ class WhatsAppExportAdapter {
             val sender = body.substringBefore(": ").takeIf { it.length in 1..80 && !it.contains("http") }
             val message = if (sender != null) body.substringAfter(": ") else body
             val title = buildString { append("WhatsApp"); sender?.let { append(" · ").append(it) }; append(" · ").append(header.ifBlank { "message ${index + 1}" }) }
-            ImportedSource(title, message, "WhatsApp", null)
+            val previous = messages.getOrNull(index - 1)?.second
+            val ambiguousReply = Regex("(?iu)^(?:ok|okay|yes|no|sure|done|will do|noted|fine|alright|received|சரி|செய்கிறேன்|அனுப்புகிறேன்|வருகிறேன்)[.! ]*").containsMatchIn(message.trim())
+            val linked = if (ambiguousReply && !previous.isNullOrBlank()) {
+                "[Previous message]\n${previous.trim()}\n[Reply]\n$message"
+            } else message
+            ImportedSource(title, linked, "WhatsApp", null)
         }
     }
 
@@ -82,11 +101,32 @@ class ScreenshotImportAdapter {
             requireNotNull(bitmap) { "Screenshot could not be decoded" }
             InputImage.fromBitmap(preprocess(bitmap), 0)
         }.getOrElse { InputImage.fromFilePath(context, uri) }
-        return TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS).process(image).continueWith { task ->
-            val text = normalizeOcr(task.result?.text.orEmpty())
-            val title = text.lineSequence().map { it.trim() }.firstOrNull { it.length >= 8 }?.take(72) ?: "Screenshot capture"
-            ImportedSource(title, text.ifBlank { "OCR found no readable text" }, "Screenshot", uri)
+        return TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS).process(image).continueWith(Executors.newSingleThreadExecutor()) { task ->
+            // Latin ML Kit is optional and may fail offline or on a device
+            // without its model. Never dereference task.result on failure;
+            // continue with the bundled Tamil OCR fallback instead.
+            val text = normalizeOcr(if (task.isSuccessful) task.result?.text.orEmpty() else "")
+            val tamil = if (text.any { it in '\u0B80'..'\u0BFF' }) "" else runCatching { recognizeTamil(context, uri) }.getOrDefault("")
+            val merged = listOf(text, tamil).filter { it.isNotBlank() }.distinct().joinToString("\n")
+            val title = merged.lineSequence().map { it.trim() }.firstOrNull { it.length >= 8 }?.take(72) ?: "Screenshot capture"
+            val language = if (merged.any { it in '\u0B80'..'\u0BFF' }) "ta" else "en"
+            val locator = task.result?.textBlocks.orEmpty().mapIndexedNotNull { index, block -> block.boundingBox?.let { "block=$index,x=${it.left},y=${it.top},w=${it.width()},h=${it.height()}" } }.joinToString(";").ifBlank { null }
+            ImportedSource(title, merged.ifBlank { "OCR found no readable text; Tamil OCR also found no readable text" }, "Screenshot", uri, rawText = merged, correctedText = merged, detectedLanguage = language, confidence = if (merged.isBlank()) 0f else .72f, evidenceLocator = locator)
         }
+    }
+
+    private fun recognizeTamil(context: Context, uri: Uri): String {
+        val base = File(context.filesDir, "tessdata")
+        if (!base.exists()) base.mkdirs()
+        val trained = File(base, "tam.traineddata")
+        if (!trained.exists()) context.assets.open("tessdata/tam.traineddata").use { input -> FileOutputStream(trained).use { input.copyTo(it) } }
+        val bitmap = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } ?: return ""
+        val api = TessBaseAPI()
+        return try {
+            if (!api.init(context.filesDir.absolutePath, "tam")) return ""
+            api.setImage(bitmap)
+            api.getUTF8Text().orEmpty()
+        } finally { api.end(); bitmap.recycle() }
     }
 
     private fun preprocess(source: Bitmap): Bitmap {
