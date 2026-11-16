@@ -15,6 +15,7 @@ import com.hoddesk.app.reasoning.FieldEvidenceAttribution
 import com.hoddesk.app.workflow.CaptureIntentClassifier
 import com.hoddesk.app.reasoning.ActionFieldQualityScorer
 import com.hoddesk.app.reasoning.TemporalEvidence
+import com.hoddesk.app.reasoning.DeadlineSemantics
 
 /** Reads official Word, PDF and plain-text records without sending their contents off device. */
 class OfficialDocumentImportAdapter(private val context: Context) {
@@ -271,6 +272,8 @@ class ActionPointExtractor {
                 if (dates.size > 1) add("Date conflict: multiple distinct dates require confirmation.")
                 if (TemporalEvidence.hasTimeConflict(extractionEvidence)) add("Time conflict: ${times(extractionEvidence).joinToString(" versus ")} requires confirmation.")
                 addAll(TemporalEvidence.weekdayConflicts(extractionEvidence, dateText))
+                // "after 15 Nov", "from 1 Dec" and "within 7 days" are not deadlines on their own.
+                DeadlineSemantics.reviewNote(DeadlineSemantics.read(extractionEvidence, dates.singleOrNull()?.text))?.let(::add)
                 if (dateText == null && timeText == null) add("Date and time were not explicit in this evidence.")
                 if (scheduleContext != null && Regex("(?i)\\b(?:instruct|depute|direct)\\b.*\\battend\\b").containsMatchIn(evidence))
                     add("Meeting schedule is context; instruction deadline requires confirmation.")

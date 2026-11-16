@@ -16,7 +16,7 @@ object TemporalEvidence {
     }
 
     private const val MONTHS = "Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?"
-    private val numericDate = Regex("(?<![\\p{L}\\p{N}])(?:\\d{4}[./-]\\d{1,2}[./-]\\d{1,2}|\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4})(?![\\p{L}\\p{N}])")
+    private val numericDate = Regex("(?<![\\p{L}\\p{N}])(?:\\d{4}[./-]\\d{1,2}[./-]\\d{1,2}|\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4})(?![A-Za-z0-9])")
     private val dayFirstDate = Regex("\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:$MONTHS)(?:\\s+\\d{4})?\\b", RegexOption.IGNORE_CASE)
     private val monthFirstDate = Regex("\\b(?:$MONTHS)\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,?\\s+\\d{4})?\\b", RegexOption.IGNORE_CASE)
     private val relativeDate = Regex("\\b(?:today|tomorrow|this week|next week|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\b", RegexOption.IGNORE_CASE)
