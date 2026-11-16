@@ -37,6 +37,14 @@ class HodDeskViewModel(private val repository: HodDeskRepository) : ViewModel() 
 
     fun ingest(source: SourceEntity) = launchSafe("ingest_failed") { repository.ingest(source) }
     fun ingestWithActions(source: SourceEntity, actions: List<ActionPointDraft>) = launchSafe("ingest_with_actions_failed") { repository.ingestWithActions(source, actions) }
+
+    /** Imports items in order, skipping ones already in the Library, then reports how many were new and how many were skipped. */
+    fun ingestNew(items: List<Pair<SourceEntity, List<ActionPointDraft>>>, onDone: (added: Int, skipped: Int) -> Unit) = launchSafe("ingest_new_failed") {
+        var added = 0
+        var skipped = 0
+        items.forEach { (source, actions) -> if (repository.ingestWithActionsIfNew(source, actions) != null) added++ else skipped++ }
+        onDone(added, skipped)
+    }
     fun approve(sourceId: Long, project: String, dueAt: Long? = null) = launchSafe("approve_source_failed") { repository.approveSource(sourceId, project, dueAt) }
     fun approveAction(sourceId: Long, action: String, project: String, dueAt: Long? = null, assignee: String? = null) = launchSafe("approve_action_failed") { repository.approveAction(sourceId, action, project, dueAt, assignee) }
     fun dismissSource(sourceId: Long, reason: String) = launchSafe("dismiss_source_failed") { repository.dismissSource(sourceId, reason) }

@@ -79,6 +79,24 @@ class DeskSettingsStore(context: Context) {
         get() = prefs.getInt("workday_end", 17 * 60)
         set(value) = prefs.edit().putInt("workday_end", value).apply()
 
+    /** Local morning brief notification. Off until the HOD turns it on. */
+    var briefEnabled: Boolean
+        get() = prefs.getBoolean("brief_enabled", false)
+        set(value) = prefs.edit().putBoolean("brief_enabled", value).apply()
+
+    var briefMinute: Int
+        get() = prefs.getInt("brief_minute", 8 * 60)
+        set(value) = prefs.edit().putInt("brief_minute", value.coerceIn(0, 24 * 60 - 1)).apply()
+
+    /** Local "due soon" notifications for open tasks. Off until the HOD turns it on. */
+    var dueRemindersEnabled: Boolean
+        get() = prefs.getBoolean("due_reminders_enabled", false)
+        set(value) = prefs.edit().putBoolean("due_reminders_enabled", value).apply()
+
+    var dueLeadMinutes: Int
+        get() = prefs.getInt("due_lead_minutes", 60)
+        set(value) = prefs.edit().putInt("due_lead_minutes", value.coerceIn(5, 24 * 60)).apply()
+
     fun blocksOn(day: DayOfWeek): List<FixedBlock> = fixedBlocks.filter { day in it.days }.sortedBy { it.startMinute }
 
     private fun parseBlocks(raw: String): List<FixedBlock>? = runCatching {

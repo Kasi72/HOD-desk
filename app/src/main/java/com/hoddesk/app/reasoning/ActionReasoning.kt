@@ -155,29 +155,28 @@ class OnDeviceActionReasoner(private val modelFilePath: String?) {
         require(evidence.isNotBlank()) { "Cannot reason over empty evidence" }
         return withContext(Dispatchers.Default) { inferenceLock.withLock {
             val modelPath = requireNotNull(modelFilePath)
-            val engine = Engine(EngineConfig(modelPath, Backend.CPU()))
             try {
-                engine.initialize()
-                engine.createSession(SessionConfig()).use { session ->
-                    val started = System.nanoTime()
-                    fun runPass(pass: String, candidate: String? = targetAction): ActionReasoningOutput {
-                        val raw = session.generateContent(listOf(InputData.Text(ActionReasoningPrompt.build(evidence, candidate, pass))))
-                        return ActionReasoningValidator.parse(raw.trim(), evidence)
+                ReasoningEngineHolder.use(modelPath) { engine ->
+                    engine.createSession(SessionConfig()).use { session ->
+                        val started = System.nanoTime()
+                        fun runPass(pass: String, candidate: String? = targetAction): ActionReasoningOutput {
+                            val raw = session.generateContent(listOf(InputData.Text(ActionReasoningPrompt.build(evidence, candidate, pass))))
+                            return ActionReasoningValidator.parse(raw.trim(), evidence)
+                        }
+                        val candidate = runPass("candidate identification")
+                        if (candidate.action.isBlank()) return@use candidate
+                        val resolved = runPass("field and entity resolution", candidate.action)
+                        val parsed = runPass("contradiction and citation rejection", resolved.action)
+                        Log.i(TAG, "reasoning_ms=${(System.nanoTime() - started) / 1_000_000},confidence=${parsed.confidence}")
+                        parsed
                     }
-                    val candidate = runPass("candidate identification")
-                    if (candidate.action.isBlank()) return@use candidate
-                    val resolved = runPass("field and entity resolution", candidate.action)
-                    val parsed = runPass("contradiction and citation rejection", resolved.action)
-                    Log.i(TAG, "reasoning_ms=${(System.nanoTime() - started) / 1_000_000},confidence=${parsed.confidence}")
-                    parsed
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
                 Log.e(TAG, "reasoning_failed", error)
                 throw IllegalStateException("On-device action reasoning failed", error)
-            } finally {
-                runCatching { engine.close() }
             }
         } }
     }

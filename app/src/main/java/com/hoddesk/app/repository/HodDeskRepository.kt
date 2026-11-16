@@ -59,6 +59,15 @@ class HodDeskRepository(private val dao: HodDeskDao) {
     private suspend fun findDuplicateSource(source: SourceEntity): SourceEntity? =
         dao.sourcesOnce().firstOrNull { it.id != source.id && SourceFingerprint.of(it) == SourceFingerprint.of(source) }
 
+    /** Same as [ingestWithActions], but returns null when the item was already in the Library (nothing added). */
+    suspend fun ingestWithActionsIfNew(source: SourceEntity, actions: List<ActionPointDraft>): Long? {
+        findDuplicateSource(source)?.let { existing ->
+            audit("source", existing.id, "duplicate_import_ignored", SourceFingerprint.of(source))
+            return null
+        }
+        return ingestWithActions(source, actions)
+    }
+
     suspend fun approveSource(sourceId: Long, project: String, dueAt: Long? = null): Long {
         return dao.approveSourceAtomic(sourceId, project, dueAt)
     }

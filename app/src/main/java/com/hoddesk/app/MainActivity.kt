@@ -79,6 +79,7 @@ import com.hoddesk.app.learning.SecretaryLearning
 import com.hoddesk.app.privacy.ConsentScope
 import com.hoddesk.app.privacy.PrivacyStore
 import com.hoddesk.app.reasoning.InstructionModelStore
+import com.hoddesk.app.repository.ActionPointDraft
 import com.hoddesk.app.repository.HodDeskRepository
 import com.hoddesk.app.repository.ScheduleProposal
 import com.hoddesk.app.scheduling.SmartScheduling
@@ -108,7 +109,19 @@ import com.hoddesk.app.ui.components.pressable
 import com.hoddesk.app.ui.components.SegmentedControl
 import com.hoddesk.app.ui.screens.ActivityPage
 import com.hoddesk.app.workers.IndexMaintenanceScheduler
+import com.hoddesk.app.backup.BackupCodec
+import com.hoddesk.app.backup.BackupManager
+import com.hoddesk.app.backup.BackupTooNewException
+import com.hoddesk.app.backup.NotABackupException
+import com.hoddesk.app.backup.ParsedBackup
+import com.hoddesk.app.backup.WrongPasswordException
+import com.hoddesk.app.reminders.Reminders
+import com.hoddesk.app.settings.formatMinute
 import com.hoddesk.app.ui.screens.AiPage
+import com.hoddesk.app.ui.screens.BackupPage
+import com.hoddesk.app.ui.screens.ConfirmDialog
+import com.hoddesk.app.ui.screens.PasswordDialog
+import com.hoddesk.app.ui.screens.RemindersPage
 import com.hoddesk.app.ui.screens.AiStatus
 import com.hoddesk.app.ui.screens.CalendarScreen
 import com.hoddesk.app.ui.screens.CaptureKind
@@ -383,10 +396,19 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         }
     }
     fun allowed(scope: ConsentScope?): Boolean = scope == null || (privacyStore.canImportSensitive() && privacyStore.scopeGranted(scope))
-    suspend fun saveImported(item: ImportedSource, uri: Uri?) {
+    /** Outcome of saving imported items: how many were new, how many were already in the Library, and whether the type is switched off. */
+    data class ImportResult(val added: Int, val skipped: Int, val blocked: Boolean = false)
+    fun importMessage(result: ImportResult, success: String): String = when {
+        result.blocked -> status.orEmpty() // keeps the "imports are turned off" explanation
+        result.added == 0 && result.skipped == 1 -> "Already in your Library — not added again."
+        result.added == 0 -> "All ${result.skipped} item(s) are already in your Library — nothing new added."
+        result.skipped > 0 -> "$success · ${result.skipped} already in your Library"
+        else -> success
+    }
+    suspend fun saveImported(item: ImportedSource, uri: Uri?): ImportResult {
         if (!allowed(scopeFor(item.type))) {
             status = "${item.type} imports are turned off. Turn them on in Settings › Privacy & Data."
-            return
+            return ImportResult(0, 0, blocked = true)
         }
         val redactedInput = privacyStore.redact(item.body)
         val pendingAudio = item.type.equals("Audio pending transcription", ignoreCase = true) || redactedInput.startsWith("Audio is queued", ignoreCase = true)
@@ -400,10 +422,11 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         // A failure message is evidence of a processing error, never an action.
         val extractor = ActionPointExtractor()
         val actions = if (pendingAudio || extractor.isProcessingFailure(redactedInput) || needsReview && redactedInput.contains("OCR", ignoreCase = true)) emptyList() else extractor.extract(redactedInput)
-        repository.ingestWithActions(source, actions)
+        return if (repository.ingestWithActionsIfNew(source, actions) != null) ImportResult(1, 0) else ImportResult(0, 1)
     }
-    suspend fun saveImportedBatch(items: List<ImportedSource>, uri: Uri) {
-        items.forEach { saveImported(it, uri) }
+    suspend fun saveImportedBatch(items: List<ImportedSource>, uri: Uri): ImportResult {
+        val results = items.map { saveImported(it, uri) }
+        return ImportResult(results.sumOf { it.added }, results.sumOf { it.skipped }, blocked = results.isNotEmpty() && results.all { it.blocked })
     }
     fun transcribe(uri: Uri, title: String, type: String, onTranscript: ((String) -> Unit)? = null) {
         val item = ProcessingItem(title, "Transcribing Tamil and English on this phone…", null)
@@ -433,9 +456,9 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                 try {
                     val confidence = if (text.isBlank()) 0f else ((text.count { !it.isWhitespace() }.toFloat() / text.length.coerceAtLeast(1)) * .9f).coerceIn(.2f, .95f)
                     val language = if (text.any { it in '\u0B80'..'\u0BFF' }) "ta" else "en"
-                    saveImported(ImportedSource(title, text.ifBlank { "No speech detected" }, type, uri, rawText = text, correctedText = text, detectedLanguage = language, confidence = confidence), uri)
+                    val saved = saveImported(ImportedSource(title, text.ifBlank { "No speech detected" }, type, uri, rawText = text, correctedText = text, detectedLanguage = language, confidence = confidence), uri)
                     onTranscript?.invoke(text)
-                    status = "$title added for review"
+                    status = importMessage(saved, "$title added for review")
                     runCatching { PerformanceMetrics.record(dao, "audio_transcription_latency_ms", System.currentTimeMillis() - started, "type=$type") }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -458,14 +481,14 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
             ScreenshotImportAdapter().recognize(context, uri)
                 .addOnSuccessListener { item ->
                     scope.launch {
-                        runCatching { saveImported(item.copy(title = "Photo · ${item.title}", type = "Camera document"), uri); status = "Photo text added for review" }
+                        runCatching { status = importMessage(saveImported(item.copy(title = "Photo · ${item.title}", type = "Camera document"), uri), "Photo text added for review") }
                             .onFailure { error -> Log.e("HOD_IMPORT", "camera_result_save_failed", error); status = "Photo was read but could not be saved safely." }
                     }
                 }
                 .addOnFailureListener {
                     scope.launch {
                         runCatching { saveImported(ImportedSource("Camera document", "OCR could not read this image; manual review required.", "Camera document", uri), uri) }
-                            .onSuccess { status = "Photo saved for manual review" }
+                            .onSuccess { status = importMessage(it, "Photo saved for manual review") }
                             .onFailure { error -> Log.e("HOD_IMPORT", "camera_fallback_save_failed", error); status = "Photo could not be saved safely." }
                     }
                 }
@@ -506,37 +529,37 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                 ScreenshotImportAdapter().recognize(context, uri)
                     .addOnSuccessListener { item ->
                         scope.launch {
-                            runCatching { saveImported(item, uri); status = "Screenshot added for review" }
+                            runCatching { status = importMessage(saveImported(item, uri), "Screenshot added for review") }
                                 .onFailure { error -> Log.e("HOD_IMPORT", "screenshot_result_save_failed", error); status = "Screenshot was read but could not be saved safely." }
                         }
                     }
                     .addOnFailureListener {
                         scope.launch {
                             runCatching { saveImported(ScreenshotImportAdapter().create(uri), uri) }
-                                .onSuccess { status = "Couldn't read text; screenshot saved for manual review" }
+                                .onSuccess { status = importMessage(it, "Couldn't read text; screenshot saved for manual review") }
                                 .onFailure { error -> Log.e("HOD_IMPORT", "screenshot_fallback_save_failed", error); status = "Screenshot could not be saved safely." }
                         }
                     }
             }
             mime.contains("pdf") || mime.contains("word") || mime.contains("officedocument") || extension in setOf("pdf", "doc", "docx") ->
                 runCatching { OfficialDocumentImportAdapter(context).import(uri) }
-                    .onSuccess { item -> saveImported(item, uri); status = "Document added for review" }
+                    .onSuccess { item -> status = importMessage(saveImported(item, uri), "Document added for review") }
                     .onFailure { status = "Document could not be read: ${it.message ?: it.javaClass.simpleName}" }
             mime == "text/vtt" || mime == "text/plain" -> {
                 val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
                 val whatsappItems = WhatsAppExportAdapter().parse(text)
-                if (whatsappItems.isNotEmpty()) { saveImportedBatch(whatsappItems, uri); status = "${whatsappItems.size} WhatsApp messages added for review" }
-                else { saveImported(AudioTranscriptImportAdapter(context.contentResolver).importTranscript(uri), uri); status = "Text added for review" }
+                if (whatsappItems.isNotEmpty()) { val saved = saveImportedBatch(whatsappItems, uri); status = importMessage(saved, "${saved.added} WhatsApp messages added for review") }
+                else { status = importMessage(saveImported(AudioTranscriptImportAdapter(context.contentResolver).importTranscript(uri), uri), "Text added for review") }
             }
             mime == "application/zip" || mime == "application/x-zip-compressed" || mime == "application/octet-stream" -> {
                 val items = context.contentResolver.openInputStream(uri)?.use { WhatsAppExportAdapter().parseZip(it) }.orEmpty()
-                saveImportedBatch(items, uri)
-                status = if (items.isEmpty()) "No WhatsApp chat text found in that ZIP" else "${items.size} WhatsApp messages added for review"
+                val saved = saveImportedBatch(items, uri)
+                status = if (items.isEmpty()) "No WhatsApp chat text found in that ZIP" else importMessage(saved, "${saved.added} WhatsApp messages added for review")
             }
                 else -> context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
                 val items = WhatsAppExportAdapter().parse(reader.readText())
-                saveImportedBatch(items, uri)
-                status = if (items.isEmpty()) "No WhatsApp messages found" else "${items.size} WhatsApp messages added for review"
+                val saved = saveImportedBatch(items, uri)
+                status = if (items.isEmpty()) "No WhatsApp messages found" else importMessage(saved, "${saved.added} WhatsApp messages added for review")
             }
             }
         }.onFailure { error ->
@@ -550,8 +573,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         initialSharedUri?.let { uri ->
             runCatching {
                 val item = OfficialDocumentImportAdapter(context).import(uri, "Gmail attachment")
-                saveImported(item, uri)
-                status = "Shared attachment added for review"
+                status = importMessage(saveImported(item, uri), "Shared attachment added for review")
             }
                 .onFailure { status = "Shared attachment could not be read: ${it.message ?: it.javaClass.simpleName}" }
         }
@@ -719,6 +741,74 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         }
     }
 
+    // --- Reminders: rebuilt whenever tasks or reminder settings change (alarms only, nothing is sent anywhere). ---
+    LaunchedEffect(allTasks, settingsVersion) {
+        delay(800) // let quick successive edits settle
+        Reminders.rescheduleAll(context)
+    }
+    var notificationResult by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        notificationResult?.invoke(granted); notificationResult = null
+    }
+    fun requestNotifications(onResult: (Boolean) -> Unit) {
+        if (Reminders.hasPermission(context)) { onResult(true); return }
+        notificationResult = onResult
+        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    // --- Encrypted backup and restore ---
+    val backupManager = remember { BackupManager(context, dao) }
+    var backupBusy by remember { mutableStateOf<String?>(null) }
+    var backupPasswordFor by remember { mutableStateOf<String?>(null) } // "create" | "restore"
+    var backupPassword by remember { mutableStateOf<CharArray?>(null) }
+    var restoreFile by remember { mutableStateOf<ByteArray?>(null) }
+    var restoreCandidate by remember { mutableStateOf<ParsedBackup?>(null) }
+    fun wipe(password: CharArray?) = password?.fill('\u0000')
+    fun backupError(error: Throwable): String = when (error) {
+        is WrongPasswordException -> "Wrong password, or the backup file is damaged. Nothing was changed."
+        is NotABackupException -> "That file is not a HOD Desk backup. Nothing was changed."
+        is BackupTooNewException -> error.message.orEmpty()
+        is OutOfMemoryError -> "This backup is too large to open on this phone."
+        else -> "Backup failed: ${error.message ?: error.javaClass.simpleName}"
+    }
+    val createBackupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val password = backupPassword
+        backupPassword = null
+        if (uri == null || password == null) { wipe(password); return@rememberLauncherForActivityResult }
+        scope.launch {
+            backupBusy = "Encrypting backup…"
+            runCatching {
+                val (bytes, summary) = backupManager.export(password, BuildConfig.VERSION_NAME)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val out = requireNotNull(context.contentResolver.openOutputStream(uri, "wt")) { "Cannot write to the chosen location" }
+                    out.use { it.write(bytes) }
+                }
+                summary
+            }.onSuccess { summary ->
+                backupManager.markBackedUp()
+                dao.insertAudit(com.hoddesk.app.data.AuditEntryEntity(entityType = "app", entityId = 0, action = "backup_exported", detail = "${summary.sources} items, ${summary.tasks} tasks"))
+                status = "Backup saved: ${summary.sources} items, ${summary.tasks} tasks. Keep the password safe."
+            }.onFailure { status = backupError(it) }
+            wipe(password)
+            backupBusy = null
+            settingsVersion++
+        }
+    }
+    val openBackupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            backupBusy = "Reading backup file…"
+            runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val size = context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+                    require(size < 512L * 1024 * 1024) { "This file is too large to be a HOD Desk backup" }
+                    requireNotNull(context.contentResolver.openInputStream(uri)) { "Cannot open the chosen file" }.use { it.readBytes() }
+                }
+            }.onSuccess { restoreFile = it; backupPasswordFor = "restore" }
+                .onFailure { status = backupError(it) }
+            backupBusy = null
+        }
+    }
     // --- Derived status ---
     val reviewQueue = sources.filter { it.processingStatus !in setOf("deleted", "archived", "completed") && it.body.isNotBlank() && !it.reviewed && !it.isClinical() }
         .sortedWith(compareByDescending<SourceEntity> { it.priorityScore }.thenByDescending { it.capturedAt })
@@ -986,6 +1076,16 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                 )
                 "evaluation" -> EvaluationLabPage(sources = allSources, onBack = ::pop)
                 "howto" -> HowToPage(onBack = ::pop)
+                "reminders" -> RemindersPage(
+                    store = settings, notificationsAllowed = Reminders.hasPermission(context),
+                    onRequestPermission = ::requestNotifications, onChanged = { settingsVersion++ }, onBack = ::pop,
+                )
+                "backup" -> BackupPage(
+                    lastBackupAt = backupManager.lastBackupAt.also { settingsVersion }, busy = backupBusy,
+                    onCreate = { backupPasswordFor = "create" },
+                    onRestore = { openBackupLauncher.launch(arrayOf("*/*")) },
+                    onBack = ::pop,
+                )
                 "vault" -> VaultPage(allSources.filter { it.isClinical() }, onBack = ::pop)
                 "department" -> DepartmentPage(settings, onBack = ::pop, onChanged = { settingsVersion++ })
                 else -> SettingsHome(
@@ -1002,6 +1102,13 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                             aiHealthy = aiHealthy || searchable.isEmpty(), aiLine = if (aiHealthy || searchable.isEmpty()) "Working" else "Check",
                             versionLine = "Psychiatry HOD Desk ${BuildConfig.VERSION_NAME}${if (BuildConfig.DEBUG) " · test build" else ""}",
                             setupDone = listOf(blocks != DeskSettingsStore.DEFAULT_BLOCKS, settings.team.isNotEmpty(), settings.venues.isNotEmpty(), settings.calendarId != null).count { it },
+                            remindersLine = when {
+                                !Reminders.hasPermission(context) && (settings.briefEnabled || settings.dueRemindersEnabled) -> "Blocked"
+                                settings.briefEnabled -> "Brief ${formatMinute(settings.briefMinute)}"
+                                settings.dueRemindersEnabled -> "Due-soon on"
+                                else -> "Off"
+                            },
+                            backupLine = backupManager.lastBackupAt?.let { java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(it)) } ?: "Never",
                         )
                     },
                     onBack = { settingsStack.clear() },
@@ -1100,8 +1207,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
             showNote = false
             scope.launch {
                 try {
-                    saveImported(ImportedSource(title, body, type), null)
-                    status = "Note added for review"
+                    status = importMessage(saveImported(ImportedSource(title, body, type), null), "Note added for review")
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (failure: Exception) { status = "Note could not be saved: ${failure.message ?: failure.javaClass.simpleName}" }
             }
@@ -1124,6 +1230,67 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
             }
         }
         LaunchedEffect(status) { if (status != null) { delay(8_000); status = null } }
+
+        // --- Backup dialogs: password, then (for restore) a clear confirmation before anything is replaced. ---
+        when (backupPasswordFor) {
+            "create" -> PasswordDialog(
+                title = "Choose a backup password",
+                message = "You will need this password to restore. If it is lost, the backup cannot be opened.",
+                action = "Continue", confirm = true, minLength = BackupCodec.MIN_PASSWORD_LENGTH,
+                onDismiss = { backupPasswordFor = null },
+            ) { password ->
+                backupPasswordFor = null
+                wipe(backupPassword)
+                backupPassword = password
+                createBackupLauncher.launch("hod-desk-backup-${LocalDate.now()}.hodbk")
+            }
+            "restore" -> PasswordDialog(
+                title = "Backup password",
+                message = "Enter the password used when this backup was created.",
+                action = "Open", confirm = false, minLength = BackupCodec.MIN_PASSWORD_LENGTH,
+                onDismiss = { backupPasswordFor = null; restoreFile = null },
+            ) { password ->
+                backupPasswordFor = null
+                val file = restoreFile
+                restoreFile = null
+                if (file == null) { wipe(password); return@PasswordDialog }
+                scope.launch {
+                    backupBusy = "Checking backup…"
+                    runCatching { backupManager.read(file, password) }
+                        .onSuccess { restoreCandidate = it }
+                        .onFailure { status = backupError(it) }
+                    wipe(password)
+                    backupBusy = null
+                }
+            }
+        }
+        restoreCandidate?.let { backup ->
+            val s = backup.summary
+            ConfirmDialog(
+                title = "Replace everything on this phone?",
+                message = "Backup from ${java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(s.createdAt))}: " +
+                    "${s.sources} items, ${s.tasks} tasks, ${s.events} events. All current items, tasks and settings on this phone will be replaced. " +
+                    "Events already in your Android calendar are not touched.",
+                confirm = "Restore", destructive = true,
+                onDismiss = { restoreCandidate = null },
+            ) {
+                restoreCandidate = null
+                scope.launch {
+                    backupBusy = "Restoring…"
+                    pendingDelete = null // an un-committed delete must not run against restored data
+                    proposals = emptyList()
+                    runCatching { backupManager.restore(backup) }
+                        .onSuccess {
+                            settingsVersion++
+                            openTaskId = null
+                            Reminders.rescheduleAll(context)
+                            status = "Restored ${s.sources} items and ${s.tasks} tasks. Rebuilding search on this phone…"
+                        }
+                        .onFailure { status = "Restore failed; nothing was changed. ${it.message.orEmpty()}" }
+                    backupBusy = null
+                }
+            }
+        }
     }
     BackHandler(enabled = tab != TAB_TODAY && openTaskId == null && settingsStack.isEmpty() && tab != TAB_REVIEW) { tab = TAB_TODAY }
 }

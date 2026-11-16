@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.hoddesk.app.ui.components.HodButton
@@ -57,6 +58,46 @@ fun TextPromptDialog(title: String, label: String, initial: String, confirm: Str
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 HodButton("Cancel", onDismiss, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.weight(1f))
                 HodButton(confirm, { onConfirm(value) }, height = 46.dp, modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+/**
+ * Masked password entry. With [confirm] the password is typed twice and must be at least
+ * [minLength] characters; without it (restore) a single field is shown.
+ */
+@Composable
+fun PasswordDialog(title: String, message: String, action: String, confirm: Boolean, minLength: Int, onDismiss: () -> Unit, onPassword: (CharArray) -> Unit) {
+    var first by remember { mutableStateOf("") }
+    var second by remember { mutableStateOf("") }
+    val c = Hod.colors
+    val problem = when {
+        first.isEmpty() -> null
+        confirm && first.length < minLength -> "Use at least $minLength characters."
+        confirm && second.isNotEmpty() && second != first -> "The two passwords don’t match."
+        else -> null
+    }
+    val ready = first.isNotEmpty() && (!confirm || (first.length >= minLength && second == first))
+    val fieldColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.tint, focusedLabelColor = c.tint, cursorColor = c.tint)
+    Dialog(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(title, style = Hod.type.headline, color = c.label)
+            Text(message, style = Hod.type.footnote, color = c.secondaryLabel)
+            OutlinedTextField(
+                value = first, onValueChange = { first = it }, label = { Text("Password") }, singleLine = true,
+                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                shape = Squircles.small, modifier = Modifier.fillMaxWidth(), colors = fieldColors,
+            )
+            if (confirm) OutlinedTextField(
+                value = second, onValueChange = { second = it }, label = { Text("Type it again") }, singleLine = true,
+                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                shape = Squircles.small, modifier = Modifier.fillMaxWidth(), colors = fieldColors,
+            )
+            problem?.let { Text(it, style = Hod.type.footnote, color = c.redText) }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                HodButton("Cancel", onDismiss, style = HodButtonStyle.Gray, height = 46.dp, modifier = Modifier.weight(1f))
+                HodButton(action, { if (ready) onPassword(first.toCharArray()) }, enabled = ready, height = 46.dp, modifier = Modifier.weight(1f))
             }
         }
     }

@@ -31,6 +31,9 @@ class InstructionModelStore(
     }
 
     private val target = File(context.filesDir, "hoddesk-instruction.litertlm")
+    // Remembers that this exact file (size + modification time) already passed the SHA-256 check,
+    // so app start does not re-hash a multi-gigabyte model every time.
+    private val verified = context.getSharedPreferences("hod_desk_model_verification", Context.MODE_PRIVATE)
 
     fun installedPath(): String? = target.takeIf { isValid(it) }?.absolutePath
 
@@ -72,7 +75,9 @@ class InstructionModelStore(
                     "Configured model is not an instruction LLM"
                 }
             }
+            ReasoningEngineHolder.release()
             java.nio.file.Files.move(part.toPath(), target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            rememberVerified(target)
             Log.i(TAG, "instruction_model_installed_bytes=${target.length()}")
             target.absolutePath
         } finally {
@@ -83,7 +88,17 @@ class InstructionModelStore(
 
     private fun isValid(file: File): Boolean {
         if (!file.isFile || file.length() < MIN_BYTES) return false
-        return !expectedSha256.isNullOrBlank() && sha256(file).equals(expectedSha256, ignoreCase = true)
+        if (expectedSha256.isNullOrBlank()) return false
+        if (file == target && verified.getString("marker", null) == marker(file)) return true
+        val ok = sha256(file).equals(expectedSha256, ignoreCase = true)
+        if (ok && file == target) rememberVerified(file)
+        return ok
+    }
+
+    private fun marker(file: File): String = "${expectedSha256!!.lowercase()}|${file.length()}|${file.lastModified()}"
+
+    private fun rememberVerified(file: File) {
+        if (!expectedSha256.isNullOrBlank()) verified.edit().putString("marker", marker(file)).apply()
     }
 
     private fun sha256(file: File): String {

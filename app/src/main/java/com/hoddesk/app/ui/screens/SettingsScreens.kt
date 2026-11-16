@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apartment
 import androidx.compose.material.icons.rounded.Assessment
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Chat
@@ -101,6 +103,8 @@ data class SettingsSummary(
     val aiLine: String,
     val versionLine: String,
     val setupDone: Int,
+    val remindersLine: String = "Off",
+    val backupLine: String = "Never",
 )
 
 @Composable
@@ -142,8 +146,12 @@ fun SettingsHome(summary: SettingsSummary, onBack: () -> Unit, onOpen: (String) 
             ListRow("Working Hours", icon = Icons.Rounded.Schedule, iconColor = c.green, value = summary.workday, chevron = true, onClick = { onOpen("workday") })
             RowDivider(58.dp)
             ListRow("Keep Free", icon = Icons.Rounded.Schedule, iconColor = c.gray, value = "${summary.slackPercent}%", chevron = true, onClick = { onOpen("slack") })
+            RowDivider(58.dp)
+            ListRow("Reminders", icon = Icons.Rounded.NotificationsActive, iconColor = c.orange, value = summary.remindersLine, chevron = true, onClick = { onOpen("reminders") })
         }
         GroupedSection(header = "Privacy & Security") {
+            ListRow("Backup & Restore", icon = Icons.Rounded.Backup, iconColor = c.indigo, value = summary.backupLine, chevron = true, onClick = { onOpen("backup") })
+            RowDivider(58.dp)
             ListRow("Privacy & Data", icon = Icons.Rounded.Lock, iconColor = c.green, value = "On this phone", chevron = true, onClick = { onOpen("privacy") })
             RowDivider(58.dp)
             ListRow("Clinical Vault", icon = Icons.Rounded.Shield, iconColor = c.label, value = "${summary.clinicalCount}", chevron = true, onClick = { onOpen("vault") })
@@ -379,3 +387,96 @@ fun VaultPage(items: List<SourceEntity>, onBack: () -> Unit) {
 }
 
 fun workdayLine(start: Int, end: Int): String = "${formatMinute(start)} – ${formatMinute(end)}"
+
+/** Morning brief and due-soon alerts. Both are off until the HOD turns them on. */
+@Composable
+fun RemindersPage(
+    store: com.hoddesk.app.settings.DeskSettingsStore,
+    notificationsAllowed: Boolean,
+    onRequestPermission: (onResult: (Boolean) -> Unit) -> Unit,
+    onChanged: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val c = Hod.colors
+    var brief by remember { mutableStateOf(store.briefEnabled && notificationsAllowed) }
+    var briefMinute by remember { mutableStateOf(store.briefMinute) }
+    var due by remember { mutableStateOf(store.dueRemindersEnabled && notificationsAllowed) }
+    var lead by remember { mutableStateOf(store.dueLeadMinutes) }
+    var pickTime by remember { mutableStateOf(false) }
+    var pickLead by remember { mutableStateOf(false) }
+    var blocked by remember { mutableStateOf(false) }
+    fun turnOn(apply: () -> Unit) {
+        if (notificationsAllowed) apply() else onRequestPermission { granted -> if (granted) apply() else blocked = true }
+    }
+    fun leadLabel(m: Int) = if (m % 60 == 0) "${m / 60} hour${if (m == 60) "" else "s"} before" else "$m minutes before"
+    SettingsPage("Reminders", "Settings", onBack) {
+        Text("Reminders are created on this phone. Their text is hidden on the lock screen.", style = Hod.type.subheadline, color = c.secondaryLabel, modifier = Modifier.padding(horizontal = 4.dp))
+        GroupedSection(header = "Morning brief", footer = "One notification a day with what is overdue, due today, waiting for review and today’s meetings.") {
+            SwitchRow("Morning brief", brief, { on ->
+                if (on) turnOn { brief = true; store.briefEnabled = true; onChanged() } else { brief = false; store.briefEnabled = false; onChanged() }
+            })
+            if (brief) {
+                RowDivider()
+                ListRow("Time", value = formatMinute(briefMinute), chevron = true, onClick = { pickTime = true })
+            }
+        }
+        GroupedSection(header = "Tasks", footer = "Only open tasks with a due time. Done or rescheduled tasks never ring.") {
+            SwitchRow("Due-soon alerts", due, { on ->
+                if (on) turnOn { due = true; store.dueRemindersEnabled = true; onChanged() } else { due = false; store.dueRemindersEnabled = false; onChanged() }
+            })
+            if (due) {
+                RowDivider()
+                ListRow("Alert me", value = leadLabel(lead), chevron = true, onClick = { pickLead = true })
+            }
+        }
+        if (blocked) Text(
+            "Notifications are turned off for HOD Desk. Allow them in Android Settings › Apps › Psychiatry HOD Desk › Notifications, then try again.",
+            style = Hod.type.footnote, color = c.orangeText, modifier = Modifier.padding(horizontal = 4.dp),
+        )
+    }
+    if (pickTime) TimeDialog("Brief time", briefMinute, onDismiss = { pickTime = false }) { m ->
+        briefMinute = m; store.briefMinute = m; pickTime = false; onChanged()
+    }
+    if (pickLead) SheetDialog({ pickLead = false }) {
+        com.hoddesk.app.ui.components.ActionSheetContent(
+            "Alert me before a task is due", null,
+            listOf(15, 30, 60, 120, 24 * 60).map { m ->
+                com.hoddesk.app.ui.components.SheetAction(if (m == 24 * 60) "1 day before" else leadLabel(m), emphasized = m == lead) {
+                    lead = m; store.dueLeadMinutes = m; pickLead = false; onChanged()
+                }
+            },
+            onCancel = { pickLead = false },
+        )
+    }
+}
+
+/** Password-encrypted backup the HOD saves where they choose, and restore from it. */
+@Composable
+fun BackupPage(lastBackupAt: Long?, busy: String?, onCreate: () -> Unit, onRestore: () -> Unit, onBack: () -> Unit) {
+    val c = Hod.colors
+    SettingsPage("Backup & Restore", "Settings", onBack) {
+        Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Your data lives only on this phone", style = Hod.type.headline, color = c.label)
+            Text(
+                "If the phone is lost or replaced, everything is gone unless you keep a backup. A backup is one file locked with a password you choose. Save it to a place you trust — a USB drive, your computer, or your own cloud storage.",
+                style = Hod.type.subheadline, color = c.secondaryLabel,
+            )
+            Text(
+                "Last backup: " + (lastBackupAt?.let { java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(it)) } ?: "never"),
+                style = Hod.type.footnote.copy(fontWeight = FontWeight.SemiBold), color = if (lastBackupAt == null) c.orangeText else c.greenText,
+            )
+        }
+        HodButton("Create Encrypted Backup", onCreate, modifier = Modifier.fillMaxWidth(), enabled = busy == null)
+        HodButton("Restore from Backup…", onRestore, style = HodButtonStyle.Gray, modifier = Modifier.fillMaxWidth(), enabled = busy == null)
+        busy?.let { Text(it, style = Hod.type.footnote, color = c.secondaryLabel, modifier = Modifier.padding(horizontal = 4.dp)) }
+        GroupedSection(header = "Good to know") {
+            Text(
+                "• If you forget the password, the backup cannot be opened by anyone, including you.\n" +
+                    "• The backup includes clinical vault items, tasks, settings and the activity log.\n" +
+                    "• Restoring replaces everything currently on this phone. Search is rebuilt afterwards.\n" +
+                    "• Calendar events already in your Android calendar are not touched; choose your calendar again after restoring on a new phone.",
+                style = Hod.type.footnote, color = c.secondaryLabel, modifier = Modifier.padding(16.dp),
+            )
+        }
+    }
+}

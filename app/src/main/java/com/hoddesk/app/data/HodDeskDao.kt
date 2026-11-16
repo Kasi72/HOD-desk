@@ -523,6 +523,48 @@ interface HodDeskDao {
         clearSourceRelations(); deleteAllActionPoints(); deleteAllReasoningRuns(); deleteAllSources()
     }
 
+    // --- Backup / restore: full-table reads and id-preserving writes. ---
+    @Query("SELECT * FROM sources ORDER BY id") suspend fun allSources(): List<SourceEntity>
+    @Query("SELECT * FROM tasks ORDER BY id") suspend fun allTasks(): List<TaskEntity>
+    @Query("SELECT * FROM events ORDER BY id") suspend fun allEvents(): List<EventEntity>
+    @Query("SELECT * FROM evidence ORDER BY id") suspend fun allEvidence(): List<EvidenceEntity>
+    @Query("SELECT * FROM action_points ORDER BY id") suspend fun allActionPoints(): List<ActionPointEntity>
+    @Query("SELECT * FROM reasoning_runs ORDER BY id") suspend fun allReasoningRuns(): List<ReasoningRunEntity>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSources(items: List<SourceEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertTasks(items: List<TaskEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertEvents(items: List<EventEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertEvidenceItems(items: List<EvidenceEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertReasoningRuns(items: List<ReasoningRunEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertAuditEntries(items: List<AuditEntryEntity>)
+    @Query("DELETE FROM audit_entries") suspend fun deleteAllAudit()
+    @Query("SELECT * FROM commitments ORDER BY id") suspend fun allCommitments(): List<CommitmentEntity>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertCommitments(items: List<CommitmentEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertLearningCorrections(items: List<LearningCorrectionEntity>)
+
+    /**
+     * Replaces everything with a decrypted backup in one transaction: either all of it lands or nothing changes.
+     * Search vectors are not restored; they are rebuilt on the phone afterwards.
+     */
+    @Transaction
+    suspend fun replaceAllData(
+        sources: List<SourceEntity>, tasks: List<TaskEntity>, events: List<EventEntity>, evidence: List<EvidenceEntity>,
+        actionPoints: List<ActionPointEntity>, reasoningRuns: List<ReasoningRunEntity>, relations: List<SourceRelationEntity>,
+        audit: List<AuditEntryEntity>, commitments: List<CommitmentEntity>, learningCorrections: List<LearningCorrectionEntity>,
+    ) {
+        deleteAllWorkData()
+        deleteAllAudit()
+        if (sources.isNotEmpty()) insertSources(sources)
+        if (tasks.isNotEmpty()) insertTasks(tasks)
+        if (events.isNotEmpty()) insertEvents(events)
+        if (evidence.isNotEmpty()) insertEvidenceItems(evidence)
+        if (actionPoints.isNotEmpty()) insertActionPoints(actionPoints)
+        if (reasoningRuns.isNotEmpty()) insertReasoningRuns(reasoningRuns)
+        if (relations.isNotEmpty()) insertSourceRelations(relations)
+        if (audit.isNotEmpty()) insertAuditEntries(audit)
+        if (commitments.isNotEmpty()) insertCommitments(commitments)
+        if (learningCorrections.isNotEmpty()) insertLearningCorrections(learningCorrections)
+    }
+
     @Transaction
     suspend fun deleteTaskCascade(taskId: Long) {
         deleteEvidenceForTask(taskId)
