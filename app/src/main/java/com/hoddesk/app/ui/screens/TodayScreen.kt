@@ -202,7 +202,7 @@ fun TodayScreen(
                     BriefCard(
                         icon = look.icon,
                         iconColor = look.color,
-                        label = "Needs review" + (item.source.priorityReasons?.let { " · $it" } ?: ""),
+                        label = (listOf("Needs review") + com.hoddesk.app.triage.PriorityReasons.humanize(item.source.priorityReasons).take(2)).joinToString(" · "),
                         labelColor = c.orangeText,
                         title = item.headline,
                         subtitle = cleanEvidence(item.source.body).lineSequence().firstOrNull { it.isNotBlank() }.orEmpty(),
