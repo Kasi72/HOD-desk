@@ -1,6 +1,15 @@
 package com.hoddesk.app.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,8 +45,6 @@ import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -149,28 +156,78 @@ fun ListRow(
     }
 }
 
+/**
+ * Settings row with a trailing switch. The whole row toggles (larger target, one announcement for
+ * TalkBack: "title, switch, on"), with no row highlight, as in iOS Settings.
+ */
 @Composable
 fun SwitchRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, subtitle: String? = null, icon: ImageVector? = null, iconColor: Color = Hod.colors.tint, enabled: Boolean = true) {
-    ListRow(title = title, subtitle = subtitle, icon = icon, iconColor = iconColor) {
-        IosSwitch(checked, onCheckedChange, enabled)
+    val source = remember { MutableInteractionSource() }
+    val haptics = LocalHapticFeedback.current
+    ListRow(
+        title = title, subtitle = subtitle, icon = icon, iconColor = iconColor,
+        titleColor = if (enabled) Hod.colors.label else Hod.colors.tertiaryLabel,
+        modifier = Modifier.toggleable(value = checked, enabled = enabled, role = Role.Switch, interactionSource = source, indication = null) {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onCheckedChange(it)
+        },
+    ) {
+        IosSwitch(checked, onCheckedChange = null, enabled = enabled, interactionSource = source)
     }
 }
 
+/**
+ * iOS switch: 51 × 31 track, 27 dp white thumb with a soft shadow, spring travel, and the thumb
+ * stretching while pressed. Pass [onCheckedChange] = null when a parent row handles the toggle;
+ * give that row's [interactionSource] so the press-stretch still shows.
+ */
 @Composable
-fun IosSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true) {
-    Switch(
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        enabled = enabled,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = Color.White,
-            checkedTrackColor = Hod.colors.green,
-            checkedBorderColor = Color.Transparent,
-            uncheckedThumbColor = Color.White,
-            uncheckedTrackColor = Hod.colors.fill,
-            uncheckedBorderColor = Color.Transparent,
-        ),
-    )
+fun IosSwitch(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    interactionSource: MutableInteractionSource? = null,
+) {
+    val c = Hod.colors
+    val source = interactionSource ?: remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val haptics = LocalHapticFeedback.current
+    val track by animateColorAsState(if (checked) c.green else c.switchOff, tween(220), label = "switchTrack")
+    val thumbWidth by animateDpAsState(if (pressed && enabled) 34.dp else 27.dp, spring(stiffness = Spring.StiffnessMediumLow), label = "switchThumbWidth")
+    val travel = 51.dp - 4.dp - thumbWidth
+    val thumbX by animateDpAsState(if (checked) travel else 0.dp, spring(dampingRatio = 0.72f, stiffness = 520f), label = "switchThumbX")
+    val toggle = if (onCheckedChange != null) Modifier.toggleable(value = checked, enabled = enabled, role = Role.Switch, interactionSource = source, indication = null) {
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        onCheckedChange(it)
+    } else Modifier
+    Box(
+        modifier.size(width = 51.dp, height = 31.dp).alpha(if (enabled) 1f else 0.45f).clip(CircleShape).background(track).then(toggle).padding(2.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(
+            Modifier.offset(x = thumbX).size(width = thumbWidth, height = 27.dp)
+                .shadow(elevation = 2.5.dp, shape = CircleShape, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.22f))
+                .background(Color.White, CircleShape),
+        )
+    }
+}
+
+/** iOS feature header: large icon tile, title and a short explanation, centred in a card. */
+@Composable
+fun SettingsHeaderCard(icon: ImageVector, color: Color, title: String, text: String, modifier: Modifier = Modifier, footer: (@Composable ColumnScope.() -> Unit)? = null) {
+    val c = Hod.colors
+    Column(
+        modifier.fillMaxWidth().then(Neu.card(shape = Squircles.card)).clip(Squircles.card).background(c.surface).padding(horizontal = 22.dp, vertical = 22.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        IconTile(icon, color, size = 58.dp)
+        Spacer(Modifier.height(4.dp))
+        Text(title, style = Hod.type.title3, color = c.label, textAlign = TextAlign.Center)
+        Text(text, style = Hod.type.subheadline, color = c.secondaryLabel, textAlign = TextAlign.Center)
+        footer?.invoke(this)
+    }
 }
 
 /** Tinted status pill. Always carries a word, never colour alone. */
