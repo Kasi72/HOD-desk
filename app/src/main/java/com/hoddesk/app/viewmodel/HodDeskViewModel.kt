@@ -61,7 +61,7 @@ class HodDeskViewModel(private val repository: HodDeskRepository) : ViewModel() 
     fun updateActionPoint(point: ActionPointEntity) = launchSafe("update_action_point_failed") { repository.updateActionPoint(point) }
     fun approveEditedAction(point: ActionPointEntity?, sourceId: Long, project: String, action: String, assignee: String? = null) = launchSafe("approve_edited_action_failed") {
         repository.approveEditedAction(point, sourceId, project, action,
-            dueAt = point?.let { ActionDueParser.parseIfUnambiguous(it.dateText, it.timeText, it.ambiguity) }, assignee = assignee)
+            dueAt = com.hoddesk.app.reasoning.ReviewApprovalPolicy.dueAt(point), assignee = assignee)
     }
     // Review awaits the durable transition. Failures stay visible instead of optimistically
     // dismissing a candidate while a fire-and-forget Job is still pending.

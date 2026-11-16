@@ -21,5 +21,17 @@ object ReviewApprovalPolicy {
             status = if (confirmed || point.ambiguity.isNullOrBlank()) "needs_review" else "needs_confirmation")
     }
 
-    fun dueAt(point: ActionPointEntity?): Long? = point?.let { ActionDueParser.parseIfUnambiguous(it.dateText, it.timeText, it.ambiguity) }
+    /**
+     * The instant an approval schedules. Reads the deadline wording around the stated date: a date-only
+     * "before X" falls due the day before X, and an explicit IST/UTC in the source sets the zone.
+     */
+    fun dueAt(point: ActionPointEntity?, default: java.time.ZoneId = java.time.ZoneId.systemDefault(), now: Long = System.currentTimeMillis()): Long? {
+        val p = point ?: return null
+        val zone = DeadlineSemantics.zone(p.evidence, default)
+        val raw = ActionDueParser.parseIfUnambiguous(p.dateText, p.timeText, p.ambiguity, zone, now) ?: return null
+        val reading = DeadlineSemantics.read(p.evidence, p.dateText)
+        val stated = java.time.Instant.ofEpochMilli(raw).atZone(zone)
+        val due = DeadlineSemantics.dueDate(stated.toLocalDate(), reading, hasTime = !p.timeText.isNullOrBlank())
+        return stated.with(due).toInstant().toEpochMilli()
+    }
 }
