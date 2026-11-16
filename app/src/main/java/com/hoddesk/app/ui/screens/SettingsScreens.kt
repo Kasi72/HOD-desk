@@ -105,6 +105,7 @@ data class SettingsSummary(
     val setupDone: Int,
     val remindersLine: String = "Off",
     val backupLine: String = "Never",
+    val autoLockLine: String = "5 min",
 )
 
 @Composable
@@ -150,6 +151,8 @@ fun SettingsHome(summary: SettingsSummary, onBack: () -> Unit, onOpen: (String) 
             ListRow("Reminders", icon = Icons.Rounded.NotificationsActive, iconColor = c.orange, value = summary.remindersLine, chevron = true, onClick = { onOpen("reminders") })
         }
         GroupedSection(header = "Privacy & Security") {
+            ListRow("Auto-Lock", icon = Icons.Rounded.Lock, iconColor = c.blue, value = summary.autoLockLine, chevron = true, onClick = { onOpen("autolock") })
+            RowDivider(58.dp)
             ListRow("Backup & Restore", icon = Icons.Rounded.Backup, iconColor = c.indigo, value = summary.backupLine, chevron = true, onClick = { onOpen("backup") })
             RowDivider(58.dp)
             ListRow("Privacy & Data", icon = Icons.Rounded.Lock, iconColor = c.green, value = "On this phone", chevron = true, onClick = { onOpen("privacy") })
@@ -446,6 +449,43 @@ fun RemindersPage(
                 }
             },
             onCancel = { pickLead = false },
+        )
+    }
+}
+
+/** Auto-lock: asks for the phone's own screen lock after the app has been away. */
+@Composable
+fun AutoLockPage(store: com.hoddesk.app.settings.DeskSettingsStore, deviceSecure: Boolean, onChanged: () -> Unit, onBack: () -> Unit) {
+    val c = Hod.colors
+    var enabled by remember { mutableStateOf(store.autoLockEnabled) }
+    var minutes by remember { mutableStateOf(store.autoLockMinutes) }
+    var pick by remember { mutableStateOf(false) }
+    SettingsPage("Auto-Lock", "Settings", onBack) {
+        Text(
+            "When HOD Desk has been away from the screen for a while, it covers itself and asks for your fingerprint, face or screen lock before showing anything.",
+            style = Hod.type.subheadline, color = c.secondaryLabel, modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        GroupedSection(footer = "Nothing you were doing is lost; it is hidden until you unlock.") {
+            SwitchRow("Lock HOD Desk", enabled, { on -> enabled = on; store.autoLockEnabled = on; onChanged() })
+            if (enabled) {
+                RowDivider()
+                ListRow("Lock", value = com.hoddesk.app.security.AppLockPolicy.timeoutLabel(minutes), chevron = true, onClick = { pick = true })
+            }
+        }
+        if (enabled && !deviceSecure) Text(
+            "This phone has no screen lock, so HOD Desk cannot lock itself. Set one in Android Settings › Security › Screen lock.",
+            style = Hod.type.footnote, color = c.orangeText, modifier = Modifier.padding(horizontal = 4.dp),
+        )
+    }
+    if (pick) SheetDialog({ pick = false }) {
+        com.hoddesk.app.ui.components.ActionSheetContent(
+            "Lock HOD Desk", null,
+            com.hoddesk.app.security.AppLockPolicy.TIMEOUT_CHOICES.map { m ->
+                com.hoddesk.app.ui.components.SheetAction(com.hoddesk.app.security.AppLockPolicy.timeoutLabel(m), emphasized = m == minutes) {
+                    minutes = m; store.autoLockMinutes = m; pick = false; onChanged()
+                }
+            },
+            onCancel = { pick = false },
         )
     }
 }

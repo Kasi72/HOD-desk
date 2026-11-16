@@ -35,6 +35,9 @@ class InstructionModelStore(
     // so app start does not re-hash a multi-gigabyte model every time.
     private val verified = context.getSharedPreferences("hod_desk_model_verification", Context.MODE_PRIVATE)
 
+    /** True after an installed model was removed because it failed its check (for example after a model update). */
+    val needsDownload: Boolean get() = verified.getBoolean("needs_download", false)
+
     fun installedPath(): String? = target.takeIf { isValid(it) }?.absolutePath
 
     suspend fun install(onProgress: (Int) -> Unit = {}): String = withContext(Dispatchers.IO) { installLock.withLock {
@@ -90,15 +93,22 @@ class InstructionModelStore(
         if (!file.isFile || file.length() < MIN_BYTES) return false
         if (expectedSha256.isNullOrBlank()) return false
         if (file == target && verified.getString("marker", null) == marker(file)) return true
+        val before = file.length() to file.lastModified()
         val ok = sha256(file).equals(expectedSha256, ignoreCase = true)
-        if (ok && file == target) rememberVerified(file)
+        // Act only on the exact file that was hashed; an install may have replaced it meanwhile.
+        if (file == target && before == (file.length() to file.lastModified())) {
+            if (ok) rememberVerified(file)
+            // A previously approved model (e.g. after a model switch) or a corrupt file can never be used;
+            // remove it so it does not occupy gigabytes or get re-hashed at every start.
+            else { Log.i(TAG, "instruction_model_removed_checksum_mismatch"); file.delete(); verified.edit().remove("marker").putBoolean("needs_download", true).apply() }
+        }
         return ok
     }
 
     private fun marker(file: File): String = "${expectedSha256!!.lowercase()}|${file.length()}|${file.lastModified()}"
 
     private fun rememberVerified(file: File) {
-        if (!expectedSha256.isNullOrBlank()) verified.edit().putString("marker", marker(file)).apply()
+        if (!expectedSha256.isNullOrBlank()) verified.edit().putString("marker", marker(file)).putBoolean("needs_download", false).apply()
     }
 
     private fun sha256(file: File): String {

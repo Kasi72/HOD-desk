@@ -97,6 +97,15 @@ class DeskSettingsStore(context: Context) {
         get() = prefs.getInt("due_lead_minutes", 60)
         set(value) = prefs.edit().putInt("due_lead_minutes", value.coerceIn(5, 24 * 60)).apply()
 
+    /** Ask for the phone's screen lock after the app has been away for [autoLockMinutes]. On by default. */
+    var autoLockEnabled: Boolean
+        get() = prefs.getBoolean("auto_lock_enabled", true)
+        set(value) = prefs.edit().putBoolean("auto_lock_enabled", value).apply()
+
+    var autoLockMinutes: Int
+        get() = prefs.getInt("auto_lock_minutes", 5)
+        set(value) = prefs.edit().putInt("auto_lock_minutes", value.coerceIn(0, 60)).apply()
+
     fun blocksOn(day: DayOfWeek): List<FixedBlock> = fixedBlocks.filter { day in it.days }.sortedBy { it.startMinute }
 
     private fun parseBlocks(raw: String): List<FixedBlock>? = runCatching {

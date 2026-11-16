@@ -87,6 +87,9 @@ fun TodayScreen(
     onDeviceHealthy: Boolean,
     status: String?,
     onDismissStatus: () -> Unit,
+    healthIssues: List<com.hoddesk.app.health.SystemHealth.Issue> = emptyList(),
+    onHealthFix: (com.hoddesk.app.health.SystemHealth.Issue) -> Unit = {},
+    onDismissHealth: (com.hoddesk.app.health.SystemHealth.Issue) -> Unit = {},
     onOpenSettings: () -> Unit,
     onSearch: () -> Unit,
     onOpenReview: (SourceEntity?) -> Unit,
@@ -127,6 +130,17 @@ fun TodayScreen(
                 Icon(Icons.Rounded.Lock, null, tint = if (onDeviceHealthy) c.greenText else c.orangeText, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(onDeviceLine, style = Hod.type.footnote, color = c.secondaryLabel)
+            }
+        }
+        healthIssues.forEach { issue ->
+            item(key = "health_${issue.id}") {
+                val blocked = issue.severity == com.hoddesk.app.health.SystemHealth.Severity.BLOCKED
+                Banner(
+                    issue.title, issue.message, if (blocked) BannerTone.Blocked else BannerTone.Attention,
+                    actionLabel = issue.fixLabel, onAction = issue.fixLabel?.let { { onHealthFix(issue) } },
+                    // A storage failure must stay visible; everything else can be put aside for this session.
+                    onDismiss = if (blocked) null else ({ onDismissHealth(issue) }),
+                )
             }
         }
         status?.let { item { Banner("Import", it, BannerTone.Info, onDismiss = onDismissStatus) } }

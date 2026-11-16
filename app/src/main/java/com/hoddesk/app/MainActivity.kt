@@ -12,6 +12,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.CalendarContract
+import android.provider.Settings
+import com.hoddesk.app.health.SystemHealth
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -122,6 +124,7 @@ import com.hoddesk.app.ui.screens.BackupPage
 import com.hoddesk.app.ui.screens.ConfirmDialog
 import com.hoddesk.app.ui.screens.PasswordDialog
 import com.hoddesk.app.ui.screens.RemindersPage
+import com.hoddesk.app.ui.screens.AutoLockPage
 import com.hoddesk.app.ui.screens.AiStatus
 import com.hoddesk.app.ui.screens.CalendarScreen
 import com.hoddesk.app.ui.screens.CaptureKind
@@ -171,7 +174,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val sharedUri = if (intent?.action == Intent.ACTION_SEND) intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) else null
-        setContent { HodTheme { HODDeskApp(sharedUri) } }
+        setContent { HodTheme { com.hoddesk.app.security.AppLockGate { HODDeskApp(sharedUri) } } }
     }
 }
 
@@ -196,8 +199,11 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
     val embeddingRuntime = remember { EmbeddingGemmaLiteRtRuntime(context) }
     val instructionModelStore = remember { InstructionModelStore(context, BuildConfig.INSTRUCTION_MODEL_URL, BuildConfig.INSTRUCTION_MODEL_SHA256.ifBlank { null }) }
     var installedInstructionModel by remember { mutableStateOf<String?>(null) }
+    /** Bumped whenever something the start-up self-check looks at may have changed. */
+    var healthEpoch by remember { mutableIntStateOf(0) }
     LaunchedEffect(instructionModelStore) {
         installedInstructionModel = withContext(Dispatchers.IO) { instructionModelStore.installedPath() }
+        healthEpoch++
     }
     val semanticIndexer = remember { SourceSemanticIndexer(dao, embeddingRuntime) }
     val audioRuntime = remember { OfflineAudioTranscriptionRuntime(context) }
@@ -741,6 +747,46 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
         }
     }
 
+    // --- Start-up self-check: one plain banner per broken part, re-checked whenever the app comes back. ---
+    var databaseOk by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(database) {
+        databaseOk = withContext(Dispatchers.IO) {
+            runCatching {
+                database.openHelper.readableDatabase.query("PRAGMA quick_check").use { c -> c.moveToFirst() && c.getString(0).equals("ok", ignoreCase = true) }
+            }.onFailure { Log.e("HOD_HEALTH", "database_check_failed", it) }.getOrDefault(false)
+        }
+    }
+    val healthLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(healthLifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event -> if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) healthEpoch++ }
+        healthLifecycle.lifecycle.addObserver(observer)
+        onDispose { healthLifecycle.lifecycle.removeObserver(observer) }
+    }
+    var dismissedHealth by remember { mutableStateOf(setOf<String>()) }
+    val healthIssues = remember(databaseOk, healthEpoch, settingsVersion, installedInstructionModel) {
+        SystemHealth.check(SystemHealth.Snapshot(
+            databaseOk = databaseOk,
+            calendarChosen = settings.calendarId != null,
+            calendarPermission = hasCalendarPermission(),
+            remindersOn = settings.briefEnabled || settings.dueRemindersEnabled,
+            notificationPermission = Reminders.hasPermission(context),
+            autoLockOn = settings.autoLockEnabled,
+            deviceSecure = com.hoddesk.app.security.AppLockState(context).deviceSecure,
+            freeBytes = runCatching { context.filesDir.usableSpace }.getOrDefault(-1L),
+            reasoningModelNeedsDownload = installedInstructionModel == null && instructionModelStore.needsDownload,
+        ))
+    }.filter { it.id !in dismissedHealth }
+    fun fixHealth(issue: SystemHealth.Issue) {
+        when (issue.fix) {
+            SystemHealth.Fix.APP_SETTINGS -> runCatching {
+                context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+            SystemHealth.Fix.SECURITY_SETTINGS -> runCatching { context.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            SystemHealth.Fix.AI_SETTINGS -> { settingsStack.clear(); settingsStack += "home"; settingsStack += "ai" }
+            SystemHealth.Fix.NONE -> Unit
+        }
+    }
+
     // --- Reminders: rebuilt whenever tasks or reminder settings change (alarms only, nothing is sent anywhere). ---
     LaunchedEffect(allTasks, settingsVersion) {
         delay(800) // let quick successive edits settle
@@ -840,6 +886,8 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     sources = sources, tasks = tasks, todayEvents = todayEvents.filter { it.id !in hiddenEvents }, commitments = commitments, todayBlocks = todayBlocks,
                     onDeviceLine = "On this phone · $embeddingLine", onDeviceHealthy = aiHealthy || searchable.isEmpty(),
                     status = null, onDismissStatus = {},
+                    healthIssues = healthIssues, onHealthFix = ::fixHealth,
+                    onDismissHealth = { issue -> dismissedHealth = dismissedHealth + issue.id },
                     onOpenSettings = { settingsStack.clear(); settingsStack += "home" },
                     onSearch = { tab = TAB_LIBRARY },
                     onOpenReview = { s -> reviewStartId = s?.id; tab = TAB_REVIEW },
@@ -973,7 +1021,7 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                             scope.launch {
                                 reasoningProgress = 0
                                 runCatching { instructionModelStore.install { p -> reasoningProgress = p } }
-                                    .onSuccess { installedInstructionModel = it; status = "Deeper understanding installed." }
+                                    .onSuccess { installedInstructionModel = it; healthEpoch++; status = "Deeper understanding installed." }
                                     .onFailure { status = "Install failed: ${it.message ?: it.javaClass.simpleName}" }
                                 reasoningProgress = null
                             }
@@ -1080,6 +1128,10 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                     store = settings, notificationsAllowed = Reminders.hasPermission(context),
                     onRequestPermission = ::requestNotifications, onChanged = { settingsVersion++ }, onBack = ::pop,
                 )
+                "autolock" -> AutoLockPage(
+                    store = settings, deviceSecure = remember { com.hoddesk.app.security.AppLockState(context) }.deviceSecure,
+                    onChanged = { settingsVersion++ }, onBack = ::pop,
+                )
                 "backup" -> BackupPage(
                     lastBackupAt = backupManager.lastBackupAt.also { settingsVersion }, busy = backupBusy,
                     onCreate = { backupPasswordFor = "create" },
@@ -1107,6 +1159,11 @@ fun HODDeskApp(initialSharedUri: Uri? = null) {
                                 settings.briefEnabled -> "Brief ${formatMinute(settings.briefMinute)}"
                                 settings.dueRemindersEnabled -> "Due-soon on"
                                 else -> "Off"
+                            },
+                            autoLockLine = when {
+                                !settings.autoLockEnabled -> "Off"
+                                settings.autoLockMinutes == 0 -> "Immediately"
+                                else -> "${settings.autoLockMinutes} min"
                             },
                             backupLine = backupManager.lastBackupAt?.let { java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(it)) } ?: "Never",
                         )

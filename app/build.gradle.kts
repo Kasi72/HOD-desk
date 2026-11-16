@@ -17,8 +17,10 @@ android {
         targetSdk = 35
         versionCode = 2022000
         versionName = "2.22.0"
-        buildConfigField("String", "INSTRUCTION_MODEL_URL", "\"${providers.gradleProperty("hoddeskInstructionModelUrl").orElse("https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4.litertlm?download=true").get()}\"")
-        buildConfigField("String", "INSTRUCTION_MODEL_SHA256", "\"${providers.gradleProperty("hoddeskInstructionModelSha256").orElse("2e67a6cd51dfe0f793431e6bd4ed8d029c88e10f52ca0469ad38445e3cd3c1f4").get()}\"")
+        // Gemma 4 E2B instruction model (Apache 2.0, open download, 2,588,147,712 bytes), pinned to one
+        // repository revision with its published LFS SHA-256. Override both properties to use another approved model.
+        buildConfigField("String", "INSTRUCTION_MODEL_URL", "\"${providers.gradleProperty("hoddeskInstructionModelUrl").orElse("https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/2d74ac41a33d7da82f39f7d5720a04c68514a103/gemma-4-E2B-it.litertlm?download=true").get()}\"")
+        buildConfigField("String", "INSTRUCTION_MODEL_SHA256", "\"${providers.gradleProperty("hoddeskInstructionModelSha256").orElse("181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c").get()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Published LFS content digest for embeddinggemma-2-740m.litertlm (484622336 bytes).
         buildConfigField("String", "EMBEDDING_MODEL_SHA256", "\"${providers.gradleProperty("hoddeskEmbeddingModelSha256").orElse("e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c").get()}\"")
