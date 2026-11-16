@@ -66,6 +66,8 @@ data class HodColors(
     val evidenceMark: Color,
     val evidenceText: Color,
     val hatch: Color,
+    /** Track of a switch that is off (iOS system gray 5 / dark gray 4). */
+    val switchOff: Color = Color(0xFFE9E9EB),
 )
 
 val LightHodColors = HodColors(
@@ -126,6 +128,7 @@ val DarkHodColors = HodColors(
     evidenceMark = Color(0x404FC3B5),
     evidenceText = Color(0xFFB4F0E8),
     hatch = Color(0xFF2C2C2E),
+    switchOff = Color(0xFF39393D),
 )
 
 val LocalHodColors = staticCompositionLocalOf { LightHodColors }

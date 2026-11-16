@@ -41,6 +41,24 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Sort
+import androidx.compose.material.icons.rounded.AccessTime
+import androidx.compose.material.icons.rounded.HourglassBottom
+import androidx.compose.material.icons.rounded.LockClock
+import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.PrivacyTip
+import androidx.compose.material.icons.automirrored.rounded.Reply
+import androidx.compose.material.icons.rounded.Science
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import com.hoddesk.app.ui.components.SearchField
+import com.hoddesk.app.ui.components.SettingsHeaderCard
+import com.hoddesk.app.ui.theme.Neu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -78,14 +96,32 @@ import com.hoddesk.app.ui.theme.Squircles
 import java.text.DateFormat
 import java.util.Date
 
-/** Pushed settings page frame: back bar, large title, scrolling grouped content. */
+/**
+ * Pushed settings page frame, iOS style: back bar, large title that collapses into the bar as the
+ * page scrolls (with a hairline under the bar), and grouped content.
+ */
 @Composable
 fun SettingsPage(title: String, backLabel: String, onBack: () -> Unit, content: @Composable () -> Unit) {
     BackHandler(onBack = onBack)
-    Column(Modifier.fillMaxSize().background(Hod.colors.groupedBackground).statusBarsPadding()) {
-        NavBar(backLabel, onBack)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(start = 18.dp, end = 18.dp, bottom = 64.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            Text(title, style = Hod.type.largeTitle, color = Hod.colors.label, modifier = Modifier.padding(start = 4.dp))
+    val c = Hod.colors
+    val scroll = rememberScrollState()
+    val threshold = with(LocalDensity.current) { 40.dp.toPx() }
+    val collapsed by remember { derivedStateOf { scroll.value > threshold } }
+    val barTitle by animateFloatAsState(if (collapsed) 1f else 0f, tween(180), label = "barTitle")
+    Column(Modifier.fillMaxSize().background(c.groupedBackground).statusBarsPadding()) {
+        Box(Modifier.fillMaxWidth()) {
+            NavBar(backLabel, onBack)
+            Text(
+                title, style = Hod.type.headline, color = c.label, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.align(Alignment.Center).padding(horizontal = 96.dp).alpha(barTitle),
+            )
+        }
+        Box(Modifier.fillMaxWidth().height(0.5.dp).alpha(barTitle).background(c.separator))
+        Column(
+            Modifier.fillMaxSize().verticalScroll(scroll).imePadding().padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 72.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
+            Text(title, style = Hod.type.largeTitle, color = c.label, modifier = Modifier.padding(start = 4.dp).alpha(1f - barTitle))
             content()
         }
     }
@@ -108,73 +144,124 @@ data class SettingsSummary(
     val autoLockLine: String = "5 min",
 )
 
+/** One row on the Settings home screen. [keywords] let search find it by what it does. */
+private data class SettingsEntry(
+    val title: String,
+    val icon: ImageVector,
+    val color: Color,
+    val route: String,
+    val value: String? = null,
+    val valueColor: Color? = null,
+    val keywords: String = "",
+)
+
+private data class SettingsGroup(val header: String?, val entries: List<SettingsEntry>, val footer: String? = null)
+
+@Composable
+private fun settingsGroups(summary: SettingsSummary): List<SettingsGroup> {
+    val c = Hod.colors
+    return listOf(
+        SettingsGroup("Department", listOf(
+            SettingsEntry("Fixed Clinical Time", Icons.Rounded.Apartment, c.tint, "department", summary.blockSummary, keywords = "opd ect teaching ward blocks timetable"),
+            SettingsEntry("Team", Icons.Rounded.Group, c.blue, "department", summary.teamCount.toString(), keywords = "delegate staff residents people"),
+            SettingsEntry("Venues & Travel", Icons.Rounded.Place, c.green, "department", summary.venueCount.toString(), keywords = "travel time collectorate location"),
+            SettingsEntry("Who Outranks Whom", Icons.Rounded.Sort, c.indigo, "department", keywords = "authority priority urgency dme"),
+        )),
+        SettingsGroup("Planning", listOf(
+            SettingsEntry("Write Events To", Icons.Rounded.CalendarMonth, c.red, "calendar", summary.calendarName ?: "Choose", if (summary.calendarName == null) c.tint else null, "calendar google android"),
+            SettingsEntry("Working Hours", Icons.Rounded.AccessTime, c.orange, "workday", summary.workday, keywords = "workday start end office"),
+            SettingsEntry("Keep Free", Icons.Rounded.HourglassBottom, c.gray, "slack", "${summary.slackPercent}%", keywords = "slack buffer interruptions plan my day"),
+        ), footer = "Plan My Day leaves ${summary.slackPercent}% of your working hours free for interruptions and never books over fixed clinical time."),
+        SettingsGroup(null, listOf(
+            SettingsEntry("Reminders", Icons.Rounded.NotificationsActive, c.red, "reminders", summary.remindersLine, if (summary.remindersLine == "Blocked") c.orangeText else null, "notifications morning brief due alerts"),
+        )),
+        SettingsGroup("Privacy & Security", listOf(
+            SettingsEntry("Auto-Lock", Icons.Rounded.LockClock, c.blue, "autolock", summary.autoLockLine, keywords = "fingerprint face lock screen recent apps screenshot privacy"),
+            SettingsEntry("Privacy & Data", Icons.Rounded.PrivacyTip, c.indigo, "privacy", keywords = "consent imports redact retention delete"),
+            SettingsEntry("Clinical Vault", Icons.Rounded.Shield, c.gray, "vault", "${summary.clinicalCount}", keywords = "patients clinical protected"),
+            SettingsEntry("Activity Log", Icons.Rounded.History, c.purple, "activity", keywords = "audit history export"),
+        )),
+        SettingsGroup(null, listOf(
+            SettingsEntry("Backup & Restore", Icons.Rounded.Backup, c.tint, "backup", summary.backupLine, if (summary.backupLine == "Never") c.orangeText else null, "export import encrypted password new phone"),
+        )),
+        SettingsGroup("Assistant", listOf(
+            SettingsEntry("Secretary", Icons.Rounded.Mic, c.purple, "secretary", keywords = "voice ask command"),
+            SettingsEntry("Follow-ups", Icons.AutoMirrored.Rounded.Reply, c.orange, "followups", keywords = "waiting chase pending delegated"),
+            SettingsEntry("Control Centre", Icons.Rounded.Tune, c.gray, "control", keywords = "signals overview dashboard"),
+        )),
+        SettingsGroup("On-Device AI", listOf(
+            SettingsEntry("On-Device AI", Icons.Rounded.AutoAwesome, c.tint, "ai", summary.aiLine, if (summary.aiHealthy) c.greenText else c.orangeText, "gemma model search index download"),
+            SettingsEntry("Evaluation Lab", Icons.Rounded.Science, c.indigo, "evaluation", keywords = "quality test accuracy"),
+        )),
+        SettingsGroup(null, listOf(
+            SettingsEntry("How to Import", Icons.Rounded.HelpOutline, c.blue, "howto", keywords = "help whatsapp gmail share screenshot call"),
+        )),
+    )
+}
+
 @Composable
 fun SettingsHome(summary: SettingsSummary, onBack: () -> Unit, onOpen: (String) -> Unit) {
     val c = Hod.colors
+    var query by remember { mutableStateOf("") }
+    val groups = settingsGroups(summary)
     SettingsPage("Settings", "Today", onBack) {
+        SearchField(query, { query = it }, "Search")
+        val q = query.trim()
+        if (q.isNotEmpty()) {
+            val hits = groups.flatMap { it.entries }.filter { e -> e.title.contains(q, ignoreCase = true) || e.keywords.contains(q, ignoreCase = true) }
+                .distinctBy { it.title }
+            if (hits.isEmpty()) Text("No Results for “$q”", style = Hod.type.body, color = c.secondaryLabel, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 24.dp))
+            else SettingsEntries(hits, onOpen)
+            return@SettingsPage
+        }
+        // Department profile, like the account card at the top of iOS Settings.
         Row(
-            Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).pressable { onOpen("department") }.padding(16.dp),
+            Modifier.fillMaxWidth().then(Neu.card(shape = Squircles.card)).clip(Squircles.card).background(c.surface).pressable { onOpen("department") }.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Box(Modifier.size(60.dp).clip(CircleShape).background(c.tint), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Person, null, tint = c.onTint, modifier = Modifier.size(32.dp)) }
+            Box(Modifier.size(58.dp).clip(CircleShape).background(c.tint), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Person, null, tint = c.onTint, modifier = Modifier.size(32.dp)) }
             Column(Modifier.weight(1f)) {
                 Text("Department Profile", style = Hod.type.title3, color = c.label)
-                Text("${summary.blockSummary} · ${summary.teamCount} team member(s)", style = Hod.type.subheadline, color = c.secondaryLabel)
+                Text("${summary.teamCount} in team · ${summary.venueCount} venues · clinical time", style = Hod.type.subheadline, color = c.secondaryLabel)
             }
             com.hoddesk.app.ui.components.Chevron()
         }
-        if (summary.setupDone < 4) Row(
-            Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).pressable { onOpen("department") }.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            IconTile(Icons.Rounded.PriorityHigh, c.orange)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Finish setup · ${summary.setupDone} of 4", style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.label)
-                Text("Add clinical time, your team, venues and the calendar to write to, so planning and delegation fit your department.", style = Hod.type.footnote, color = c.secondaryLabel)
-                Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(c.fill)) { Box(Modifier.fillMaxWidth(summary.setupDone / 4f).height(4.dp).background(c.orange)) }
+        if (summary.setupDone < 4) GroupedSection {
+            Row(
+                Modifier.fillMaxWidth().pressable { onOpen("department") }.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                IconTile(Icons.Rounded.PriorityHigh, c.orange)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Finish Setting Up", style = Hod.type.body, color = c.label, modifier = Modifier.weight(1f))
+                        Text("${summary.setupDone} of 4", style = Hod.type.body, color = c.secondaryLabel)
+                    }
+                    Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(c.fill)) {
+                        Box(Modifier.fillMaxWidth(summary.setupDone / 4f).height(4.dp).clip(CircleShape).background(c.orange))
+                    }
+                }
+                com.hoddesk.app.ui.components.Chevron()
             }
         }
-        GroupedSection(header = "Work") {
-            ListRow("Fixed Clinical Time", icon = Icons.Rounded.Apartment, iconColor = c.tint, value = summary.blockSummary, chevron = true, onClick = { onOpen("department") })
-            RowDivider(58.dp)
-            ListRow("Team", icon = Icons.Rounded.Group, iconColor = c.blue, value = summary.teamCount.toString(), chevron = true, onClick = { onOpen("department") })
-            RowDivider(58.dp)
-            ListRow("Who Outranks Whom", icon = Icons.Rounded.Sort, iconColor = c.indigo, chevron = true, onClick = { onOpen("department") })
+        groups.forEach { group -> SettingsEntries(group.entries, onOpen, group.header, group.footer) }
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(summary.versionLine, style = Hod.type.footnote, color = c.tertiaryLabel, textAlign = TextAlign.Center)
+            Text("Nothing leaves this phone.", style = Hod.type.footnote, color = c.tertiaryLabel, textAlign = TextAlign.Center)
         }
-        GroupedSection(header = "Calendar", footer = "Plan My Day leaves ${summary.slackPercent}% of your working hours free for interruptions and never books over fixed clinical time.") {
-            ListRow("Write Events To", icon = Icons.Rounded.CalendarMonth, iconColor = c.red, value = summary.calendarName ?: "Choose", valueColor = if (summary.calendarName == null) c.tint else c.secondaryLabel, chevron = true, onClick = { onOpen("calendar") })
-            RowDivider(58.dp)
-            ListRow("Working Hours", icon = Icons.Rounded.Schedule, iconColor = c.green, value = summary.workday, chevron = true, onClick = { onOpen("workday") })
-            RowDivider(58.dp)
-            ListRow("Keep Free", icon = Icons.Rounded.Schedule, iconColor = c.gray, value = "${summary.slackPercent}%", chevron = true, onClick = { onOpen("slack") })
-            RowDivider(58.dp)
-            ListRow("Reminders", icon = Icons.Rounded.NotificationsActive, iconColor = c.orange, value = summary.remindersLine, chevron = true, onClick = { onOpen("reminders") })
+    }
+}
+
+@Composable
+private fun SettingsEntries(entries: List<SettingsEntry>, onOpen: (String) -> Unit, header: String? = null, footer: String? = null) {
+    GroupedSection(header = header, footer = footer) {
+        entries.forEachIndexed { i, e ->
+            if (i > 0) RowDivider(58.dp)
+            ListRow(
+                e.title, icon = e.icon, iconColor = e.color, value = e.value, valueColor = e.valueColor ?: Hod.colors.secondaryLabel,
+                chevron = true, onClick = { onOpen(e.route) },
+            )
         }
-        GroupedSection(header = "Privacy & Security") {
-            ListRow("Auto-Lock", icon = Icons.Rounded.Lock, iconColor = c.blue, value = summary.autoLockLine, chevron = true, onClick = { onOpen("autolock") })
-            RowDivider(58.dp)
-            ListRow("Backup & Restore", icon = Icons.Rounded.Backup, iconColor = c.indigo, value = summary.backupLine, chevron = true, onClick = { onOpen("backup") })
-            RowDivider(58.dp)
-            ListRow("Privacy & Data", icon = Icons.Rounded.Lock, iconColor = c.green, value = "On this phone", chevron = true, onClick = { onOpen("privacy") })
-            RowDivider(58.dp)
-            ListRow("Clinical Vault", icon = Icons.Rounded.Shield, iconColor = c.label, value = "${summary.clinicalCount}", chevron = true, onClick = { onOpen("vault") })
-            RowDivider(58.dp)
-            ListRow("Activity Log", icon = Icons.Rounded.History, iconColor = c.blue, chevron = true, onClick = { onOpen("activity") })
-        }
-        GroupedSection(header = "Intelligence") {
-            ListRow("On-Device AI", icon = Icons.Rounded.AutoAwesome, iconColor = c.tint, value = summary.aiLine, valueColor = if (summary.aiHealthy) c.greenText else c.orangeText, chevron = true, onClick = { onOpen("ai") })
-            RowDivider(58.dp)
-            ListRow("Follow-ups", icon = Icons.Rounded.Schedule, iconColor = c.orange, value = "Waiting items", chevron = true, onClick = { onOpen("followups") })
-            RowDivider(58.dp)
-            ListRow("Secretary", icon = Icons.Rounded.Mic, iconColor = c.indigo, value = "Ask locally", chevron = true, onClick = { onOpen("secretary") })
-            RowDivider(58.dp)
-            ListRow("Control Centre", icon = Icons.Rounded.PriorityHigh, iconColor = c.orange, value = "All signals", chevron = true, onClick = { onOpen("control") })
-            RowDivider(58.dp)
-            ListRow("Evaluation lab", icon = Icons.Rounded.Assessment, iconColor = c.indigo, value = "Quality gates", chevron = true, onClick = { onOpen("evaluation") })
-            RowDivider(58.dp)
-            ListRow("How to Import", icon = Icons.Rounded.HelpOutline, iconColor = c.green, value = "WhatsApp, Gmail…", chevron = true, onClick = { onOpen("howto") })
-        }
-        Text(summary.versionLine + "\nNothing leaves this phone.", style = Hod.type.footnote, color = c.tertiaryLabel, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -188,11 +275,7 @@ fun PrivacyPage(store: PrivacyStore, onBack: () -> Unit, onOpenActivity: () -> U
     var customRetention by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     SettingsPage("Privacy & Data", "Settings", onBack) {
-        Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            IconTile(Icons.Rounded.Lock, c.green, size = 56.dp)
-            Text("Everything stays on this phone", style = Hod.type.title3, color = c.label, textAlign = TextAlign.Center)
-            Text("Stored encrypted. No cloud AI. Nothing is sent anywhere unless you share it yourself.", style = Hod.type.subheadline, color = c.secondaryLabel, textAlign = TextAlign.Center)
-        }
+        SettingsHeaderCard(Icons.Rounded.PrivacyTip, c.indigo, "Everything stays on this phone", "Stored encrypted. No cloud AI. Nothing is sent anywhere unless you share it yourself.")
         GroupedSection(header = "Imports", footer = if (consent) "A source that is off can't be imported. Its Capture tile shows a lock." else "Sensitive imports are blocked until you allow them.") {
             SwitchRow("Allow Sensitive Imports", consent, { consent = it; store.consentGranted = it }, subtitle = "Calls, messages, images and documents")
             listOf(
@@ -208,7 +291,7 @@ fun PrivacyPage(store: PrivacyStore, onBack: () -> Unit, onOpenActivity: () -> U
         GroupedSection(header = "Protection", footer = "Messages that mention patients are kept in the Clinical Vault: never indexed for search, never sent to the reasoning model, and never shown in tasks or calendar events.") {
             SwitchRow("Hide Phone Numbers & Emails", redact, { redact = it; store.redactIdentifiers = it })
             RowDivider()
-            ListRow("Keep Patient Details Out of Search", value = "Always on") { Icon(Icons.Rounded.Lock, "Always on", tint = c.greenText, modifier = Modifier.size(18.dp)) }
+            SwitchRow("Keep Patient Details Out of Search", checked = true, onCheckedChange = {}, subtitle = "Always on · cannot be turned off", enabled = false)
         }
         val presets = listOf(30, 180, 365)
         val selected = presets.indexOf(retention).let { if (it < 0) 3 else it }
@@ -264,10 +347,7 @@ fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebu
     var showTech by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
     SettingsPage("On-Device AI", "Settings", onBack) {
-        Row(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            IconTile(if (status.healthy) Icons.Rounded.Check else Icons.Rounded.PriorityHigh, if (status.healthy) c.green else c.orange, size = 52.dp)
-            Column { Text(status.headline, style = Hod.type.headline, color = c.label); Text(status.detail, style = Hod.type.subheadline, color = c.secondaryLabel) }
-        }
+        SettingsHeaderCard(if (status.healthy) Icons.Rounded.Check else Icons.Rounded.PriorityHigh, if (status.healthy) c.green else c.orange, status.headline, status.detail)
         GroupedSection(header = "What the App Can Do", footer = "AI only suggests. Nothing becomes a task or calendar event until you approve it.") {
             ListRow("Smart Search", subtitle = status.searchLine, icon = Icons.Rounded.Search, iconColor = c.tint, value = if (status.healthy) "Ready" else "Check", valueColor = if (status.healthy) c.greenText else c.orangeText)
             RowDivider(58.dp)
@@ -310,7 +390,7 @@ fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebu
                 ListRow("Export learning profile", subtitle = "Reviewable redacted corrections; nothing is sent automatically.", titleColor = c.tint, onClick = onExportLearning)
                 RowDivider()
             }
-            ListRow("Technical Details", value = if (showTech) "Hide" else null, chevron = !showTech, onClick = { showTech = !showTech })
+            SwitchRow("Show Technical Details", showTech, { showTech = it })
             if (showTech) status.technical.forEach { (k, v) ->
                 RowDivider()
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
@@ -329,8 +409,10 @@ fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebu
 fun ActivityPage(entries: List<AuditEntryEntity>, onBack: () -> Unit, onExport: () -> Unit) {
     val c = Hod.colors
     SettingsPage("Activity Log", "Settings", onBack) {
-        Text("An append-only record of imports, approvals, scheduling, completion and deletion. Export creates a copy only when you choose a destination.", style = Hod.type.subheadline, color = c.secondaryLabel, modifier = Modifier.padding(horizontal = 4.dp))
-        HodButton("Export for Review", onExport, style = HodButtonStyle.Tinted, modifier = Modifier.fillMaxWidth(), enabled = entries.isNotEmpty())
+        SettingsHeaderCard(Icons.Rounded.History, c.purple, "Every change is recorded", "Imports, approvals, scheduling, completion and deletion, in order. Nothing here can be edited.")
+        GroupedSection(footer = "Export creates a copy only when you choose where to save it.") {
+            ListRow("Export for Review…", titleColor = if (entries.isNotEmpty()) c.tint else c.tertiaryLabel, value = "${entries.size} entries", onClick = if (entries.isNotEmpty()) onExport else null)
+        }
         if (entries.isEmpty()) Box(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface)) { EmptyState("No activity yet", "Actions you take will be recorded here.") }
         entries.groupBy { DateFormat.getDateInstance(DateFormat.FULL).format(Date(it.createdAt)) }.forEach { (day, list) ->
             GroupedSection(header = day) {
@@ -374,7 +456,7 @@ fun VaultPage(items: List<SourceEntity>, onBack: () -> Unit) {
     val c = Hod.colors
     var open by remember { mutableStateOf<Long?>(null) }
     SettingsPage("Clinical Vault", "Settings", onBack) {
-        Text("Items that mention patients or special categories. They are not searchable, not sent to any AI model, and never copied into tasks or calendar events.", style = Hod.type.subheadline, color = c.secondaryLabel, modifier = Modifier.padding(horizontal = 4.dp))
+        SettingsHeaderCard(Icons.Rounded.Shield, c.gray, "Clinical Vault", "Items that mention patients or special categories. Not searchable, never sent to any AI model, never copied into tasks or calendar events.")
         if (items.isEmpty()) Box(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface)) { EmptyState("Vault is empty", "Clinical material you import will be kept here.") }
         else GroupedSection {
             items.forEachIndexed { i, s ->
@@ -411,11 +493,15 @@ fun RemindersPage(
     fun turnOn(apply: () -> Unit) {
         if (notificationsAllowed) apply() else onRequestPermission { granted -> if (granted) apply() else blocked = true }
     }
+    val context = androidx.compose.ui.platform.LocalContext.current
     fun leadLabel(m: Int) = if (m % 60 == 0) "${m / 60} hour${if (m == 60) "" else "s"} before" else "$m minutes before"
     SettingsPage("Reminders", "Settings", onBack) {
-        Text("Reminders are created on this phone. Their text is hidden on the lock screen.", style = Hod.type.subheadline, color = c.secondaryLabel, modifier = Modifier.padding(horizontal = 4.dp))
-        GroupedSection(header = "Morning brief", footer = "One notification a day with what is overdue, due today, waiting for review and today’s meetings.") {
-            SwitchRow("Morning brief", brief, { on ->
+        SettingsHeaderCard(Icons.Rounded.NotificationsActive, c.red, "Reminders", "Created on this phone. Their text is hidden on the lock screen.")
+        if (blocked) GroupedSection(footer = "Notifications are turned off for HOD Desk in Android settings, so reminders cannot appear.") {
+            ListRow("Allow Notifications", titleColor = c.tint, chevron = true, onClick = { openAppSettings(context) })
+        }
+        GroupedSection(header = "Daily", footer = "One notification a day with what is overdue, due today, waiting for review and today’s meetings.") {
+            SwitchRow("Morning Brief", brief, { on ->
                 if (on) turnOn { brief = true; store.briefEnabled = true; onChanged() } else { brief = false; store.briefEnabled = false; onChanged() }
             })
             if (brief) {
@@ -424,7 +510,7 @@ fun RemindersPage(
             }
         }
         GroupedSection(header = "Tasks", footer = "Only open tasks with a due time. Done or rescheduled tasks never ring.") {
-            SwitchRow("Due-soon alerts", due, { on ->
+            SwitchRow("Due-Soon Alerts", due, { on ->
                 if (on) turnOn { due = true; store.dueRemindersEnabled = true; onChanged() } else { due = false; store.dueRemindersEnabled = false; onChanged() }
             })
             if (due) {
@@ -432,10 +518,6 @@ fun RemindersPage(
                 ListRow("Alert me", value = leadLabel(lead), chevron = true, onClick = { pickLead = true })
             }
         }
-        if (blocked) Text(
-            "Notifications are turned off for HOD Desk. Allow them in Android Settings › Apps › Psychiatry HOD Desk › Notifications, then try again.",
-            style = Hod.type.footnote, color = c.orangeText, modifier = Modifier.padding(horizontal = 4.dp),
-        )
     }
     if (pickTime) TimeDialog("Brief time", briefMinute, onDismiss = { pickTime = false }) { m ->
         briefMinute = m; store.briefMinute = m; pickTime = false; onChanged()
@@ -461,30 +543,29 @@ fun AutoLockPage(store: com.hoddesk.app.settings.DeskSettingsStore, deviceSecure
     var minutes by remember { mutableStateOf(store.autoLockMinutes) }
     var pick by remember { mutableStateOf(false) }
     var secure by remember { mutableStateOf(store.secureScreen) }
-    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val activity = context as? android.app.Activity
     SettingsPage("Auto-Lock", "Settings", onBack) {
-        Text(
-            "When HOD Desk has been away from the screen for a while, it covers itself and asks for your fingerprint, face or screen lock before showing anything.",
-            style = Hod.type.subheadline, color = c.secondaryLabel, modifier = Modifier.padding(horizontal = 4.dp),
-        )
-        GroupedSection(footer = "Nothing you were doing is lost; it is hidden until you unlock.") {
+        SettingsHeaderCard(Icons.Rounded.LockClock, c.blue, "Auto-Lock", "After HOD Desk has been away for a while, it covers itself and asks for your fingerprint, face or screen lock.")
+        if (enabled && !deviceSecure) GroupedSection(footer = "This phone has no screen lock, so HOD Desk cannot lock itself.") {
+            ListRow("Set Up Screen Lock", titleColor = c.tint, chevron = true, onClick = {
+                runCatching { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            })
+        }
+        GroupedSection(header = "Lock", footer = "Nothing you were doing is lost; it is hidden until you unlock.") {
             SwitchRow("Lock HOD Desk", enabled, { on -> enabled = on; store.autoLockEnabled = on; onChanged() })
             if (enabled) {
                 RowDivider()
-                ListRow("Lock", value = com.hoddesk.app.security.AppLockPolicy.timeoutLabel(minutes), chevron = true, onClick = { pick = true })
+                ListRow("Require Unlock", value = com.hoddesk.app.security.AppLockPolicy.timeoutLabel(minutes), chevron = true, onClick = { pick = true })
             }
         }
-        GroupedSection(header = "Screen privacy", footer = "Shows a blank card in recent apps and blocks screenshots and screen recording of HOD Desk. Turn off if you need to screenshot the app.") {
-            SwitchRow("Hide in recent apps", secure, { on ->
+        GroupedSection(header = "Screen Privacy", footer = "Shows a blank card in recent apps and blocks screenshots and screen recording of HOD Desk. Turn off if you need to screenshot the app.") {
+            SwitchRow("Hide in Recent Apps", secure, { on ->
                 secure = on; store.secureScreen = on
                 com.hoddesk.app.security.ScreenPrivacy.apply(activity, on)
                 onChanged()
             })
         }
-        if (enabled && !deviceSecure) Text(
-            "This phone has no screen lock, so HOD Desk cannot lock itself. Set one in Android Settings › Security › Screen lock.",
-            style = Hod.type.footnote, color = c.orangeText, modifier = Modifier.padding(horizontal = 4.dp),
-        )
     }
     if (pick) SheetDialog({ pick = false }) {
         com.hoddesk.app.ui.components.ActionSheetContent(
@@ -504,28 +585,38 @@ fun AutoLockPage(store: com.hoddesk.app.settings.DeskSettingsStore, deviceSecure
 fun BackupPage(lastBackupAt: Long?, busy: String?, onCreate: () -> Unit, onRestore: () -> Unit, onBack: () -> Unit) {
     val c = Hod.colors
     SettingsPage("Backup & Restore", "Settings", onBack) {
-        Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Your data lives only on this phone", style = Hod.type.headline, color = c.label)
-            Text(
-                "If the phone is lost or replaced, everything is gone unless you keep a backup. A backup is one file locked with a password you choose. Save it to a place you trust — a USB drive, your computer, or your own cloud storage.",
-                style = Hod.type.subheadline, color = c.secondaryLabel,
+        SettingsHeaderCard(
+            Icons.Rounded.Backup, c.tint, "Your data lives only on this phone",
+            "If the phone is lost or replaced, everything is gone unless you keep a backup: one file, locked with a password you choose.",
+        )
+        GroupedSection(footer = busy ?: "Save the file somewhere you trust: a USB drive, your computer or your own cloud storage.") {
+            ListRow(
+                "Last Backup",
+                value = lastBackupAt?.let { java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(it)) } ?: "Never",
+                valueColor = if (lastBackupAt == null) c.orangeText else c.secondaryLabel,
             )
-            Text(
-                "Last backup: " + (lastBackupAt?.let { java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(it)) } ?: "never"),
-                style = Hod.type.footnote.copy(fontWeight = FontWeight.SemiBold), color = if (lastBackupAt == null) c.orangeText else c.greenText,
-            )
+            RowDivider()
+            ListRow("Back Up Now…", titleColor = if (busy == null) c.tint else c.tertiaryLabel, onClick = if (busy == null) onCreate else null)
         }
-        HodButton("Create Encrypted Backup", onCreate, modifier = Modifier.fillMaxWidth(), enabled = busy == null)
-        HodButton("Restore from Backup…", onRestore, style = HodButtonStyle.Gray, modifier = Modifier.fillMaxWidth(), enabled = busy == null)
-        busy?.let { Text(it, style = Hod.type.footnote, color = c.secondaryLabel, modifier = Modifier.padding(horizontal = 4.dp)) }
-        GroupedSection(header = "Good to know") {
-            Text(
-                "• If you forget the password, the backup cannot be opened by anyone, including you.\n" +
-                    "• The backup includes clinical vault items, tasks, settings and the activity log.\n" +
-                    "• Restoring replaces everything currently on this phone. Search is rebuilt afterwards.\n" +
-                    "• Calendar events already in your Android calendar are not touched; choose your calendar again after restoring on a new phone.",
-                style = Hod.type.footnote, color = c.secondaryLabel, modifier = Modifier.padding(16.dp),
-            )
+        GroupedSection(footer = "Restoring replaces everything currently on this phone. Search is rebuilt afterwards.") {
+            ListRow("Restore from Backup…", titleColor = if (busy == null) c.tint else c.tertiaryLabel, onClick = if (busy == null) onRestore else null)
         }
+        GroupedSection(header = "Good to Know") {
+            ListRow("Forgotten password", subtitle = "The backup cannot be opened by anyone, including you.", icon = Icons.Rounded.Lock, iconColor = c.orange)
+            RowDivider(58.dp)
+            ListRow("What is included", subtitle = "Sources, tasks, clinical vault, commitments, settings and the activity log.", icon = Icons.Rounded.Check, iconColor = c.green)
+            RowDivider(58.dp)
+            ListRow("Calendar", subtitle = "Events already in your Android calendar are not touched. Choose the calendar again on a new phone.", icon = Icons.Rounded.CalendarMonth, iconColor = c.red)
+        }
+    }
+}
+
+/** Opens HOD Desk's page in Android settings (permissions, notifications). */
+internal fun openAppSettings(context: android.content.Context) {
+    runCatching {
+        context.startActivity(
+            android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", context.packageName, null))
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
     }
 }

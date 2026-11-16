@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Apartment
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Icon
@@ -62,7 +63,7 @@ fun DepartmentPage(store: DeskSettingsStore, onBack: () -> Unit, onChanged: () -
     fun saveVenues(v: List<Venue>) { venues = v; store.venues = v; onChanged() }
 
     SettingsPage("Department", "Settings", onBack) {
-        Text("Used to plan your day around clinical work and to suggest who to delegate to. Stored only on this phone.", style = Hod.type.subheadline, color = c.secondaryLabel, modifier = Modifier.padding(horizontal = 4.dp))
+        com.hoddesk.app.ui.components.SettingsHeaderCard(Icons.Rounded.Apartment, c.tint, "Department", "Used to plan your day around clinical work and to suggest who to delegate to. Stored only on this phone.")
         GroupedSection(header = "Fixed Clinical Time", footer = "Plan My Day and Protect Time never book over these blocks.") {
             blocks.forEachIndexed { i, b ->
                 if (i > 0) RowDivider()
