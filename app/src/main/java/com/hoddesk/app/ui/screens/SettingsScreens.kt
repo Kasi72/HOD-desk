@@ -361,7 +361,7 @@ fun AiPage(status: AiStatus, onBack: () -> Unit, onSelfCheck: () -> Unit, onRebu
             RowDivider(58.dp)
             ListRow("Read Text from Images", subtitle = "Screenshots, photos, scans", icon = Icons.Rounded.DocumentScanner, iconColor = c.gray, value = "Ready", valueColor = c.greenText)
             RowDivider(58.dp)
-            ListRow("Deeper Understanding", subtitle = "Reads whole letters and links related messages. Large download.", icon = Icons.Rounded.AutoAwesome, iconColor = c.indigo) {
+            ListRow(com.hoddesk.app.reasoning.ReasoningModelInfo.NAME, subtitle = "Gemma, on this phone. Reads whole letters and links related messages. ${com.hoddesk.app.reasoning.ReasoningModelInfo.DOWNLOAD_SIZE} download; use Wi-Fi.", icon = Icons.Rounded.AutoAwesome, iconColor = c.indigo) {
                 when {
                     status.reasoningInstalled -> Text("Installed", style = Hod.type.subheadline, color = c.greenText)
                     status.reasoningProgress != null -> Text("${status.reasoningProgress}%", style = Hod.type.subheadline, color = c.secondaryLabel)

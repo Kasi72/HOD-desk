@@ -116,6 +116,7 @@ fun ReviewScreen(
     snoozedCount: Int = 0,
     nextSnoozeWake: Long? = null,
     onShowSnoozed: () -> Unit = {},
+    onGetReasoningModel: () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val c = Hod.colors
@@ -165,6 +166,7 @@ fun ReviewScreen(
                 onUpdateActionPoint = onUpdateActionPoint,
                 onApproveEdited = onApproveEdited,
                 onApprove = onApprove, onActionStatus = onActionStatus, onDismissSource = onDismissSource,
+                onGetReasoningModel = onGetReasoningModel,
             )
         }
     }
@@ -201,6 +203,7 @@ private fun SourceReview(
     onApprove: suspend (SourceEntity, String, String?, Long?) -> Unit,
     onActionStatus: suspend (Long, String, String) -> Unit,
     onDismissSource: suspend (Long, String) -> Unit,
+    onGetReasoningModel: () -> Unit,
 ) {
     val c = Hod.colors
     val context = LocalContext.current
@@ -265,7 +268,7 @@ private fun SourceReview(
     LaunchedEffect(source.id, action, point, evidence, instructionModelPath, related, reasoningRequested) {
         reasoning = null
         if (instructionModelPath == null) {
-            reasoningStatus = "Local extraction shown. The optional Gemma instruction model is not installed."
+            reasoningStatus = "Basic reading shown. ${com.hoddesk.app.reasoning.ReasoningModelInfo.NAME_WITH_MODEL} is not installed."
             return@LaunchedEffect
         }
         if (!reasoningRequested || action.isNullOrBlank() || manual != null) { reasoningStatus = null; return@LaunchedEffect }
@@ -527,7 +530,7 @@ private fun SourceReview(
 
             reasoning?.let { r ->
                 Column {
-                    SectionHeader("Deeper understanding")
+                    SectionHeader(com.hoddesk.app.reasoning.ReasoningModelInfo.NAME)
                     Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(r.action, style = Hod.type.headline, color = c.label)
                         Text("${r.citations.size} quote(s) from the source support this", style = Hod.type.footnote, color = c.secondaryLabel)
@@ -544,6 +547,10 @@ private fun SourceReview(
                 }
             }
             reasoningStatus?.let { Text(it, style = Hod.type.footnote, color = c.secondaryLabel, modifier = Modifier.padding(horizontal = 16.dp)) }
+            if (instructionModelPath == null) HodButton(
+                "Get Gemma · ${com.hoddesk.app.reasoning.ReasoningModelInfo.DOWNLOAD_SIZE}", onGetReasoningModel,
+                style = HodButtonStyle.Tinted, height = 40.dp, modifier = Modifier.padding(horizontal = 16.dp),
+            )
             // Keep the last evidence row clear of the fixed action bar and the
             // gesture/navigation area.  Without this spacer the final card is
             // rendered underneath the buttons on compact phones.

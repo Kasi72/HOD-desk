@@ -1010,6 +1010,7 @@ fun HODDeskApp(initialShare: SharedInput? = null) {
                     onActionStatus = { id, action, s -> viewModel.statusReviewAction(id, action, s) },
                     onDismissSource = { id, reason -> viewModel.dismissReviewSource(id, reason) },
                     onBack = { tab = TAB_TODAY },
+                    onGetReasoningModel = { settingsStack.clear(); settingsStack += "home"; settingsStack += "ai" },
                     snoozeOptions = { SnoozePlan.options(System.currentTimeMillis(), settings.fixedBlocks, settings.briefMinute) },
                     onSnooze = { id, until ->
                         viewModel.snooze(id, until)
@@ -1130,7 +1131,7 @@ fun HODDeskApp(initialShare: SharedInput? = null) {
                             scope.launch {
                                 reasoningProgress = 0
                                 runCatching { instructionModelStore.install { p -> reasoningProgress = p } }
-                                    .onSuccess { installedInstructionModel = it; healthEpoch++; status = "Deeper understanding installed." }
+                                    .onSuccess { installedInstructionModel = it; healthEpoch++; status = "${com.hoddesk.app.reasoning.ReasoningModelInfo.NAME} installed." }
                                     .onFailure { status = "Install failed: ${it.message ?: it.javaClass.simpleName}" }
                                 reasoningProgress = null
                             }
