@@ -54,7 +54,7 @@ object SystemHealth {
             Severity.ATTENTION, Fix.SECURITY_SETTINGS, "Set up",
         ))
         if (s.reasoningModelNeedsDownload) add(Issue(
-            "reasoning_model", "AI reading model needs a new download",
+            "reasoning_model", "${com.hoddesk.app.reasoning.ReasoningModelInfo.NAME} needs a new download",
             "The installed model was replaced by an update or failed its safety check. Until you download it again, letters are read with the basic on-phone rules.",
             Severity.ATTENTION, Fix.AI_SETTINGS, "Open",
         ))
@@ -100,9 +100,9 @@ object SystemHealth {
         })
         // On-device AI
         add(when {
-            s.reasoningModelNeedsDownload -> Row("On-Device AI", "Gemma reading model", "Needs a new download", Level.ATTENTION, "Letters are read with the basic on-phone rules until then.")
-            d.modelInstalled -> Row("On-Device AI", "Gemma reading model", "Installed", Level.OK, size(d.modelBytes))
-            else -> Row("On-Device AI", "Gemma reading model", "Not installed", Level.OFF, "Optional. The basic on-phone rules are used.")
+            s.reasoningModelNeedsDownload -> Row("On-Device AI", com.hoddesk.app.reasoning.ReasoningModelInfo.NAME_WITH_MODEL, "Needs a new download", Level.ATTENTION, "Letters are read with the basic on-phone rules until then.")
+            d.modelInstalled -> Row("On-Device AI", com.hoddesk.app.reasoning.ReasoningModelInfo.NAME_WITH_MODEL, "Installed", Level.OK, size(d.modelBytes))
+            else -> Row("On-Device AI", com.hoddesk.app.reasoning.ReasoningModelInfo.NAME_WITH_MODEL, "Not installed", Level.OFF, "Optional. The basic on-phone rules are used.")
         })
         d.memory?.let { m ->
             val needed = com.hoddesk.app.reasoning.ReasoningMemoryPolicy.requiredBytes(if (d.modelInstalled) d.modelBytes else 0L)
