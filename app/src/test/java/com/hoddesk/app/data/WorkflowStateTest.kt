@@ -17,4 +17,19 @@ class WorkflowStateTest {
             .transitionTo(SourceLifecycle.DELETED)
             .transitionTo(SourceLifecycle.REVIEW)
     }
+
+    @Test fun reviewerCanCloseAnItemWithoutATask() {
+        listOf(SourceLifecycle.REVIEW, SourceLifecycle.IMPORTED).forEach { start ->
+            val closed = SourceEntity(id = 1, title = "OCR pending", body = "x", sourceType = "Screenshot", lifecycleState = start.wire)
+                .transitionTo(SourceLifecycle.COMPLETED)
+            assertEquals("completed", closed.lifecycleState)
+            assertEquals("completed", closed.processingStatus)
+        }
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun processingItemCannotBeClosedMidway() {
+        SourceEntity(id = 1, title = "Audio", body = "x", sourceType = "Call", lifecycleState = SourceLifecycle.PROCESSING.wire)
+            .transitionTo(SourceLifecycle.COMPLETED)
+    }
 }
