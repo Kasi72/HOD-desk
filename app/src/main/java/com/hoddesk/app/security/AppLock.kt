@@ -99,6 +99,10 @@ class AppLockState(context: Context) {
  * phone's own fingerprint, face, PIN or pattern. The app underneath stays alive, so open dialogs,
  * drafts and file pickers are not lost; it simply cannot be seen or touched until unlocked.
  */
+/** True while the lock screen covers the app. Dialogs open their own windows, so content that would
+ *  appear in one (for example text shared in from another app) must wait until this is false. */
+val LocalAppLocked = androidx.compose.runtime.staticCompositionLocalOf { false }
+
 @Composable
 fun AppLockGate(content: @Composable () -> Unit) {
     val context = LocalContext.current
@@ -141,7 +145,9 @@ fun AppLockGate(content: @Composable () -> Unit) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        Box(if (locked) Modifier.fillMaxSize().clearAndSetSemantics { } else Modifier.fillMaxSize()) { content() }
+        Box(if (locked) Modifier.fillMaxSize().clearAndSetSemantics { } else Modifier.fillMaxSize()) {
+            androidx.compose.runtime.CompositionLocalProvider(LocalAppLocked provides locked) { content() }
+        }
         if (locked) {
             BackHandler { (context as? Activity)?.moveTaskToBack(true) }
             LockScreen(onUnlock = ::requestUnlock)
