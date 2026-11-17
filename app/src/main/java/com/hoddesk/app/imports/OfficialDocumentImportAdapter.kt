@@ -91,7 +91,7 @@ class ActionPointExtractor {
     private val date = Regex("(?iu)\\b(?:today|tomorrow|this week|next week|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|\\d{1,2}(?:st|nd|rd|th)?[ -](?:January|February|March|April|May|June|July|August|September|October|November|December)(?:[ -]\\d{4})?|\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4})\\b")
     private val time = Regex("(?iu)\\b(?:at\\s*)?([01]?\\d|2[0-3])(?::([0-5]\\d))?\\s*(AM|PM)\\b")
     private val timeRange = Regex("(?iu)\\b(\\d{1,2}(?::[0-5]\\d)?)\\s*(?:-|–|—|to)\\s*(\\d{1,2}(?::[0-5]\\d)?)\\s*(AM|PM)\\b")
-    private val location = Regex("\\b(?i:at|in|venue|location)\\s*[: ]\\s*([A-Z][A-Za-z0-9 .'-]{2,80})")
+    private val location = Regex("\\b(?i:at|in|venue|location)\\s*[: ]\\s*(?:(?i:the)\\s+)?([A-Z][A-Za-z0-9 .'-]{2,80})")
     private val onlineVenue = Regex("(?iu)\\b(Google Meet|Zoom|Microsoft Teams|video call|online meeting)\\b")
     private val owner = Regex("\\b(?i:owner|responsible(?: officer)?|assigned|delegate(?:d)?|depute(?:d)?)\\s*(?i:to|:)?\\s*((?:(?i:Dr|Mr|Ms|Mrs)\\.?\\s+)?[A-Z][A-Za-z.'-]*(?:\\s+[A-Z][A-Za-z.'-]*){0,4})")
     private val reference = Regex("(?iu)\\b(?:G\\.?O\\.?|GO|PRGI|Ref(?:erence)?|Proceedings|Order)\\s*(?:No\\.?|number|#)?\\s*[:./-]?\\s*([A-Z0-9][A-Z0-9./-]{2,40})")

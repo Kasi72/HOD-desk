@@ -273,12 +273,16 @@ private fun SourceReview(
         try {
             val conflictHints = possibleUpdates.map { hit -> "Newer source '${hit.source.title}' may revise this instruction; compare its fields." }
             val bundle = EvidenceBundleBuilder.build(source, listOf(action), related, conflictHints)
-            val result = OnDeviceActionReasoner(instructionModelPath).reason(bundle, action)
+            val result = OnDeviceActionReasoner(instructionModelPath) { com.hoddesk.app.reasoning.ReasoningMemoryPolicy.snapshot(context) }.reason(bundle, action)
             if (result.action.isNotBlank()) {
                 reasoning = result; onReasoning(source.id, result)
                 reasoningStatus = null
             } else reasoningStatus = "Gemma found no supported action for this candidate. Review the source manually."
         } catch (cancelled: CancellationException) { throw cancelled }
+        catch (lowMemory: com.hoddesk.app.reasoning.InsufficientMemoryException) {
+            val free = com.hoddesk.app.reasoning.ReasoningMemoryPolicy.gb(lowMemory.snapshot.availableBytes)
+            reasoningStatus = "Phone memory is short ($free free), so Gemma was not loaded. The on-device keyword extraction above is unchanged. Close other apps, then reopen this item to try again."
+        }
         catch (_: Exception) {
             reasoningStatus = "Gemma could not produce valid cited output. The original fields remain available for review."
         }
@@ -500,11 +504,24 @@ private fun SourceReview(
                 if (related.isNotEmpty()) Text("Related: " + related.joinToString(" · ") { it.source.title }, style = Hod.type.footnote, color = c.secondaryLabel, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp))
                 if (possibleUpdates.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.orange.copy(alpha = 0.12f)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    val comparisons = remember(possibleUpdates, point) {
+                        point?.let { p -> possibleUpdates.take(2).map { com.hoddesk.app.reasoning.SourceComparison.compare(p, it.source) } }.orEmpty()
+                    }
+                    if (comparisons.isEmpty()) Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.orange.copy(alpha = 0.12f)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text("Possible update", style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.orangeText)
                         Text("A newer related source contains revision language. Compare its date, time, venue, and owner before approving.", style = Hod.type.footnote, color = c.label)
                         possibleUpdates.forEach { hit -> Text("• ${hit.source.title}", style = Hod.type.footnote, color = c.secondaryLabel, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                     }
+                    comparisons.forEach { comparison -> LatestEvidenceCard(comparison, enabled = !busy && action != null,
+                        onUseNewer = {
+                            val values = com.hoddesk.app.reasoning.SourceComparison.applyNewer(comparison)
+                            startEditing()
+                            values["date"]?.let { editedDate = it }; values["time"]?.let { editedTime = it }
+                            values["location"]?.let { editedLocation = it }; values["owner"]?.let { editedOwner = it }
+                            values["people"]?.let { editedPeople = it }
+                        },
+                        onNotAction = { action?.let { a -> perform { onActionStatus(source.id, a, "rejected"); finish(a) } } },
+                    ) }
                 }
             }
 
@@ -597,6 +614,51 @@ private fun SourceReview(
                 ),
                 onCancel = { confirmFor = null },
             )
+        }
+    }
+}
+
+/** This source next to a newer one that may revise it; the newer value is marked where they differ. */
+@Composable
+private fun LatestEvidenceCard(comparison: com.hoddesk.app.reasoning.SourceComparison.Comparison, enabled: Boolean, onUseNewer: () -> Unit, onNotAction: () -> Unit) {
+    val c = Hod.colors
+    val newer = comparison.newerSource
+    GroupedSection(
+        header = "Latest Evidence",
+        footer = if (comparison.hasChanges) "The newer source is shown on the right. Using its values opens the fields for you to confirm." else "The newer source states the same details.",
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(newer.title, style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("Newer · ${dueLabel(newer.capturedAt).substringBefore(",")}", style = Hod.type.footnote, color = c.secondaryLabel)
+        }
+        if (comparison.cancels) {
+            RowDivider()
+            ListRow("Mentions cancellation or postponement", titleColor = c.redText)
+        }
+        if (comparison.rows.isNotEmpty()) {
+            RowDivider()
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+                Text("", Modifier.weight(0.8f))
+                Text("THIS", style = Hod.type.caption, color = c.secondaryLabel, modifier = Modifier.weight(1f))
+                Text("NEWER", style = Hod.type.caption, color = c.secondaryLabel, modifier = Modifier.weight(1f))
+            }
+        }
+        comparison.rows.forEach { row ->
+            RowDivider()
+            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(row.label, style = Hod.type.subheadline, color = c.label, modifier = Modifier.weight(0.8f))
+                Text(row.current ?: "—", style = Hod.type.subheadline, color = if (row.differs) c.tertiaryLabel else c.secondaryLabel, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(row.newer ?: "—", style = Hod.type.subheadline.copy(fontWeight = if (row.differs) FontWeight.SemiBold else FontWeight.Normal),
+                    color = if (row.differs) c.orangeText else c.secondaryLabel, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (comparison.changedRows.isNotEmpty()) {
+            RowDivider()
+            ListRow("Use Newer Values", titleColor = if (enabled) c.tint else c.tertiaryLabel, onClick = if (enabled) onUseNewer else null)
+        }
+        if (comparison.cancels) {
+            RowDivider()
+            ListRow("Not an Action Anymore", titleColor = if (enabled) c.redText else c.tertiaryLabel, onClick = if (enabled) onNotAction else null)
         }
     }
 }

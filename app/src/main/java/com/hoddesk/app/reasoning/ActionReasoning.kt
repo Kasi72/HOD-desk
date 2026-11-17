@@ -141,7 +141,7 @@ object ActionReasoningValidator {
     private fun conflictHints(evidence: String): List<String> = evidence.lineSequence().filter { it.startsWith("CONFLICT_HINT:") }
         .map { it.removePrefix("CONFLICT_HINT:").trim() }.filter { it.isNotBlank() }.toList()
 }
-class OnDeviceActionReasoner(private val modelFilePath: String?) {
+class OnDeviceActionReasoner(private val modelFilePath: String?, private val memory: (() -> MemorySnapshot)? = null) {
     companion object {
         private const val TAG = "HOD_REASONING"
         private const val MIN_MODEL_BYTES = 100_000_000L
@@ -156,7 +156,7 @@ class OnDeviceActionReasoner(private val modelFilePath: String?) {
         return withContext(Dispatchers.Default) { inferenceLock.withLock {
             val modelPath = requireNotNull(modelFilePath)
             try {
-                ReasoningEngineHolder.use(modelPath) { engine ->
+                ReasoningEngineHolder.use(modelPath, memory) { engine ->
                     engine.createSession(SessionConfig()).use { session ->
                         val started = System.nanoTime()
                         fun runPass(pass: String, candidate: String? = targetAction): ActionReasoningOutput {
@@ -173,6 +173,8 @@ class OnDeviceActionReasoner(private val modelFilePath: String?) {
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
+            } catch (lowMemory: InsufficientMemoryException) {
+                throw lowMemory
             } catch (error: Throwable) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 Log.e(TAG, "reasoning_failed", error)
