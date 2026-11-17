@@ -5,9 +5,11 @@ enum class SourceLifecycle(val wire: String) {
     IMPORTED("imported"), PROCESSING("processing"), REVIEW("review"), APPROVED("approved"), TASK_EVENT("task_event"), COMPLETED("completed"), DELETED("deleted");
 
     fun canTransitionTo(next: SourceLifecycle): Boolean = when (this) {
-        IMPORTED -> next in setOf(PROCESSING, REVIEW, APPROVED, DELETED)
+        // COMPLETED from IMPORTED/REVIEW is the reviewer closing an item without a task
+        // ("Done with This Item", "Not mine", "Not an action anymore").
+        IMPORTED -> next in setOf(PROCESSING, REVIEW, APPROVED, COMPLETED, DELETED)
         PROCESSING -> next in setOf(REVIEW, IMPORTED, DELETED)
-        REVIEW -> next in setOf(APPROVED, IMPORTED, DELETED)
+        REVIEW -> next in setOf(APPROVED, IMPORTED, COMPLETED, DELETED)
         APPROVED -> next in setOf(TASK_EVENT, COMPLETED, DELETED)
         TASK_EVENT -> next in setOf(COMPLETED, DELETED)
         COMPLETED -> next in setOf(REVIEW, COMPLETED, DELETED)
