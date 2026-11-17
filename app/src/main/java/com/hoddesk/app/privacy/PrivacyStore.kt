@@ -24,9 +24,10 @@ class PrivacyStore(context: Context) {
     fun scopeGranted(scope: ConsentScope): Boolean = prefs.getBoolean("scope_${scope.name}", consentGranted)
     fun setScope(scope: ConsentScope, granted: Boolean) = prefs.edit().putBoolean("scope_${scope.name}", granted).apply()
 
-    fun redact(text: String): String = if (!redactIdentifiers) text else text
-        .replace(Regex("\\b[0-9]{10}\\b"), "[PHONE]")
-        .replace(Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE), "[EMAIL]")
+    fun redact(text: String): String = if (!redactIdentifiers) text else Redactor.redact(text)
+
+    /** What [redact] would hide in [text]; null when hiding is switched off. */
+    fun previewRedaction(text: String): Redactor.Preview? = if (!redactIdentifiers) null else Redactor.preview(text)
 
     /** Cutoff used by the explicit retention action; no data is removed implicitly. */
     fun retentionCutoff(now: Long = System.currentTimeMillis()): Long = now - retentionDays * 24L * 60L * 60L * 1000L

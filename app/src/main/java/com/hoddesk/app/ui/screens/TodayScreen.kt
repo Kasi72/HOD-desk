@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PriorityHigh
+import androidx.compose.material.icons.rounded.EventRepeat
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -97,6 +98,8 @@ fun TodayScreen(
     onOpenCalendar: () -> Unit,
     onOpenWaiting: () -> Unit,
     secretaryState: SecretaryStateSnapshot? = null,
+    weeklyReviewDue: Boolean = false,
+    onOpenWeeklyReview: () -> Unit = {},
 ) {
     val c = Hod.colors
     val today = LocalDate.now()
@@ -162,6 +165,16 @@ fun TodayScreen(
                     ExecutiveBriefRow(executive)
                 }
             }
+        }
+
+        if (weeklyReviewDue) item(key = "weekly_review") {
+            BriefCard(
+                icon = Icons.Rounded.EventRepeat, iconColor = c.blue,
+                label = "Weekly Review", labelColor = c.tint,
+                title = "Look back at the week",
+                subtitle = "What slipped, what is due, who owes you. About two minutes.",
+                onClick = onOpenWeeklyReview,
+            )
         }
 
         MeetingPreparation.next(todayEvents)?.let { nextEvent ->

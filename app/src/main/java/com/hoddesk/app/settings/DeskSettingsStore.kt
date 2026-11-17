@@ -79,6 +79,11 @@ class DeskSettingsStore(context: Context) {
         get() = prefs.getInt("workday_end", 17 * 60)
         set(value) = prefs.edit().putInt("workday_end", value).apply()
 
+    /** When the weekly review was last marked done; null if never. */
+    var lastWeeklyReviewAt: Long?
+        get() = prefs.getLong("last_weekly_review_at", -1L).takeIf { it > 0 }
+        set(value) = prefs.edit().putLong("last_weekly_review_at", value ?: -1L).apply()
+
     /** Local morning brief notification. Off until the HOD turns it on. */
     var briefEnabled: Boolean
         get() = prefs.getBoolean("brief_enabled", false)

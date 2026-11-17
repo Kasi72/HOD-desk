@@ -22,6 +22,8 @@ import androidx.compose.material.icons.rounded.Apartment
 import androidx.compose.material.icons.rounded.Assessment
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.EventRepeat
+import androidx.compose.material.icons.rounded.MonitorHeart
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Call
@@ -142,6 +144,7 @@ data class SettingsSummary(
     val remindersLine: String = "Off",
     val backupLine: String = "Never",
     val autoLockLine: String = "5 min",
+    val healthLine: String = "All Good",
 )
 
 /** One row on the Settings home screen. [keywords] let search find it by what it does. */
@@ -183,8 +186,11 @@ private fun settingsGroups(summary: SettingsSummary): List<SettingsGroup> {
         )),
         SettingsGroup(null, listOf(
             SettingsEntry("Backup & Restore", Icons.Rounded.Backup, c.tint, "backup", summary.backupLine, if (summary.backupLine == "Never") c.orangeText else null, "export import encrypted password new phone"),
+            SettingsEntry("App Health", Icons.Rounded.MonitorHeart, c.green, "health", summary.healthLine,
+                when (summary.healthLine) { "Broken" -> c.redText; "Check" -> c.orangeText; else -> null }, "status storage memory working problems diagnostics"),
         )),
         SettingsGroup("Assistant", listOf(
+            SettingsEntry("Weekly Review", Icons.Rounded.EventRepeat, c.blue, "weekly", keywords = "week summary slipped overdue owe waiting executive"),
             SettingsEntry("Secretary", Icons.Rounded.Mic, c.purple, "secretary", keywords = "voice ask command"),
             SettingsEntry("Follow-ups", Icons.AutoMirrored.Rounded.Reply, c.orange, "followups", keywords = "waiting chase pending delegated"),
             SettingsEntry("Control Centre", Icons.Rounded.Tune, c.gray, "control", keywords = "signals overview dashboard"),

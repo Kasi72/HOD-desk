@@ -141,6 +141,9 @@ import com.hoddesk.app.ui.screens.SecretaryControlCentre
 import com.hoddesk.app.ui.screens.EvaluationLabPage
 import com.hoddesk.app.followup.FollowUpEngine
 import com.hoddesk.app.ui.screens.NoteDialog
+import com.hoddesk.app.ui.screens.WeeklyReviewPage
+import com.hoddesk.app.ui.screens.HealthPage
+import com.hoddesk.app.workflow.WeeklyReview
 import com.hoddesk.app.ui.screens.PrivacyPage
 import com.hoddesk.app.ui.screens.ProcessingItem
 import com.hoddesk.app.ui.screens.ProposedBlock
@@ -300,6 +303,8 @@ fun HODDeskApp(initialShare: SharedInput? = null) {
     var sourceSheetTab by remember { mutableIntStateOf(0) }
     var showCapture by remember { mutableStateOf(false) }
     var showNote by remember { mutableStateOf(false) }
+    /** Shared plain text waiting for the HOD to check what will be hidden before it is saved: title to text. */
+    var sharedNote by remember { mutableStateOf<Pair<String, String>?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(viewModel) { viewModel.operationErrors.collect { status = it } }
     // UI actions launch database/provider/model work from this scope.  A single
@@ -631,7 +636,9 @@ fun HODDeskApp(initialShare: SharedInput? = null) {
                     importMessage(saved, "${saved.added} WhatsApp messages added for review")
                 } else {
                     val title = share.subject?.takeIf { it.isNotBlank() } ?: ("Shared message · " + text.lineSequence().first().take(60))
-                    importMessage(saveImported(ImportedSource(title, text, "Shared message"), null), "Shared message added for review")
+                    // Saved from the preview dialog, so the HOD sees what will be hidden first.
+                    sharedNote = title to text
+                    null
                 }
             }.onFailure { error ->
                 if (error is CancellationException) throw error
@@ -861,6 +868,32 @@ fun HODDeskApp(initialShare: SharedInput? = null) {
 
     // --- Encrypted backup and restore ---
     val backupManager = remember { BackupManager(context, dao) }
+    /** Full health page: rebuilt when the self-check inputs change or the page is reopened. */
+    val healthRows = remember(databaseOk, healthEpoch, settingsVersion, installedInstructionModel, allSources.size, allTasks.size, embeddingLine) {
+        val modelFile = installedInstructionModel?.let { File(it) }
+        SystemHealth.report(
+            SystemHealth.Snapshot(
+                databaseOk = databaseOk,
+                calendarChosen = settings.calendarId != null,
+                calendarPermission = hasCalendarPermission(),
+                remindersOn = settings.briefEnabled || settings.dueRemindersEnabled,
+                notificationPermission = Reminders.hasPermission(context),
+                autoLockOn = settings.autoLockEnabled,
+                deviceSecure = com.hoddesk.app.security.AppLockState(context).deviceSecure,
+                freeBytes = runCatching { context.filesDir.usableSpace }.getOrDefault(-1L),
+                reasoningModelNeedsDownload = installedInstructionModel == null && instructionModelStore.needsDownload,
+            ),
+            SystemHealth.Details(
+                databaseBytes = runCatching { context.getDatabasePath("hod-desk.db").length() }.getOrDefault(-1L),
+                sourceCount = allSources.size, taskCount = allTasks.size,
+                lastBackupAt = backupManager.lastBackupAt,
+                modelInstalled = modelFile?.exists() == true, modelBytes = modelFile?.length() ?: 0L,
+                memory = runCatching { com.hoddesk.app.reasoning.ReasoningMemoryPolicy.snapshot(context) }.getOrNull(),
+                searchReady = embeddingReady || allSources.none { !it.isClinical() }, searchLine = embeddingLine,
+                now = System.currentTimeMillis(),
+            ),
+        )
+    }
     var backupBusy by remember { mutableStateOf<String?>(null) }
     var backupPasswordFor by remember { mutableStateOf<String?>(null) } // "create" | "restore"
     var backupPassword by remember { mutableStateOf<CharArray?>(null) }
@@ -961,6 +994,8 @@ fun HODDeskApp(initialShare: SharedInput? = null) {
                     onOpenCalendar = { selectedDayEpoch = LocalDate.now().toEpochDay(); tab = TAB_CALENDAR },
                     onOpenWaiting = { tasksSegment = 1; tab = TAB_TASKS },
                     secretaryState = secretaryState,
+                    weeklyReviewDue = WeeklyReview.isDue(settings.lastWeeklyReviewAt.also { settingsVersion }, System.currentTimeMillis()) && (allTasks.isNotEmpty() || commitments.isNotEmpty()),
+                    onOpenWeeklyReview = { settingsStack.clear(); settingsStack += "weekly" },
                 )
                 TAB_REVIEW -> ReviewScreen(
                     queue = reviewQueue, startSourceId = reviewStartId, team = team,
@@ -1197,6 +1232,19 @@ fun HODDeskApp(initialShare: SharedInput? = null) {
                     onOpenWaiting = { tasksSegment = 1; tab = TAB_TASKS; pop() },
                 )
                 "evaluation" -> EvaluationLabPage(sources = allSources, onBack = ::pop)
+                "weekly" -> {
+                    val now = remember(settingsVersion) { System.currentTimeMillis() }
+                    WeeklyReviewPage(
+                        report = WeeklyReview.build(allTasks, commitments, allSources, secretaryEvents, now) { !it.isClinical() },
+                        lastReviewAt = settings.lastWeeklyReviewAt.also { settingsVersion },
+                        onBack = ::pop,
+                        onOpenTask = { t -> settingsStack.clear(); openTaskId = t.id },
+                        onOpenReview = { settingsStack.clear(); tab = TAB_REVIEW },
+                        onOpenFollowUps = { settingsStack.clear(); tasksSegment = 1; tab = TAB_TASKS },
+                        onMarkReviewed = { settings.lastWeeklyReviewAt = System.currentTimeMillis(); settingsVersion++; status = "Week marked as reviewed."; pop() },
+                    )
+                }
+                "health" -> HealthPage(rows = healthRows, onBack = ::pop, onRunSelfCheck = { push("ai") })
                 "howto" -> HowToPage(onBack = ::pop)
                 "reminders" -> RemindersPage(
                     store = settings, notificationsAllowed = Reminders.hasPermission(context),
@@ -1240,6 +1288,7 @@ fun HODDeskApp(initialShare: SharedInput? = null) {
                                 else -> "${settings.autoLockMinutes} min"
                             },
                             backupLine = backupManager.lastBackupAt?.let { java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(it)) } ?: "Never",
+                            healthLine = when (SystemHealth.overall(healthRows)) { SystemHealth.Level.BLOCKED -> "Broken"; SystemHealth.Level.ATTENTION -> "Check"; else -> "All Good" },
                         )
                     },
                     onBack = { settingsStack.clear() },
@@ -1334,7 +1383,22 @@ fun HODDeskApp(initialShare: SharedInput? = null) {
             onBlocked = { kind -> showCapture = false; status = "${kind.label} imports are off."; settingsStack.clear(); settingsStack += "home"; settingsStack += "privacy" },
             onOpenPrivacy = { showCapture = false; settingsStack.clear(); settingsStack += "home"; settingsStack += "privacy" },
         )
-        if (showNote) NoteDialog(onDismiss = { showNote = false }) { title, body, type ->
+        if (!com.hoddesk.app.security.LocalAppLocked.current) sharedNote?.let { (sharedTitle, sharedText) ->
+            NoteDialog(
+                onDismiss = { sharedNote = null; status = "Shared message was not saved." },
+                preview = privacyStore::previewRedaction, heading = "Save Shared Message",
+                initialText = sharedText, initialType = "Shared message", fixedTitle = sharedTitle,
+            ) { title, body, type ->
+                sharedNote = null
+                scope.launch {
+                    try {
+                        status = importMessage(saveImported(ImportedSource(title, body, type), null), "Shared message added for review")
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (failure: Exception) { status = "Shared text could not be saved safely." }
+                }
+            }
+        }
+        if (showNote) NoteDialog(onDismiss = { showNote = false }, preview = privacyStore::previewRedaction) { title, body, type ->
             showNote = false
             scope.launch {
                 try {

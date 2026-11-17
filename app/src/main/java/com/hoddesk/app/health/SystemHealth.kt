@@ -59,4 +59,95 @@ object SystemHealth {
             Severity.ATTENTION, Fix.AI_SETTINGS, "Open",
         ))
     }
+
+    // --- Health page: every part of the app with its current state, not only the broken ones. ---
+
+    enum class Level { OK, ATTENTION, BLOCKED, OFF }
+
+    data class Row(val group: String, val label: String, val value: String, val level: Level, val detail: String? = null)
+
+    data class Details(
+        val databaseBytes: Long,
+        val sourceCount: Int,
+        val taskCount: Int,
+        val lastBackupAt: Long?,
+        val modelInstalled: Boolean,
+        val modelBytes: Long,
+        val memory: com.hoddesk.app.reasoning.MemorySnapshot?,
+        val searchReady: Boolean,
+        val searchLine: String,
+        val now: Long,
+    )
+
+    /** A backup older than this is flagged; the data on a lost phone cannot be recovered without one. */
+    const val BACKUP_STALE_DAYS = 14
+
+    fun report(s: Snapshot, d: Details): List<Row> = buildList {
+        val day = 24L * 60 * 60 * 1000
+        // Data
+        add(when (s.databaseOk) {
+            null -> Row("Data", "Encrypted storage", "Checking…", Level.OFF)
+            true -> Row("Data", "Encrypted storage", "Healthy", Level.OK, "${d.sourceCount} items · ${d.taskCount} tasks · ${size(d.databaseBytes)}")
+            false -> Row("Data", "Encrypted storage", "Cannot be read", Level.BLOCKED, "Restart the phone; if this stays, restore from your latest backup.")
+        })
+        add(if (s.freeBytes in 0 until LOW_STORAGE_BYTES) Row("Data", "Phone storage", "${size(s.freeBytes)} free", Level.ATTENTION, "Imports, backups and model downloads may fail.")
+            else Row("Data", "Phone storage", if (s.freeBytes < 0) "Unknown" else "${size(s.freeBytes)} free", Level.OK))
+        val backupDays = d.lastBackupAt?.let { ((d.now - it) / day).toInt() }
+        add(when {
+            backupDays == null -> Row("Data", "Last backup", "Never", if (d.sourceCount + d.taskCount > 0) Level.ATTENTION else Level.OFF, "Create an encrypted backup so a lost phone does not lose your desk.")
+            backupDays >= BACKUP_STALE_DAYS -> Row("Data", "Last backup", "$backupDays days ago", Level.ATTENTION, "Older than $BACKUP_STALE_DAYS days.")
+            else -> Row("Data", "Last backup", when (backupDays) { 0 -> "Today"; 1 -> "Yesterday"; else -> "$backupDays days ago" }, Level.OK)
+        })
+        // On-device AI
+        add(when {
+            s.reasoningModelNeedsDownload -> Row("On-Device AI", "Gemma reading model", "Needs a new download", Level.ATTENTION, "Letters are read with the basic on-phone rules until then.")
+            d.modelInstalled -> Row("On-Device AI", "Gemma reading model", "Installed", Level.OK, size(d.modelBytes))
+            else -> Row("On-Device AI", "Gemma reading model", "Not installed", Level.OFF, "Optional. The basic on-phone rules are used.")
+        })
+        d.memory?.let { m ->
+            val needed = com.hoddesk.app.reasoning.ReasoningMemoryPolicy.requiredBytes(if (d.modelInstalled) d.modelBytes else 0L)
+            val free = com.hoddesk.app.reasoning.ReasoningMemoryPolicy.gb(m.availableBytes)
+            add(when {
+                !d.modelInstalled -> Row("On-Device AI", "Free memory", free, Level.OFF)
+                m.lowMemory || m.availableBytes < needed -> Row("On-Device AI", "Free memory", free, Level.ATTENTION, "Gemma needs about ${com.hoddesk.app.reasoning.ReasoningMemoryPolicy.gb(needed)}. Close other apps before using it.")
+                else -> Row("On-Device AI", "Free memory", free, Level.OK, "Enough to run Gemma.")
+            })
+        }
+        add(Row("On-Device AI", "Search", d.searchLine, if (d.searchReady) Level.OK else Level.ATTENTION))
+        // Reminders & calendar
+        add(when {
+            !s.remindersOn -> Row("Alerts", "Reminders", "Off", Level.OFF)
+            !s.notificationPermission -> Row("Alerts", "Reminders", "Blocked", Level.ATTENTION, "Notifications are turned off for HOD Desk.")
+            else -> Row("Alerts", "Reminders", "On", Level.OK)
+        })
+        add(when {
+            !s.calendarChosen -> Row("Alerts", "Calendar", "Not chosen", Level.OFF, "Approved meetings stay inside HOD Desk.")
+            !s.calendarPermission -> Row("Alerts", "Calendar", "Access off", Level.ATTENTION)
+            else -> Row("Alerts", "Calendar", "Connected", Level.OK)
+        })
+        // Security
+        add(when {
+            !s.autoLockOn -> Row("Security", "Auto-lock", "Off", Level.OFF)
+            !s.deviceSecure -> Row("Security", "Auto-lock", "No screen lock", Level.ATTENTION, "Set a PIN, pattern or fingerprint on the phone.")
+            else -> Row("Security", "Auto-lock", "On", Level.OK)
+        })
+        add(Row("Security", "Your data", "Stays on this phone", Level.OK, "Only AI models are downloaded; nothing you import is uploaded."))
+    }
+
+    /** Overall state: the worst level among the rows (OFF counts as fine). */
+    fun overall(rows: List<Row>): Level = when {
+        rows.any { it.level == Level.BLOCKED } -> Level.BLOCKED
+        rows.any { it.level == Level.ATTENTION } -> Level.ATTENTION
+        else -> Level.OK
+    }
+
+    fun size(bytes: Long): String {
+        val mb = bytes / (1024.0 * 1024.0)
+        return when {
+            bytes < 0 -> "Unknown"
+            mb >= 1024 -> String.format(java.util.Locale.ENGLISH, "%.1f GB", mb / 1024)
+            mb >= 1 -> String.format(java.util.Locale.ENGLISH, "%.0f MB", mb)
+            else -> String.format(java.util.Locale.ENGLISH, "%.0f KB", bytes / 1024.0)
+        }
+    }
 }

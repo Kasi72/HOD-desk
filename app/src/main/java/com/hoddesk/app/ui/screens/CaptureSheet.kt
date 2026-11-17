@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.hoddesk.app.privacy.ConsentScope
+import com.hoddesk.app.privacy.Redactor
 import com.hoddesk.app.ui.components.HodButton
 import com.hoddesk.app.ui.components.HodButtonStyle
 import com.hoddesk.app.ui.components.IconTile
@@ -175,20 +176,29 @@ private fun CaptureTile(label: String, icon: ImageVector, color: Color, locked: 
 
 /** Typed or pasted note. The title is optional and generated from the first line when blank. */
 @Composable
-fun NoteDialog(onDismiss: () -> Unit, onSave: (title: String, body: String, type: String) -> Unit) {
+fun NoteDialog(
+    onDismiss: () -> Unit,
+    preview: (String) -> Redactor.Preview? = { null },
+    heading: String = "New Note",
+    initialText: String = "",
+    initialType: String = "Manual note",
+    fixedTitle: String? = null,
+    onSave: (title: String, body: String, type: String) -> Unit,
+) {
     val c = Hod.colors
     val clipboard = LocalClipboardManager.current
-    var text by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf("Manual note") }
+    var text by remember { mutableStateOf(initialText) }
+    var type by remember { mutableStateOf(initialType) }
     Dialog(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().clip(Squircles.card).background(c.surface).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("New Note", style = Hod.type.headline, color = c.label)
+            Text(heading, style = Hod.type.headline, color = c.label)
             OutlinedTextField(
                 value = text, onValueChange = { text = it }, minLines = 4, shape = Squircles.small, modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("What needs attention?") },
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.tint, cursorColor = c.tint),
             )
-            Row(
+            RedactionPreviewCard(remember(text) { preview(text) })
+            if (initialText.isEmpty()) Row(
                 Modifier.fillMaxWidth().clip(Squircles.small).background(c.tintSoft).pressable {
                     clipboard.getText()?.text?.takeIf { it.isNotBlank() }?.let { text = it; type = "WhatsApp" }
                 }.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -202,10 +212,31 @@ fun NoteDialog(onDismiss: () -> Unit, onSave: (title: String, body: String, type
                 HodButton("Save", {
                     if (text.isNotBlank()) {
                         val title = text.lineSequence().first { it.isNotBlank() }.trim().take(60)
-                        onSave(if (type == "WhatsApp") "WhatsApp message" else title, text.trim(), type)
+                        onSave(fixedTitle ?: if (type == "WhatsApp") "WhatsApp message" else title, text.trim(), type)
                     }
                 }, enabled = text.isNotBlank(), height = 46.dp, modifier = Modifier.weight(1f))
             }
         }
+    }
+}
+
+/** Shows, before saving, exactly which identifiers will be masked in what is stored. */
+@Composable
+fun RedactionPreviewCard(preview: Redactor.Preview?) {
+    val c = Hod.colors
+    val summary = preview?.summary() ?: return
+    Column(
+        Modifier.fillMaxWidth().clip(Squircles.small).background(c.fill).padding(horizontal = 14.dp, vertical = 10.dp)
+            .semantics { contentDescription = summary },
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Rounded.Lock, null, tint = c.greenText, modifier = Modifier.size(16.dp))
+            Text(summary, style = Hod.type.subheadline.copy(fontWeight = FontWeight.SemiBold), color = c.label)
+        }
+        preview.hits.distinctBy { it.original }.take(4).forEach { hit ->
+            Text("${hit.original}  →  ${hit.kind.token}", style = Hod.type.footnote, color = c.secondaryLabel, maxLines = 1)
+        }
+        if (preview.hits.distinctBy { it.original }.size > 4) Text("and ${preview.hits.distinctBy { it.original }.size - 4} more", style = Hod.type.footnote, color = c.tertiaryLabel)
     }
 }
